@@ -1,0 +1,516 @@
+import requests
+from django.utils import timezone
+from django.db.models import Count, Q
+from django.core.mail import send_mail
+from django.conf import settings
+from rest_framework import viewsets, status
+from rest_framework.decorators import api_view, action
+from rest_framework.response import Response
+from .models import (
+    Tournament, Bracket, Player, PlayerBracketRegistration,
+    Room, Table, Match, MenuSection, MenuItem,
+    PlayerNotificationSubscription, Notification
+)
+from .serializers import (
+    TournamentSerializer, BracketSerializer, PlayerSerializer,
+    PlayerBracketRegistrationSerializer, RoomSerializer, TableSerializer,
+    MatchSerializer, MenuSectionSerializer, MenuItemSerializer,
+    PlayerNotificationSubscriptionSerializer, NotificationSerializer
+)
+
+
+class TournamentViewSet(viewsets.ModelViewSet):
+    queryset = Tournament.objects.filter(is_active=True)
+    serializer_class = TournamentSerializer
+
+
+class BracketViewSet(viewsets.ModelViewSet):
+    queryset = Bracket.objects.filter(is_active=True)
+    serializer_class = BracketSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        tournament_id = self.request.query_params.get('tournament_id')
+        if tournament_id:
+            queryset = queryset.filter(tournament_id=tournament_id)
+        return queryset.annotate(registered_count=Count('registrations', filter=Q(registrations__is_active=True)))
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        data = serializer.data
+        for item, obj in zip(data, queryset):
+            item['registered_count'] = obj.registered_count
+        return Response(data)
+    
+    @action(detail=True, methods=['get'])
+    def stats(self, request, pk=None):
+        bracket = self.get_object()
+        registered_count = bracket.registrations.filter(is_active=True).count()
+        return Response({
+            'bracket_id': str(bracket.id),
+            'registered_players': registered_count,
+            'max_players': bracket.max_players,
+            'available_spots': max(0, bracket.max_players - registered_count),
+            'is_full': registered_count >= bracket.max_players,
+            'entry_fee': float(bracket.entry_fee)
+        })
+
+
+class PlayerViewSet(viewsets.ModelViewSet):
+    queryset = Player.objects.filter(is_active=True)
+    serializer_class = PlayerSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get('search')
+        email = self.request.query_params.get('email')
+        license_number = self.request.query_params.get('license_number')
+        
+        if search:
+            queryset = queryset.filter(
+                models.Q(first_name__icontains=search) |
+                models.Q(last_name__icontains=search) |
+                models.Q(club__icontains=search) |
+                models.Q(email__icontains=search)
+            )
+        if email:
+            queryset = queryset.filter(email__iexact=email)
+        if license_number:
+            queryset = queryset.filter(license_number=license_number)
+        return queryset
+    
+    @action(detail=True, methods=['get'])
+    def brackets(self, request, pk=None):
+        player = self.get_object()
+        registrations = player.registrations.filter(is_active=True).select_related('bracket', 'bracket__tournament')
+        data = []
+        for reg in registrations:
+            data.append({
+                'registration_id': str(reg.id),
+                'bracket_id': str(reg.bracket.id),
+                'bracket_name': reg.bracket.name,
+                'bracket_category': reg.bracket.category,
+                'tournament_id': str(reg.bracket.tournament.id),
+                'tournament_name': reg.bracket.tournament.name,
+                'entry_fee': float(reg.bracket.entry_fee),
+                'payment_status': reg.payment_status,
+            })
+        return Response(data)
+    
+    @action(detail=True, methods=['get'])
+    def registration_summary(self, request, pk=None):
+        player = self.get_object()
+        registrations = player.registrations.filter(is_active=True).select_related('bracket')
+        total_amount = sum(float(reg.bracket.entry_fee) for reg in registrations)
+        return Response({
+            'player_id': str(player.id),
+            'registration_count': registrations.count(),
+            'total_amount': total_amount,
+            'registrations': PlayerBracketRegistrationSerializer(registrations, many=True).data
+        })
+
+
+class PlayerBracketRegistrationViewSet(viewsets.ModelViewSet):
+    queryset = PlayerBracketRegistration.objects.filter(is_active=True)
+    serializer_class = PlayerBracketRegistrationSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        player_id = self.request.query_params.get('player_id')
+        bracket_id = self.request.query_params.get('bracket_id')
+        if player_id:
+            queryset = queryset.filter(player_id=player_id)
+        if bracket_id:
+            queryset = queryset.filter(bracket_id=bracket_id)
+        return queryset
+    
+    def create(self, request, *args, **kwargs):
+        player_id = request.data.get('player')
+        bracket_id = request.data.get('bracket')
+        
+        try:
+            player = Player.objects.get(id=player_id)
+            bracket = Bracket.objects.get(id=bracket_id)
+        except (Player.DoesNotExist, Bracket.DoesNotExist):
+            return Response(
+                {'error': 'Joueur ou tableau non trouvé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if PlayerBracketRegistration.objects.filter(
+            player=player, bracket=bracket, is_active=True
+        ).exists():
+            return Response(
+                {'error': 'Joueur déjà inscrit à ce tableau'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        registered_count = bracket.registrations.filter(is_active=True).count()
+        if registered_count >= bracket.max_players:
+            return Response(
+                {'error': 'Ce tableau est complet'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        player_total_registrations = PlayerBracketRegistration.objects.filter(
+            player=player,
+            is_active=True,
+            bracket__tournament=bracket.tournament
+        ).count()
+        
+        if player_total_registrations >= 2:
+            return Response(
+                {'error': 'Un joueur ne peut pas s\'inscrire à plus de 2 tableaux par tournoi'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        return super().create(request, *args, **kwargs)
+
+
+class RoomViewSet(viewsets.ModelViewSet):
+    queryset = Room.objects.filter(is_active=True)
+    serializer_class = RoomSerializer
+
+
+class TableViewSet(viewsets.ModelViewSet):
+    queryset = Table.objects.all()
+    serializer_class = TableSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        room_id = self.request.query_params.get('room_id')
+        if room_id:
+            queryset = queryset.filter(room_id=room_id)
+        return queryset.select_related('room', 'player1', 'player2')
+
+
+class MatchViewSet(viewsets.ModelViewSet):
+    queryset = Match.objects.all()
+    serializer_class = MatchSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        bracket_id = self.request.query_params.get('bracket_id')
+        status_filter = self.request.query_params.get('status')
+        if bracket_id:
+            queryset = queryset.filter(bracket_id=bracket_id)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset.select_related('player1', 'player2', 'bracket', 'table', 'winner')
+    
+    @action(detail=True, methods=['post'])
+    def assign_table(self, request, pk=None):
+        match = self.get_object()
+        table_id = request.data.get('table_id')
+        
+        try:
+            table = Table.objects.get(id=table_id)
+        except Table.DoesNotExist:
+            return Response(
+                {'error': 'Table non trouvée'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if table.status != 'free':
+            return Response(
+                {'error': 'Cette table n\'est pas disponible'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        match.table = table
+        match.status = 'in_progress'
+        match.start_time = timezone.now()
+        match.save()
+        
+        table.status = 'occupied'
+        table.current_match = match
+        table.player1 = match.player1
+        table.player2 = match.player2
+        table.match_start_time = timezone.now()
+        table.save()
+        
+        send_match_notification(match, 'table_assigned')
+        
+        return Response({'message': 'Match assigné à la table'})
+    
+    @action(detail=True, methods=['post'])
+    def finish(self, request, pk=None):
+        match = self.get_object()
+        
+        if match.status == 'finished':
+            return Response(
+                {'error': 'Ce match est déjà terminé'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        sets_player1 = request.data.get('sets_player1', 0)
+        sets_player2 = request.data.get('sets_player2', 0)
+        score_player1 = request.data.get('score_player1', 0)
+        score_player2 = request.data.get('score_player2', 0)
+        
+        if sets_player1 == sets_player2:
+            return Response(
+                {'error': 'Un match ne peut pas se terminer par une égalité'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        match.sets_player1 = sets_player1
+        match.sets_player2 = sets_player2
+        match.score_player1 = score_player1
+        match.score_player2 = score_player2
+        match.status = 'finished'
+        match.end_time = timezone.now()
+        match.winner = match.player1 if sets_player1 > sets_player2 else match.player2
+        match.save()
+        
+        if match.table:
+            table = match.table
+            table.status = 'free'
+            table.current_match = None
+            table.player1 = None
+            table.player2 = None
+            table.match_start_time = None
+            table.save()
+        
+        return Response({
+            'message': 'Match terminé',
+            'winner': str(match.winner.id) if match.winner else None
+        })
+
+
+class MenuSectionViewSet(viewsets.ModelViewSet):
+    queryset = MenuSection.objects.all()
+    serializer_class = MenuSectionSerializer
+
+
+class MenuItemViewSet(viewsets.ModelViewSet):
+    queryset = MenuItem.objects.all()
+    serializer_class = MenuItemSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        section_id = self.request.query_params.get('section_id')
+        if section_id:
+            queryset = queryset.filter(section_id=section_id)
+        return queryset
+
+
+class PlayerNotificationSubscriptionViewSet(viewsets.ModelViewSet):
+    queryset = PlayerNotificationSubscription.objects.all()
+    serializer_class = PlayerNotificationSubscriptionSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        player_id = self.request.query_params.get('player_id')
+        if player_id:
+            queryset = queryset.filter(player_id=player_id)
+        return queryset
+
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    queryset = Notification.objects.all()
+    serializer_class = NotificationSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        player_id = self.request.query_params.get('player_id')
+        if player_id:
+            queryset = queryset.filter(player_id=player_id)
+        return queryset
+    
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        notification.is_read = True
+        notification.save()
+        return Response({'message': 'Notification marquée comme lue'})
+
+
+@api_view(['GET'])
+def live_tables(request):
+    tables = Table.objects.select_related('room', 'player1', 'player2', 'current_match').all()
+    data = []
+    for table in tables:
+        data.append({
+            'id': str(table.id),
+            'table_number': table.table_number,
+            'room': {
+                'id': str(table.room.id),
+                'name': table.room.name
+            },
+            'status': table.status,
+            'player1': {
+                'id': str(table.player1.id),
+                'name': f"{table.player1.last_name} {table.player1.first_name}",
+                'club': table.player1.club,
+                'ranking': table.player1.ranking
+            } if table.player1 else None,
+            'player2': {
+                'id': str(table.player2.id),
+                'name': f"{table.player2.last_name} {table.player2.first_name}",
+                'club': table.player2.club,
+                'ranking': table.player2.ranking
+            } if table.player2 else None,
+            'match_start_time': table.match_start_time.isoformat() if table.match_start_time else None
+        })
+    return Response(data)
+
+
+@api_view(['GET'])
+def live_matches(request):
+    matches = Match.objects.filter(
+        status__in=['in_progress', 'waiting']
+    ).select_related('player1', 'player2', 'table', 'bracket')
+    
+    data = []
+    for match in matches:
+        data.append({
+            'id': str(match.id),
+            'bracket': {
+                'id': str(match.bracket.id),
+                'name': match.bracket.name
+            },
+            'player1': {
+                'id': str(match.player1.id),
+                'name': f"{match.player1.last_name} {match.player1.first_name}",
+                'club': match.player1.club,
+                'ranking': match.player1.ranking
+            },
+            'player2': {
+                'id': str(match.player2.id),
+                'name': f"{match.player2.last_name} {match.player2.first_name}",
+                'club': match.player2.club,
+                'ranking': match.player2.ranking
+            },
+            'table': {
+                'id': str(match.table.id),
+                'number': match.table.table_number
+            } if match.table else None,
+            'status': match.status,
+            'sets_player1': match.sets_player1,
+            'sets_player2': match.sets_player2,
+            'start_time': match.start_time.isoformat() if match.start_time else None
+        })
+    return Response(data)
+
+
+@api_view(['GET'])
+def fftt_lookup(request, license_number):
+    try:
+        url = f"https://fftt.dafunker.com/v1/joueur/{license_number}"
+        response = requests.get(url, timeout=10, verify=False)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                player_data = data if isinstance(data, dict) else (data[0] if isinstance(data, list) and len(data) > 0 else None)
+                if player_data:
+                    points_value = player_data.get('point', player_data.get('points', 0))
+                    return Response({
+                        'success': True,
+                        'data': {
+                            'licence': player_data.get('licence', license_number),
+                            'nom': player_data.get('nom', ''),
+                            'prenom': player_data.get('prenom', ''),
+                            'club': player_data.get('nomclub', player_data.get('club', '')),
+                            'nclub': player_data.get('numclub', player_data.get('nclub', '')),
+                            'points': str(int(points_value)) if points_value else '0',
+                            'cat': player_data.get('cat', ''),
+                        }
+                    })
+            return Response({
+                'success': False,
+                'error': f'Aucun joueur trouve avec le numero de licence {license_number}'
+            })
+        else:
+            return Response({
+                'success': False,
+                'error': f'Aucun joueur trouve avec le numero de licence {license_number}'
+            })
+    except requests.exceptions.Timeout:
+        return Response({
+            'success': False,
+            'error': 'Delai d\'attente depasse lors de la recherche'
+        })
+    except Exception as e:
+        import traceback
+        print(f"FFTT Error: {e}")
+        print(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': f'Erreur: {str(e)}'
+        })
+
+
+@api_view(['POST'])
+def admin_login(request):
+    username = request.data.get('username', '')
+    password = request.data.get('password', '')
+    
+    if username == 'admin' and password == 'admin':
+        return Response({
+            'success': True,
+            'message': 'Connexion réussie',
+            'token': 'admin-token-local'
+        })
+    return Response({
+        'success': False,
+        'error': 'Identifiants incorrects'
+    }, status=status.HTTP_401_UNAUTHORIZED)
+
+
+def send_match_notification(match, notification_type):
+    for player in [match.player1, match.player2]:
+        try:
+            subscription = PlayerNotificationSubscription.objects.get(player=player)
+        except PlayerNotificationSubscription.DoesNotExist:
+            continue
+        
+        title = ""
+        message = ""
+        
+        if notification_type == 'table_assigned':
+            title = "Table assignée"
+            message = f"Votre match est prêt ! Rendez-vous à la table {match.table.table_number}."
+        elif notification_type == 'match_started':
+            title = "Match commencé"
+            message = f"Votre match contre {match.player2.last_name if player == match.player1 else match.player1.last_name} a commencé."
+        
+        notification = Notification.objects.create(
+            player=player,
+            type=notification_type,
+            title=title,
+            message=message
+        )
+        
+        if subscription.email_enabled and player.email:
+            try:
+                send_mail(
+                    subject=title,
+                    message=message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[player.email],
+                    fail_silently=True
+                )
+                notification.is_sent_email = True
+                notification.save()
+            except Exception:
+                pass
+        
+        if subscription.sms_enabled and player.phone and settings.SMS_API_KEY:
+            try:
+                sms_response = requests.post(
+                    settings.SMS_API_URL,
+                    json={
+                        'api_key': settings.SMS_API_KEY,
+                        'to': player.phone,
+                        'message': f"{title}: {message}"
+                    },
+                    timeout=10
+                )
+                if sms_response.status_code == 200:
+                    notification.is_sent_sms = True
+                    notification.save()
+            except Exception:
+                pass
