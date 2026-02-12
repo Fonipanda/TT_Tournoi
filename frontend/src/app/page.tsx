@@ -83,7 +83,7 @@ export default function Home() {
               transition={{ duration: 0.2 }}
             >
               <TabsContent value="accueil" className="mt-0">
-                <AccueilPage />
+                <AccueilPage onNavigate={setActiveTab} />
               </TabsContent>
               <TabsContent value="live" className="mt-0">
                 <LivePage />

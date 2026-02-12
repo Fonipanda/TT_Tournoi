@@ -93,7 +93,6 @@ export default function JoueursLivePage() {
                     <th className="text-left py-3 px-2">Table</th>
                     <th className="text-left py-3 px-2">Joueur 1</th>
                     <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-center py-3 px-2">Score</th>
                     <th className="text-left py-3 px-2">Joueur 2</th>
                     <th className="text-left py-3 px-2">Club</th>
                     <th className="text-left py-3 px-2">Tableau</th>
@@ -122,9 +121,6 @@ export default function JoueursLivePage() {
                       </td>
                       <td className="py-3 px-2 text-sm text-muted-foreground">
                         {match.player1.club}
-                      </td>
-                      <td className="py-3 px-2 text-center font-bold">
-                        {match.sets_player1} - {match.sets_player2}
                       </td>
                       <td className="py-3 px-2 font-medium">
                         {match.player2.name}

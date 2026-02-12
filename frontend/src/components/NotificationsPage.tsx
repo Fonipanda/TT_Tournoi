@@ -45,10 +45,11 @@ interface Notification {
 }
 
 export default function NotificationsPage() {
-  const [searchEmail, setSearchEmail] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [foundPlayer, setFoundPlayer] = useState<Player | null>(null);
+  const [foundPlayers, setFoundPlayers] = useState<Player[]>([]);
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,35 +60,28 @@ export default function NotificationsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const searchPlayer = async () => {
-    if (!searchEmail.trim()) {
-      setSearchError("Veuillez entrer un email");
+    if (!searchName.trim()) {
+      setSearchError("Veuillez entrer un nom");
       return;
     }
 
     setSearching(true);
     setSearchError(null);
-    setFoundPlayer(null);
+    setFoundPlayers([]);
+    setSelectedPlayer(null);
     setSubscription(null);
     setNotifications([]);
 
     try {
-      const players = await api.players.getByEmail(searchEmail.trim());
+      const players = await api.players.getByName(searchName.trim());
       
       if (players && players.length > 0) {
-        const player = players[0];
-        setFoundPlayer(player);
-
-        const subs = await api.notificationSubscriptions.list(player.id);
-        if (subs && subs.length > 0) {
-          setSubscription(subs[0]);
-          setEmailEnabled(subs[0].email_enabled);
-          setSmsEnabled(subs[0].sms_enabled);
+        setFoundPlayers(players);
+        if (players.length === 1) {
+          selectPlayer(players[0]);
         }
-
-        const notifs = await api.notifications.list(player.id);
-        setNotifications(notifs);
       } else {
-        setSearchError("Aucun joueur trouve avec cet email");
+        setSearchError("Aucun joueur trouve avec ce nom");
       }
     } catch (err: any) {
       setSearchError(err.message || "Erreur lors de la recherche");
@@ -96,8 +90,27 @@ export default function NotificationsPage() {
     }
   };
 
+  const selectPlayer = async (player: Player) => {
+    setSelectedPlayer(player);
+    setFoundPlayers([]);
+
+    try {
+      const subs = await api.notificationSubscriptions.list(player.id);
+      if (subs && subs.length > 0) {
+        setSubscription(subs[0]);
+        setEmailEnabled(subs[0].email_enabled);
+        setSmsEnabled(subs[0].sms_enabled);
+      }
+
+      const notifs = await api.notifications.list(player.id);
+      setNotifications(notifs);
+    } catch (err: any) {
+      setSearchError(err.message || "Erreur lors du chargement");
+    }
+  };
+
   const createOrUpdateSubscription = async () => {
-    if (!foundPlayer) return;
+    if (!selectedPlayer) return;
 
     setSaving(true);
     setSaveSuccess(false);
@@ -110,7 +123,7 @@ export default function NotificationsPage() {
         });
       } else {
         const newSub = await api.notificationSubscriptions.create({
-          player: foundPlayer.id,
+          player: selectedPlayer.id,
           email_enabled: emailEnabled,
           sms_enabled: smsEnabled,
         });
@@ -186,10 +199,10 @@ export default function NotificationsPage() {
         <CardContent>
           <div className="flex gap-2 max-w-md">
             <Input
-              type="email"
-              value={searchEmail}
-              onChange={(e) => setSearchEmail(e.target.value)}
-              placeholder="votre@email.com"
+              type="text"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+              placeholder="votre Nom"
               onKeyDown={(e) => e.key === "Enter" && searchPlayer()}
             />
             <Button onClick={searchPlayer} disabled={searching}>
@@ -207,10 +220,26 @@ export default function NotificationsPage() {
               {searchError}
             </p>
           )}
+
+          {foundPlayers.length > 1 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm font-medium">Plusieurs joueurs trouves, selectionnez :</p>
+              {foundPlayers.map((player) => (
+                <div
+                  key={player.id}
+                  className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => selectPlayer(player)}
+                >
+                  <p className="font-medium">{player.last_name} {player.first_name}</p>
+                  <p className="text-sm text-muted-foreground">{player.club} - {player.ranking} pts</p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {foundPlayer && (
+      {selectedPlayer && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -226,10 +255,10 @@ export default function NotificationsPage() {
             <CardContent className="space-y-6">
               <div className="p-4 bg-gray-50 rounded-lg">
                 <h3 className="font-semibold">
-                  {foundPlayer.last_name} {foundPlayer.first_name}
+                  {selectedPlayer.last_name} {selectedPlayer.first_name}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {foundPlayer.club} - {foundPlayer.ranking} pts
+                  {selectedPlayer.club} - {selectedPlayer.ranking} pts
                 </p>
               </div>
 
@@ -240,7 +269,7 @@ export default function NotificationsPage() {
                     <div>
                       <p className="font-medium">Notifications par Email</p>
                       <p className="text-sm text-muted-foreground">
-                        {foundPlayer.email}
+                        {selectedPlayer.email}
                       </p>
                     </div>
                   </div>
@@ -261,7 +290,7 @@ export default function NotificationsPage() {
                     <div>
                       <p className="font-medium">Notifications par SMS</p>
                       <p className="text-sm text-muted-foreground">
-                        {foundPlayer.phone || "Aucun numero configure"}
+                        {selectedPlayer.phone || "Aucun numero configure"}
                       </p>
                     </div>
                   </div>
@@ -270,14 +299,14 @@ export default function NotificationsPage() {
                       type="checkbox"
                       checked={smsEnabled}
                       onChange={(e) => setSmsEnabled(e.target.checked)}
-                      disabled={!foundPlayer.phone}
+                      disabled={!selectedPlayer.phone}
                       className="sr-only peer"
                     />
-                    <div className={`w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 ${!foundPlayer.phone ? 'opacity-50' : ''}`}></div>
+                    <div className={`w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 ${!selectedPlayer.phone ? 'opacity-50' : ''}`}></div>
                   </label>
                 </div>
 
-                {!foundPlayer.phone && (
+                {!selectedPlayer.phone && (
                   <p className="text-sm text-muted-foreground">
                     Pour activer les SMS, ajoutez un numero de telephone dans votre profil lors de l'inscription.
                   </p>

@@ -85,6 +85,8 @@ class Room(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    rows = models.IntegerField(default=2)
+    tables_per_row = models.IntegerField(default=4)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -95,14 +97,22 @@ class Room(models.Model):
 class Table(models.Model):
     STATUS_CHOICES = [
         ('free', 'Libre'),
-        ('occupied', 'Occupée'),
+        ('occupied', 'Occupee'),
         ('maintenance', 'Maintenance'),
     ]
     
+    ORIENTATION_CHOICES = [
+        ('horizontal', 'Horizontal'),
+        ('vertical', 'Vertical'),
+    ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    table_number = models.IntegerField()
+    table_number = models.IntegerField(unique=True)
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='tables')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='free')
+    position_row = models.IntegerField(default=0)
+    position_col = models.IntegerField(default=0)
+    orientation = models.CharField(max_length=20, choices=ORIENTATION_CHOICES, default='horizontal')
     current_match = models.ForeignKey('Match', on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_table')
     player1 = models.ForeignKey(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='table_player1')
     player2 = models.ForeignKey(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='table_player2')
@@ -110,7 +120,6 @@ class Table(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ['room', 'table_number']
         ordering = ['table_number']
 
     def __str__(self):

@@ -2,237 +2,369 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { 
-  TrendingUp, Users, Loader2, Clock, Radio
+  Trophy, Loader2, Users, GitBranch, 
+  Medal, RefreshCcw
 } from "lucide-react";
 
-interface LiveMatch {
+interface Bracket {
   id: string;
-  bracket: { id: string; name: string };
-  player1: { id: string; name: string; club: string; ranking: string };
-  player2: { id: string; name: string; club: string; ranking: string };
-  table: { id: string; number: number } | null;
+  name: string;
+  category: string;
+}
+
+interface Match {
+  id: string;
+  player1_name: string;
+  player2_name: string;
+  bracket_name: string;
+  bracket: string;
   status: string;
+  round_number: number;
   sets_player1: number;
   sets_player2: number;
-  start_time: string | null;
+}
+
+interface BracketMatch {
+  id: string;
+  round: number;
+  position: number;
+  player1: string | null;
+  player2: string | null;
+  winner: string | null;
+  score1: number;
+  score2: number;
+  isLosers?: boolean;
 }
 
 export default function ProgressionPage() {
-  const [matches, setMatches] = useState<LiveMatch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [brackets, setBrackets] = useState<Bracket[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [selectedBracket, setSelectedBracket] = useState<string>("all");
+  
+  const [eliminationType, setEliminationType] = useState<"single" | "double">("single");
+  const [hasThirdPlace, setHasThirdPlace] = useState(true);
+  const [roundLabels, setRoundLabels] = useState<string[]>([]);
 
-  const fetchMatches = async () => {
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
     try {
-      const data = await api.live.matches();
-      setMatches(data);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message);
+      const tournaments = await api.tournaments.list();
+      if (tournaments.length > 0) {
+        const bracketsData = await api.brackets.list(tournaments[0].id);
+        setBrackets(bracketsData);
+      }
+      const matchesData = await api.matches.list({});
+      setMatches(matchesData);
+    } catch (error) {
+      console.error("Erreur chargement donnees:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchMatches();
-    const interval = setInterval(fetchMatches, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  const getRoundLabel = (round: number, totalRounds: number): string => {
+    const labels: Record<number, string> = {
+      1: "Pool",
+      2: "1/64",
+      3: "1/32",
+      4: "1/16",
+      5: "1/8",
+      6: "1/4",
+      7: "1/2",
+      8: "Finale"
+    };
 
-  const formatDuration = (startTime: string | null) => {
-    if (!startTime) return "-";
-    const start = new Date(startTime);
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - start.getTime()) / 1000 / 60);
-    return `${diff} min`;
+    const diff = 8 - totalRounds;
+    const adjustedRound = round + diff;
+    
+    if (adjustedRound === 8) return "Finale";
+    if (adjustedRound === 7) return "1/2";
+    if (adjustedRound === 6) return "1/4";
+    if (adjustedRound === 5) return "1/8";
+    if (adjustedRound === 4) return "1/16";
+    if (adjustedRound === 3) return "1/32";
+    if (adjustedRound === 2) return "1/64";
+    return "Pool";
   };
+
+  const filteredMatches = selectedBracket === "all" 
+    ? matches 
+    : matches.filter(m => m.bracket === selectedBracket);
+
+  const groupByRound = (matchList: Match[]) => {
+    return matchList.reduce((acc, match) => {
+      const round = match.round_number || 1;
+      if (!acc[round]) acc[round] = [];
+      acc[round].push(match);
+      return acc;
+    }, {} as Record<number, Match[]>);
+  };
+
+  const maxRound = Math.max(...matches.map(m => m.round_number || 1), 1);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex justify-center items-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <Card className="bg-red-50 border-red-200">
-        <CardContent className="pt-6">
-          <p className="text-red-600">Erreur: {error}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const inProgressMatches = matches.filter(m => m.status === "in_progress");
-  const waitingMatches = matches.filter(m => m.status === "waiting");
+  const roundedMatches = groupByRound(filteredMatches);
+  const rounds = Object.keys(roundedMatches).map(Number).sort((a, b) => a - b);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
-            <TrendingUp className="h-6 w-6" />
+            <Trophy className="h-6 w-6" />
             Progression du Tournoi
           </h2>
           <p className="text-muted-foreground">
-            Suivez l'avancement des matchs en temps reel
+            Visualisez l'arbre des matchs et la progression
           </p>
+        </div>
+        
+        <div className="flex flex-wrap gap-4">
+          <Select value={selectedBracket} onValueChange={setSelectedBracket}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Tous les tableaux" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les tableaux</SelectItem>
+              {brackets.map((b) => (
+                <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Button variant="outline" onClick={fetchData}>
+            <RefreshCcw className="h-4 w-4 mr-2" />
+            Actualiser
+          </Button>
         </div>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Radio className="h-5 w-5 text-red-600 animate-pulse" />
-            Matchs en cours ({inProgressMatches.length})
+            <GitBranch className="h-5 w-5" />
+            Configuration du tournoi
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {inProgressMatches.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              Aucun match en cours
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-2">Table</th>
-                    <th className="text-left py-3 px-2">Joueur 1</th>
-                    <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-center py-3 px-2">Score</th>
-                    <th className="text-left py-3 px-2">Joueur 2</th>
-                    <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-left py-3 px-2">Tableau</th>
-                    <th className="text-left py-3 px-2">Duree</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inProgressMatches.map((match, index) => (
-                    <motion.tr
-                      key={match.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="border-b hover:bg-gray-50"
-                    >
-                      <td className="py-3 px-2">
-                        <Badge variant="destructive">
-                          {match.table?.number || "-"}
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-2 font-medium">
-                        {match.player1.name}
-                        <span className="text-xs text-muted-foreground ml-1">
-                          ({match.player1.ranking} pts)
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-sm text-muted-foreground">
-                        {match.player1.club}
-                      </td>
-                      <td className="py-3 px-2 text-center font-bold">
-                        {match.sets_player1} - {match.sets_player2}
-                      </td>
-                      <td className="py-3 px-2 font-medium">
-                        {match.player2.name}
-                        <span className="text-xs text-muted-foreground ml-1">
-                          ({match.player2.ranking} pts)
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-sm text-muted-foreground">
-                        {match.player2.club}
-                      </td>
-                      <td className="py-3 px-2">
-                        <Badge variant="outline">{match.bracket.name}</Badge>
-                      </td>
-                      <td className="py-3 px-2 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatDuration(match.start_time)}
-                        </span>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="flex flex-wrap gap-6">
+            <div className="flex items-center gap-4">
+              <Label className="font-medium">Type d'elimination:</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant={eliminationType === "single" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setEliminationType("single")}
+                >
+                  Simple (OK)
+                </Button>
+                <Button
+                  variant={eliminationType === "double" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setEliminationType("double")}
+                >
+                  Double (KO)
+                </Button>
+              </div>
             </div>
-          )}
+
+            <div className="flex items-center gap-4">
+              <Label className="font-medium">Match 3e place:</Label>
+              <Button
+                variant={hasThirdPlace ? "default" : "outline"}
+                size="sm"
+                onClick={() => setHasThirdPlace(!hasThirdPlace)}
+              >
+                <Medal className="h-4 w-4 mr-1" />
+                {hasThirdPlace ? "Active" : "Desactive"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+            <p className="text-sm font-medium mb-2">Etiquettes de tours:</p>
+            <div className="flex flex-wrap gap-2">
+              {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", 
+                hasThirdPlace ? "Petite Finale" : null, "Finale"]
+                .filter(Boolean)
+                .map((label, index) => (
+                  <Badge key={index} variant="outline">{label}</Badge>
+                ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-yellow-600" />
-            Joueurs en Attente ({waitingMatches.length})
-          </CardTitle>
+          <CardTitle>Arbre du tournoi</CardTitle>
+          <CardDescription>
+            {eliminationType === "single" ? "Elimination simple" : "Double elimination"} 
+            {hasThirdPlace && " - Match pour la 3e place"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {waitingMatches.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              Aucun match en attente
-            </p>
+          {filteredMatches.length === 0 ? (
+            <div className="text-center py-12">
+              <Trophy className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+              <p className="text-muted-foreground">
+                Aucun match configure pour ce tableau
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Les matchs apparaitront ici une fois crees dans l'onglet Admin
+              </p>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-2">Joueur 1</th>
-                    <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-center py-3 px-2">VS</th>
-                    <th className="text-left py-3 px-2">Joueur 2</th>
-                    <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-left py-3 px-2">Tableau</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {waitingMatches.map((match, index) => (
-                    <motion.tr
-                      key={match.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="border-b hover:bg-gray-50"
-                    >
-                      <td className="py-3 px-2 font-medium">
-                        {match.player1.name}
-                        <span className="text-xs text-muted-foreground ml-1">
-                          ({match.player1.ranking} pts)
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-sm text-muted-foreground">
-                        {match.player1.club}
-                      </td>
-                      <td className="py-3 px-2 text-center text-muted-foreground">
-                        VS
-                      </td>
-                      <td className="py-3 px-2 font-medium">
-                        {match.player2.name}
-                        <span className="text-xs text-muted-foreground ml-1">
-                          ({match.player2.ranking} pts)
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-sm text-muted-foreground">
-                        {match.player2.club}
-                      </td>
-                      <td className="py-3 px-2">
-                        <Badge variant="outline">{match.bracket.name}</Badge>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="overflow-x-auto pb-4">
+              <div className="flex gap-8 min-w-max">
+                {rounds.map((round) => {
+                  const roundMatches = roundedMatches[round] || [];
+                  const label = getRoundLabel(round, maxRound);
+                  
+                  return (
+                    <div key={round} className="flex flex-col min-w-[220px]">
+                      <div className="text-center mb-4">
+                        <Badge variant="secondary" className="text-sm font-semibold">
+                          {label}
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-4 flex-1 flex flex-col justify-around">
+                        {roundMatches.map((match, idx) => {
+                          const isCompleted = match.status === "completed";
+                          const isInProgress = match.status === "in_progress";
+                          const winner = isCompleted 
+                            ? (match.sets_player1 > match.sets_player2 ? 1 : 2)
+                            : null;
+                          
+                          return (
+                            <motion.div
+                              key={match.id}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: idx * 0.1 }}
+                              className={`border-2 rounded-lg overflow-hidden ${
+                                isInProgress 
+                                  ? "border-blue-500 shadow-md" 
+                                  : isCompleted 
+                                  ? "border-green-300" 
+                                  : "border-gray-200"
+                              }`}
+                            >
+                              <div className={`p-2 ${
+                                isInProgress ? "bg-blue-50" : isCompleted ? "bg-green-50" : "bg-gray-50"
+                              }`}>
+                                <div className={`flex justify-between items-center p-2 rounded ${
+                                  winner === 1 && isCompleted ? "bg-green-100 font-bold" : ""
+                                }`}>
+                                  <span className="text-sm truncate flex-1">
+                                    {match.player1_name || "TBD"}
+                                  </span>
+                                  <span className={`text-sm font-bold ml-2 ${
+                                    winner === 1 ? "text-green-600" : ""
+                                  }`}>
+                                    {isInProgress || isCompleted ? match.sets_player1 : "-"}
+                                  </span>
+                                </div>
+                                
+                                <div className="border-t border-gray-200 my-1"></div>
+                                
+                                <div className={`flex justify-between items-center p-2 rounded ${
+                                  winner === 2 && isCompleted ? "bg-green-100 font-bold" : ""
+                                }`}>
+                                  <span className="text-sm truncate flex-1">
+                                    {match.player2_name || "TBD"}
+                                  </span>
+                                  <span className={`text-sm font-bold ml-2 ${
+                                    winner === 2 ? "text-green-600" : ""
+                                  }`}>
+                                    {isInProgress || isCompleted ? match.sets_player2 : "-"}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <div className={`px-2 py-1 text-xs text-center ${
+                                isInProgress 
+                                  ? "bg-blue-500 text-white" 
+                                  : isCompleted 
+                                  ? "bg-green-500 text-white" 
+                                  : "bg-gray-200"
+                              }`}>
+                                {isInProgress ? "En cours" : isCompleted ? "Termine" : "A venir"}
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+
+                      {round === maxRound - 1 && hasThirdPlace && (
+                        <div className="mt-8 pt-4 border-t-2 border-dashed">
+                          <div className="text-center mb-2">
+                            <Badge variant="outline" className="text-xs">
+                              <Medal className="h-3 w-3 mr-1" />
+                              Petite Finale
+                            </Badge>
+                          </div>
+                          <div className="border-2 border-orange-300 rounded-lg overflow-hidden">
+                            <div className="bg-orange-50 p-2">
+                              <div className="flex justify-between items-center p-2">
+                                <span className="text-sm">Perdant 1/2 A</span>
+                                <span className="text-sm font-bold">-</span>
+                              </div>
+                              <div className="border-t border-gray-200 my-1"></div>
+                              <div className="flex justify-between items-center p-2">
+                                <span className="text-sm">Perdant 1/2 B</span>
+                                <span className="text-sm font-bold">-</span>
+                              </div>
+                            </div>
+                            <div className="bg-orange-200 px-2 py-1 text-xs text-center">
+                              3e place
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {eliminationType === "double" && (
+        <Card className="border-orange-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-orange-700">
+              <GitBranch className="h-5 w-5 rotate-180" />
+              Tableau des perdants (Losers Bracket)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-center py-8">
+              Le tableau des perdants sera genere automatiquement lors de la creation des matchs
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import { 
   Settings, Lock, Trophy, Users, LayoutGrid, 
   Coffee, Plus, Trash2, Loader2, AlertCircle,
-  CheckCircle, Play, Square, LogOut, Pencil
+  CheckCircle, Play, Square, LogOut, Pencil, QrCode, RotateCw
 } from "lucide-react";
 
 interface Tournament {
@@ -43,6 +43,8 @@ interface Room {
   id: string;
   name: string;
   description: string;
+  rows: number;
+  tables_per_row: number;
 }
 
 interface Table {
@@ -51,6 +53,9 @@ interface Table {
   room: string;
   room_name: string;
   status: string;
+  position_row: number;
+  position_col: number;
+  orientation: string;
 }
 
 interface Match {
@@ -106,9 +111,10 @@ export default function AdminPage() {
     min_points: "", max_points: "", max_players: "16", entry_fee: "5",
     day: "", checkin_end: "", start_time: ""
   });
-  const [newRoom, setNewRoom] = useState({ name: "", description: "" });
-  const [newTable, setNewTable] = useState({ room: "", table_number: "" });
+  const [newRoom, setNewRoom] = useState({ name: "", rows: "2", tables_per_row: "4" });
+  const [newTable, setNewTable] = useState({ room: "" });
   const [newMatch, setNewMatch] = useState({ bracket: "", player1: "", player2: "" });
+  const [registrations, setRegistrations] = useState<any[]>([]);
   const [newSection, setNewSection] = useState({ name: "" });
   const [newItem, setNewItem] = useState({ section: "", name: "", price: "" });
 
@@ -165,18 +171,20 @@ export default function AdminPage() {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [tournamentsData, roomsData, tablesData, playersData, sectionsData] = await Promise.all([
+      const [tournamentsData, roomsData, tablesData, playersData, sectionsData, registrationsData] = await Promise.all([
         api.tournaments.list(),
         api.rooms.list(),
         api.tables.list(),
         api.players.list(),
         api.menuSections.list(),
+        api.registrations.list({}),
       ]);
       setTournaments(tournamentsData);
       setRooms(roomsData);
       setTables(tablesData);
       setPlayers(playersData);
       setMenuSections(sectionsData);
+      setRegistrations(registrationsData);
 
       if (tournamentsData.length > 0) {
         const bracketsData = await api.brackets.list(tournamentsData[0].id);
@@ -198,6 +206,16 @@ export default function AdminPage() {
   const showSuccess = (msg: string) => {
     setSuccess(msg);
     setTimeout(() => setSuccess(null), 3000);
+  };
+
+  const sortedBrackets = [...brackets].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+
+  const getPlayersForBracket = (bracketId: string) => {
+    if (!bracketId) return players;
+    const bracketPlayerIds = registrations
+      .filter(r => r.bracket === bracketId)
+      .map(r => r.player);
+    return players.filter(p => bracketPlayerIds.includes(p.id));
   };
 
   const createTournament = async () => {
@@ -235,8 +253,12 @@ export default function AdminPage() {
 
   const createRoom = async () => {
     try {
-      await api.rooms.create(newRoom);
-      setNewRoom({ name: "", description: "" });
+      await api.rooms.create({
+        name: newRoom.name,
+        rows: parseInt(newRoom.rows),
+        tables_per_row: parseInt(newRoom.tables_per_row),
+      });
+      setNewRoom({ name: "", rows: "2", tables_per_row: "4" });
       fetchAllData();
       showSuccess("Salle creee");
     } catch (err: any) {
@@ -246,16 +268,33 @@ export default function AdminPage() {
 
   const createTable = async () => {
     try {
+      const maxTableNumber = tables.length > 0 
+        ? Math.max(...tables.map(t => t.table_number)) 
+        : 0;
       await api.tables.create({
         room: newTable.room,
-        table_number: parseInt(newTable.table_number),
+        table_number: maxTableNumber + 1,
       });
-      setNewTable({ room: "", table_number: "" });
+      setNewTable({ room: "" });
       fetchAllData();
       showSuccess("Table creee");
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  const updateTablePosition = async (tableId: string, data: { position_row?: number; position_col?: number; orientation?: string }) => {
+    try {
+      await api.tables.update(tableId, data);
+      fetchAllData();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const toggleTableOrientation = async (table: Table) => {
+    const newOrientation = table.orientation === 'horizontal' ? 'vertical' : 'horizontal';
+    await updateTablePosition(table.id, { orientation: newOrientation });
   };
 
   const createMatch = async () => {
@@ -557,6 +596,10 @@ export default function AdminPage() {
             <Coffee className="h-4 w-4" />
             <span className="hidden md:inline">Menu</span>
           </TabsTrigger>
+          <TabsTrigger value="qrcode" className="flex items-center gap-1">
+            <QrCode className="h-4 w-4" />
+            <span className="hidden md:inline">QRCode</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="tournaments" className="mt-6 space-y-6">
@@ -728,7 +771,7 @@ export default function AdminPage() {
                 <p className="text-muted-foreground">Aucun tableau</p>
               ) : (
                 <div className="space-y-2">
-                  {brackets.map((b) => {
+                  {sortedBrackets.map((b) => {
                     const remaining = b.max_players - (b.registered_count || 0);
                     return (
                       <div key={b.id} className="flex justify-between items-center p-3 border rounded">
@@ -767,7 +810,7 @@ export default function AdminPage() {
               <CardTitle>Creer une salle</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label>Nom</Label>
                   <Input
@@ -777,30 +820,43 @@ export default function AdminPage() {
                   />
                 </div>
                 <div>
-                  <Label>Description</Label>
+                  <Label>Nombre de rangees</Label>
                   <Input
-                    value={newRoom.description}
-                    onChange={(e) => setNewRoom({ ...newRoom, description: e.target.value })}
+                    type="number"
+                    min="1"
+                    value={newRoom.rows}
+                    onChange={(e) => setNewRoom({ ...newRoom, rows: e.target.value })}
+                    placeholder="2"
+                  />
+                </div>
+                <div>
+                  <Label>Tables par rangee</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={newRoom.tables_per_row}
+                    onChange={(e) => setNewRoom({ ...newRoom, tables_per_row: e.target.value })}
+                    placeholder="4"
                   />
                 </div>
               </div>
               <Button onClick={createRoom} disabled={!newRoom.name}>
                 <Plus className="h-4 w-4 mr-2" />
-                Creer
+                Creer la salle
               </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Creer une table</CardTitle>
+              <CardTitle>Ajouter une table</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
                   <Label>Salle</Label>
-                  <Select value={newTable.room} onValueChange={(v) => setNewTable({ ...newTable, room: v })}>
-                    <SelectTrigger><SelectValue placeholder="Selectionnez" /></SelectTrigger>
+                  <Select value={newTable.room} onValueChange={(v) => setNewTable({ room: v })}>
+                    <SelectTrigger><SelectValue placeholder="Selectionnez une salle" /></SelectTrigger>
                     <SelectContent>
                       {rooms.map((r) => (
                         <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
@@ -808,20 +864,11 @@ export default function AdminPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>Numero</Label>
-                  <Input
-                    type="number"
-                    value={newTable.table_number}
-                    onChange={(e) => setNewTable({ ...newTable, table_number: e.target.value })}
-                    placeholder="1"
-                  />
-                </div>
+                <Button onClick={createTable} disabled={!newTable.room}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Ajouter (Table #{tables.length > 0 ? Math.max(...tables.map(t => t.table_number)) + 1 : 1})
+                </Button>
               </div>
-              <Button onClick={createTable} disabled={!newTable.room || !newTable.table_number}>
-                <Plus className="h-4 w-4 mr-2" />
-                Creer
-              </Button>
             </CardContent>
           </Card>
 
@@ -833,34 +880,78 @@ export default function AdminPage() {
               {rooms.length === 0 ? (
                 <p className="text-muted-foreground">Aucune salle</p>
               ) : (
-                <div className="space-y-4">
-                  {rooms.map((room) => (
-                    <div key={room.id} className="border rounded p-4">
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-medium">{room.name}</h4>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => setEditRoom(room)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => deleteItem("room", room.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {tables.filter(t => t.room === room.id).map((table) => (
-                          <div key={table.id} className="flex items-center gap-2 p-2 bg-gray-100 rounded">
-                            <Badge variant={table.status === "free" ? "success" : "destructive"}>
-                              Table {table.table_number}
-                            </Badge>
-                            <Button variant="ghost" size="sm" onClick={() => deleteItem("table", table.id)}>
-                              <Trash2 className="h-3 w-3" />
+                <div className="space-y-6">
+                  {rooms.map((room) => {
+                    const roomTables = tables.filter(t => t.room === room.id);
+                    const gridRows = room.rows || 2;
+                    const gridCols = room.tables_per_row || 4;
+                    
+                    return (
+                      <div key={room.id} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-center mb-4">
+                          <div>
+                            <h4 className="font-medium text-lg">{room.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Grille: {gridRows} rangees x {gridCols} tables/rangee
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setEditRoom(room)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => deleteItem("room", room.id)}>
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
-                        ))}
+                        </div>
+                        
+                        <div 
+                          className="grid gap-3 p-4 bg-gray-50 rounded-lg"
+                          style={{ 
+                            gridTemplateColumns: `repeat(${gridCols}, minmax(80px, 1fr))`,
+                            gridTemplateRows: `repeat(${gridRows}, 60px)`
+                          }}
+                        >
+                          {roomTables.map((table) => (
+                            <div 
+                              key={table.id}
+                              className={`relative flex items-center justify-center rounded border-2 cursor-move
+                                ${table.status === "free" 
+                                  ? "bg-green-100 border-green-500" 
+                                  : "bg-red-100 border-red-500"}
+                                ${table.orientation === 'vertical' ? 'transform rotate-90' : ''}`}
+                            >
+                              <span className={`text-sm font-bold ${table.orientation === 'vertical' ? 'transform -rotate-90' : ''}`}>
+                                T{table.table_number}
+                              </span>
+                              <div className="absolute -top-2 -right-2 flex gap-1">
+                                <Button 
+                                  variant="outline" 
+                                  size="icon" 
+                                  className="h-5 w-5 bg-white"
+                                  onClick={() => toggleTableOrientation(table)}
+                                >
+                                  <RotateCw className="h-3 w-3" />
+                                </Button>
+                                <Button 
+                                  variant="destructive" 
+                                  size="icon" 
+                                  className="h-5 w-5"
+                                  onClick={() => deleteItem("table", table.id)}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {roomTables.length} table(s) dans cette salle - Cliquez sur le bouton rotation pour changer l'orientation
+                        </p>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -876,10 +967,10 @@ export default function AdminPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label>Tableau</Label>
-                  <Select value={newMatch.bracket} onValueChange={(v) => setNewMatch({ ...newMatch, bracket: v })}>
+                  <Select value={newMatch.bracket} onValueChange={(v) => setNewMatch({ bracket: v, player1: "", player2: "" })}>
                     <SelectTrigger><SelectValue placeholder="Selectionnez" /></SelectTrigger>
                     <SelectContent>
-                      {brackets.map((b) => (
+                      {sortedBrackets.map((b) => (
                         <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -887,10 +978,14 @@ export default function AdminPage() {
                 </div>
                 <div>
                   <Label>Joueur 1</Label>
-                  <Select value={newMatch.player1} onValueChange={(v) => setNewMatch({ ...newMatch, player1: v })}>
-                    <SelectTrigger><SelectValue placeholder="Selectionnez" /></SelectTrigger>
+                  <Select 
+                    value={newMatch.player1} 
+                    onValueChange={(v) => setNewMatch({ ...newMatch, player1: v })}
+                    disabled={!newMatch.bracket}
+                  >
+                    <SelectTrigger><SelectValue placeholder={newMatch.bracket ? "Selectionnez" : "Choisissez d'abord un tableau"} /></SelectTrigger>
                     <SelectContent>
-                      {players.map((p) => (
+                      {getPlayersForBracket(newMatch.bracket).map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.last_name} {p.first_name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -898,16 +993,25 @@ export default function AdminPage() {
                 </div>
                 <div>
                   <Label>Joueur 2</Label>
-                  <Select value={newMatch.player2} onValueChange={(v) => setNewMatch({ ...newMatch, player2: v })}>
-                    <SelectTrigger><SelectValue placeholder="Selectionnez" /></SelectTrigger>
+                  <Select 
+                    value={newMatch.player2} 
+                    onValueChange={(v) => setNewMatch({ ...newMatch, player2: v })}
+                    disabled={!newMatch.bracket}
+                  >
+                    <SelectTrigger><SelectValue placeholder={newMatch.bracket ? "Selectionnez" : "Choisissez d'abord un tableau"} /></SelectTrigger>
                     <SelectContent>
-                      {players.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.last_name} {p.first_name}</SelectItem>
-                      ))}
+                      {getPlayersForBracket(newMatch.bracket)
+                        .filter(p => p.id !== newMatch.player1)
+                        .map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.last_name} {p.first_name}</SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+              {newMatch.bracket && getPlayersForBracket(newMatch.bracket).length === 0 && (
+                <p className="text-sm text-orange-600">Aucun joueur inscrit dans ce tableau</p>
+              )}
               <Button onClick={createMatch} disabled={!newMatch.bracket || !newMatch.player1 || !newMatch.player2}>
                 <Plus className="h-4 w-4 mr-2" />
                 Creer le match
@@ -1100,6 +1204,7 @@ export default function AdminPage() {
                         <th className="text-left py-2">Club</th>
                         <th className="text-left py-2">Points</th>
                         <th className="text-left py-2">Email</th>
+                        <th className="text-left py-2">Tel</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1110,12 +1215,53 @@ export default function AdminPage() {
                           <td className="py-2">{player.club}</td>
                           <td className="py-2">{player.ranking || player.points}</td>
                           <td className="py-2">{player.email}</td>
+                          <td className="py-2">{player.phone || "-"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="qrcode" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <QrCode className="h-5 w-5" />
+                QR Code de l'application
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center gap-6">
+              <p className="text-muted-foreground text-center max-w-md">
+                Scannez ce QR Code avec votre smartphone pour acceder a l'application de tournoi depuis n'importe quel appareil mobile.
+              </p>
+              <div className="bg-white p-6 rounded-lg border-2 border-gray-200 shadow-lg">
+                <div className="w-64 h-64 flex items-center justify-center bg-gray-100 rounded">
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')}`}
+                    alt="QR Code de l'application"
+                    className="w-64 h-64"
+                  />
+                </div>
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground mb-2">URL de l'application:</p>
+                <code className="px-3 py-1 bg-gray-100 rounded text-sm">
+                  {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}
+                </code>
+              </div>
+              <div className="bg-blue-50 p-4 rounded-lg w-full max-w-md">
+                <h4 className="font-medium text-blue-800 mb-2">Instructions:</h4>
+                <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                  <li>Ouvrez l'appareil photo de votre smartphone</li>
+                  <li>Pointez vers le QR Code</li>
+                  <li>Touchez la notification pour ouvrir le lien</li>
+                  <li>Ajoutez la page a votre ecran d'accueil (optionnel)</li>
+                </ol>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -135,6 +135,8 @@ export default function InscriptionPage() {
       return;
     }
 
+    const bracket = brackets.find(b => b.id === bracketId);
+    const bracketDay = bracket?.day || "default";
     const newBracketSelections = selectedBrackets.filter(id => !existingRegistrations.includes(id));
     const isSelected = newBracketSelections.includes(bracketId);
     
@@ -143,10 +145,15 @@ export default function InscriptionPage() {
         ...existingRegistrations,
         ...newBracketSelections.filter(id => id !== bracketId)
       ]);
+      setSubmitError(null);
     } else {
-      const totalSelected = existingRegistrations.length + newBracketSelections.length;
-      if (totalSelected >= 2) {
-        setSubmitError("Un joueur ne peut pas s'inscrire a plus de 2 tableaux par tournoi");
+      const selectedForDay = [...existingRegistrations, ...newBracketSelections].filter(id => {
+        const b = brackets.find(br => br.id === id);
+        return (b?.day || "default") === bracketDay;
+      });
+      
+      if (selectedForDay.length >= 2) {
+        setSubmitError(`Vous avez deja selectionne 2 tableaux sur cette journee (${bracketDay})`);
         return;
       }
       setSelectedBrackets([
@@ -154,8 +161,29 @@ export default function InscriptionPage() {
         ...newBracketSelections,
         bracketId
       ]);
+      setSubmitError(null);
     }
-    setSubmitError(null);
+  };
+
+  const getSelectionsForDay = (day: string) => {
+    const newSelections = selectedBrackets.filter(id => !existingRegistrations.includes(id));
+    return [...existingRegistrations, ...newSelections].filter(id => {
+      const b = brackets.find(br => br.id === id);
+      return (b?.day || "default") === day;
+    }).length;
+  };
+
+  const canSelectBracket = (bracket: Bracket) => {
+    if (existingRegistrations.includes(bracket.id)) return false;
+    if (bracket.registered_count >= bracket.max_players) return false;
+    if (selectedBrackets.includes(bracket.id)) return true;
+    
+    const bracketDay = bracket.day || "default";
+    return getSelectionsForDay(bracketDay) < 2;
+  };
+
+  const sortBracketsAlphabetically = (bracketsList: Bracket[]) => {
+    return [...bracketsList].sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const getRecommendedBrackets = () => {
@@ -259,7 +287,8 @@ export default function InscriptionPage() {
     .filter(id => !existingRegistrations.includes(id))
     .reduce((sum, id) => {
       const bracket = brackets.find(b => b.id === id);
-      return sum + (bracket?.entry_fee || 0);
+      const fee = Number(bracket?.entry_fee) || 0;
+      return sum + fee;
     }, 0);
 
   return (
@@ -390,7 +419,7 @@ export default function InscriptionPage() {
                   Selection des tableaux
                 </CardTitle>
                 <CardDescription>
-                  Maximum 2 tableaux par joueur
+                  Maximum 2 tableaux par jour par joueur
                   {existingRegistrations.length > 0 && (
                     <span className="text-blue-600 ml-2">
                       ({existingRegistrations.length} deja inscrit{existingRegistrations.length > 1 ? "s" : ""})
@@ -405,15 +434,7 @@ export default function InscriptionPage() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {existingRegistrations.length >= 2 && (
-                      <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-md">
-                        <p className="text-sm text-orange-800 font-medium">
-                          Vous avez atteint le maximum de 2 tableaux par joueur.
-                        </p>
-                      </div>
-                    )}
-
-                    {recommendedBrackets.length > 0 && playerData.points && existingRegistrations.length < 2 && (
+                    {recommendedBrackets.length > 0 && playerData.points && (
                       <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
                         <p className="text-sm text-green-800 font-medium">
                           Tableaux recommandes pour votre classement ({playerData.points} pts)
@@ -421,14 +442,15 @@ export default function InscriptionPage() {
                       </div>
                     )}
 
-                    {brackets.map((bracket) => {
+                    {sortBracketsAlphabetically(brackets).map((bracket) => {
                       const isSelected = selectedBrackets.includes(bracket.id);
                       const isExisting = existingRegistrations.includes(bracket.id);
                       const isRecommended = recommendedBrackets.some(b => b.id === bracket.id);
                       const isFull = bracket.registered_count >= bracket.max_players;
-                      const canSelect = !isExisting && !isFull && (
-                        isSelected || totalNewSelections + existingRegistrations.length < 2
-                      );
+                      const bracketDay = bracket.day || "default";
+                      const dayCount = getSelectionsForDay(bracketDay);
+                      const isDayFull = !isSelected && dayCount >= 2;
+                      const canSelect = !isExisting && !isFull && !isDayFull;
 
                       return (
                         <motion.div
@@ -441,6 +463,8 @@ export default function InscriptionPage() {
                               ? "border-green-500 bg-green-50"
                               : isFull
                               ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-60"
+                              : isDayFull
+                              ? "border-orange-200 bg-orange-50 cursor-not-allowed opacity-80"
                               : isRecommended
                               ? "border-green-200 hover:border-green-400"
                               : "border-gray-200 hover:border-gray-400"
@@ -451,7 +475,7 @@ export default function InscriptionPage() {
                             <div>
                               <h4 className="font-semibold flex items-center gap-2">
                                 {bracket.name}
-                                {isRecommended && !isExisting && (
+                                {isRecommended && !isExisting && !isDayFull && (
                                   <Badge variant="success" className="text-xs">Recommande</Badge>
                                 )}
                                 {isExisting && (
@@ -460,6 +484,9 @@ export default function InscriptionPage() {
                                 {isFull && !isExisting && (
                                   <Badge variant="destructive" className="text-xs">Complet</Badge>
                                 )}
+                                {isDayFull && !isFull && !isExisting && (
+                                  <Badge variant="warning" className="text-xs">2 tableaux/jour</Badge>
+                                )}
                               </h4>
                               <p className="text-sm text-muted-foreground">{bracket.category}</p>
                               {(bracket.day || bracket.checkin_end || bracket.start_time) && (
@@ -467,6 +494,11 @@ export default function InscriptionPage() {
                                   {bracket.day && <span>{bracket.day}</span>}
                                   {bracket.checkin_end && <span> | Pointage: {bracket.checkin_end}</span>}
                                   {bracket.start_time && <span> | Debut: {bracket.start_time}</span>}
+                                </p>
+                              )}
+                              {isDayFull && !isFull && !isExisting && (
+                                <p className="text-xs text-orange-600 mt-1 font-medium">
+                                  Vous avez deja selectionne 2 tableaux sur cette journee
                                 </p>
                               )}
                               <p className={`text-xs mt-1 ${
