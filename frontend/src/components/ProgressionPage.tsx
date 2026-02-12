@@ -159,62 +159,6 @@ export default function ProgressionPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitBranch className="h-5 w-5" />
-            Configuration du tournoi
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-6">
-            <div className="flex items-center gap-4">
-              <Label className="font-medium">Type d'elimination:</Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={eliminationType === "single" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setEliminationType("single")}
-                >
-                  Simple (OK)
-                </Button>
-                <Button
-                  variant={eliminationType === "double" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setEliminationType("double")}
-                >
-                  Double (KO)
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Label className="font-medium">Match 3e place:</Label>
-              <Button
-                variant={hasThirdPlace ? "default" : "outline"}
-                size="sm"
-                onClick={() => setHasThirdPlace(!hasThirdPlace)}
-              >
-                <Medal className="h-4 w-4 mr-1" />
-                {hasThirdPlace ? "Active" : "Desactive"}
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-            <p className="text-sm font-medium mb-2">Etiquettes de tours:</p>
-            <div className="flex flex-wrap gap-2">
-              {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", 
-                hasThirdPlace ? "Petite Finale" : null, "Finale"]
-                .filter(Boolean)
-                .map((label, index) => (
-                  <Badge key={index} variant="outline">{label}</Badge>
-                ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Arbre du tournoi</CardTitle>
           <CardDescription>
             {eliminationType === "single" ? "Elimination simple" : "Double elimination"} 

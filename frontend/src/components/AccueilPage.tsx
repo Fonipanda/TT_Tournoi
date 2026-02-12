@@ -305,14 +305,26 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
               Scannez ce QR Code pour acceder a l'application sur votre smartphone
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex justify-center">
-            <div className="p-4 bg-white rounded-lg shadow-inner border">
-              <div className="w-48 h-48 bg-gray-100 flex items-center justify-center rounded">
-                <QrCode className="h-32 w-32 text-gray-400" />
-              </div>
-              <p className="text-center text-sm text-muted-foreground mt-2">
-                QR Code genere dans Admin
-              </p>
+          <CardContent className="flex flex-col items-center gap-4">
+            <div className="bg-white p-4 rounded-lg border-2 border-gray-200 shadow-lg">
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')}`}
+                alt="QR Code de l'application"
+                className="w-48 h-48"
+              />
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground mb-1">URL de l'application:</p>
+              <code className="px-2 py-1 bg-gray-100 rounded text-xs">
+                {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}
+              </code>
+            </div>
+            <div className="bg-blue-50 p-3 rounded-lg w-full max-w-sm text-sm">
+              <ol className="text-blue-700 space-y-1 list-decimal list-inside">
+                <li>Ouvrez l'appareil photo</li>
+                <li>Pointez vers le QR Code</li>
+                <li>Touchez le lien pour ouvrir</li>
+              </ol>
             </div>
           </CardContent>
         </Card>
@@ -346,44 +358,6 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
               <p className="text-sm text-muted-foreground text-center">
                 Acces : Parking disponible sur place
               </p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8 }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle>Contact</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap justify-center gap-8">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-full">
-                  <Mail className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Email</p>
-                  <a href="mailto:ttchelles@gmail.com" className="font-medium hover:text-blue-600">
-                    ttchelles@gmail.com
-                  </a>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-full">
-                  <Phone className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Telephone</p>
-                  <a href="tel:0779946356" className="font-medium hover:text-green-600">
-                    07 79 94 63 56
-                  </a>
-                </div>
-              </div>
             </div>
           </CardContent>
         </Card>

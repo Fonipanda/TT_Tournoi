@@ -340,6 +340,7 @@ def live_tables(request):
                 'name': table.room.name
             },
             'status': table.status,
+            'orientation': table.orientation,
             'player1': {
                 'id': str(table.player1.id),
                 'name': f"{table.player1.last_name} {table.player1.first_name}",

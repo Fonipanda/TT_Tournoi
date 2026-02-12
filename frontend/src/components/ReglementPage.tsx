@@ -193,7 +193,7 @@ export default function ReglementPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Email</p>
-                  <p className="font-medium">tournoi@chellestt.fr</p>
+                  <p className="font-medium">ttchelles@gmail.com</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -211,7 +211,7 @@ export default function ReglementPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Telephone</p>
-                  <p className="font-medium">01 60 20 XX XX</p>
+                  <p className="font-medium">07 79 94 63 56</p>
                   <p className="text-xs text-muted-foreground">(le jour du tournoi)</p>
                 </div>
               </div>

@@ -12,6 +12,7 @@ interface TableData {
   table_number: number;
   room: { id: string; name: string };
   status: string;
+  orientation: string;
   player1: { id: string; name: string; club: string; ranking: string } | null;
   player2: { id: string; name: string; club: string; ranking: string } | null;
   match_start_time: string | null;
@@ -88,30 +89,40 @@ export default function LivePage() {
   const PingPongTable = ({ table, index }: { table: TableData; index: number }) => {
     const isOccupied = table.status === "occupied";
     const isFree = table.status === "free";
+    const isVertical = table.orientation === "vertical";
     
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: index * 0.05 }}
-        className="relative"
+        className={`relative ${isVertical ? 'row-span-2' : ''}`}
       >
         <div 
-          className={`relative w-full aspect-[2/1] rounded-lg border-4 ${
+          className={`relative rounded-lg border-4 ${
             isOccupied ? 'border-red-600 bg-red-700' : 'border-green-600 bg-green-700'
-          } shadow-lg overflow-hidden`}
-          style={{ minWidth: '200px', minHeight: '100px' }}
+          } shadow-lg overflow-hidden ${isVertical ? 'aspect-[1/2]' : 'aspect-[2/1]'}`}
+          style={{ minWidth: isVertical ? '100px' : '200px', minHeight: isVertical ? '200px' : '100px' }}
         >
           <div className="absolute inset-2 border-2 border-white/50 rounded">
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-white/70 transform -translate-y-1/2"></div>
-            <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/70 transform -translate-x-1/2"></div>
+            {isVertical ? (
+              <>
+                <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-white/70 transform -translate-x-1/2"></div>
+                <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-white/70 transform -translate-y-1/2"></div>
+              </>
+            ) : (
+              <>
+                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-white/70 transform -translate-y-1/2"></div>
+                <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/70 transform -translate-x-1/2"></div>
+              </>
+            )}
           </div>
           
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full">
-            <div className="h-4 bg-white/20 flex items-center justify-center">
-              <div className="h-3 w-1 bg-white/60 mx-0.5" />
-              <div className="h-3 w-1 bg-white/60 mx-0.5" />
-              <div className="h-3 w-1 bg-white/60 mx-0.5" />
+          <div className={`absolute ${isVertical ? 'left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 h-full' : 'top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full'}`}>
+            <div className={`${isVertical ? 'w-4 h-full' : 'h-4 w-full'} bg-white/20 flex items-center justify-center`}>
+              <div className={`${isVertical ? 'w-3 h-1' : 'h-3 w-1'} bg-white/60 mx-0.5`} />
+              <div className={`${isVertical ? 'w-3 h-1' : 'h-3 w-1'} bg-white/60 mx-0.5`} />
+              <div className={`${isVertical ? 'w-3 h-1' : 'h-3 w-1'} bg-white/60 mx-0.5`} />
             </div>
           </div>
 

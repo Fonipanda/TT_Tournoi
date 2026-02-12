@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import { api } from "@/lib/api";
 import { 
   Settings, Lock, Trophy, Users, LayoutGrid, 
   Coffee, Plus, Trash2, Loader2, AlertCircle,
-  CheckCircle, Play, Square, LogOut, Pencil, QrCode, RotateCw
+  CheckCircle, Play, Square, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal
 } from "lucide-react";
 
 interface Tournament {
@@ -95,6 +96,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const router = useRouter();
+
+  const [eliminationType, setEliminationType] = useState<"single" | "double">("single");
+  const [hasThirdPlace, setHasThirdPlace] = useState(true);
 
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
@@ -127,6 +132,7 @@ export default function AdminPage() {
   const [editRoom, setEditRoom] = useState<Room | null>(null);
   const [editSection, setEditSection] = useState<MenuSection | null>(null);
   const [editItem, setEditItem] = useState<MenuItem | null>(null);
+  const [draggedTable, setDraggedTable] = useState<Table | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
@@ -166,6 +172,7 @@ export default function AdminPage() {
     setShowLoginDialog(true);
     setLoginUsername("");
     setLoginPassword("");
+    router.push("/");
   };
 
   const fetchAllData = async () => {
@@ -295,6 +302,27 @@ export default function AdminPage() {
   const toggleTableOrientation = async (table: Table) => {
     const newOrientation = table.orientation === 'horizontal' ? 'vertical' : 'horizontal';
     await updateTablePosition(table.id, { orientation: newOrientation });
+  };
+
+  const handleDragStart = (e: React.DragEvent, table: Table) => {
+    setDraggedTable(table);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetRow: number, targetCol: number, roomId: string) => {
+    e.preventDefault();
+    if (!draggedTable || draggedTable.room !== roomId) return;
+    
+    await updateTablePosition(draggedTable.id, { 
+      position_row: targetRow, 
+      position_col: targetCol 
+    });
+    setDraggedTable(null);
   };
 
   const createMatch = async () => {
@@ -599,6 +627,10 @@ export default function AdminPage() {
           <TabsTrigger value="qrcode" className="flex items-center gap-1">
             <QrCode className="h-4 w-4" />
             <span className="hidden md:inline">QRCode</span>
+          </TabsTrigger>
+          <TabsTrigger value="bracket-tree" className="flex items-center gap-1">
+            <GitBranch className="h-4 w-4" />
+            <span className="hidden md:inline">Arbre Tournoi</span>
           </TabsTrigger>
         </TabsList>
 
@@ -912,42 +944,62 @@ export default function AdminPage() {
                             gridTemplateRows: `repeat(${gridRows}, 60px)`
                           }}
                         >
-                          {roomTables.map((table) => (
-                            <div 
-                              key={table.id}
-                              className={`relative flex items-center justify-center rounded border-2 cursor-move
-                                ${table.status === "free" 
-                                  ? "bg-green-100 border-green-500" 
-                                  : "bg-red-100 border-red-500"}
-                                ${table.orientation === 'vertical' ? 'transform rotate-90' : ''}`}
-                            >
-                              <span className={`text-sm font-bold ${table.orientation === 'vertical' ? 'transform -rotate-90' : ''}`}>
-                                T{table.table_number}
-                              </span>
-                              <div className="absolute -top-2 -right-2 flex gap-1">
-                                <Button 
-                                  variant="outline" 
-                                  size="icon" 
-                                  className="h-5 w-5 bg-white"
-                                  onClick={() => toggleTableOrientation(table)}
-                                >
-                                  <RotateCw className="h-3 w-3" />
-                                </Button>
-                                <Button 
-                                  variant="destructive" 
-                                  size="icon" 
-                                  className="h-5 w-5"
-                                  onClick={() => deleteItem("table", table.id)}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
+                          {Array.from({ length: gridRows * gridCols }).map((_, idx) => {
+                            const row = Math.floor(idx / gridCols);
+                            const col = idx % gridCols;
+                            const tableAtPosition = roomTables.find(
+                              t => t.position_row === row && t.position_col === col
+                            ) || roomTables[idx];
+                            
+                            return (
+                              <div
+                                key={`${room.id}-${row}-${col}`}
+                                className={`relative flex items-center justify-center rounded border-2 transition-colors
+                                  ${tableAtPosition
+                                    ? tableAtPosition.status === "free"
+                                      ? "bg-green-100 border-green-500 cursor-move"
+                                      : "bg-red-100 border-red-500 cursor-move"
+                                    : "bg-gray-200 border-dashed border-gray-300"
+                                  } ${draggedTable && !tableAtPosition ? "hover:bg-blue-100 hover:border-blue-400" : ""}`}
+                                draggable={!!tableAtPosition}
+                                onDragStart={(e) => tableAtPosition && handleDragStart(e, tableAtPosition)}
+                                onDragOver={handleDragOver}
+                                onDrop={(e) => handleDrop(e, row, col, room.id)}
+                              >
+                                {tableAtPosition ? (
+                                  <>
+                                    <span className={`text-sm font-bold ${tableAtPosition.orientation === 'vertical' ? 'writing-mode-vertical' : ''}`}>
+                                      T{tableAtPosition.table_number}
+                                    </span>
+                                    <div className="absolute -top-2 -right-2 flex gap-1">
+                                      <Button 
+                                        variant="outline" 
+                                        size="icon" 
+                                        className="h-5 w-5 bg-white"
+                                        onClick={(e) => { e.stopPropagation(); toggleTableOrientation(tableAtPosition); }}
+                                      >
+                                        <RotateCw className="h-3 w-3" />
+                                      </Button>
+                                      <Button 
+                                        variant="destructive" 
+                                        size="icon" 
+                                        className="h-5 w-5"
+                                        onClick={(e) => { e.stopPropagation(); deleteItem("table", tableAtPosition.id); }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-gray-400">Vide</span>
+                                )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         
                         <p className="text-xs text-muted-foreground mt-2">
-                          {roomTables.length} table(s) dans cette salle - Cliquez sur le bouton rotation pour changer l'orientation
+                          {roomTables.length} table(s) dans cette salle - Glissez-deposez pour reorganiser, cliquez sur rotation pour changer l'orientation
                         </p>
                       </div>
                     );
@@ -1203,21 +1255,33 @@ export default function AdminPage() {
                         <th className="text-left py-2">Licence</th>
                         <th className="text-left py-2">Club</th>
                         <th className="text-left py-2">Points</th>
+                        <th className="text-left py-2">Tableau(x)</th>
                         <th className="text-left py-2">Email</th>
                         <th className="text-left py-2">Tel</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {players.map((player) => (
-                        <tr key={player.id} className="border-b">
-                          <td className="py-2">{player.last_name} {player.first_name}</td>
-                          <td className="py-2">{player.license_number}</td>
-                          <td className="py-2">{player.club}</td>
-                          <td className="py-2">{player.ranking || player.points}</td>
-                          <td className="py-2">{player.email}</td>
-                          <td className="py-2">{player.phone || "-"}</td>
-                        </tr>
-                      ))}
+                      {players.map((player) => {
+                        const playerBrackets = registrations
+                          .filter(r => r.player === player.id)
+                          .map(r => {
+                            const bracket = brackets.find(b => b.id === r.bracket);
+                            return bracket?.name || "";
+                          })
+                          .filter(Boolean)
+                          .join(", ");
+                        return (
+                          <tr key={player.id} className="border-b">
+                            <td className="py-2">{player.last_name} {player.first_name}</td>
+                            <td className="py-2">{player.license_number}</td>
+                            <td className="py-2">{player.club}</td>
+                            <td className="py-2">{player.ranking || player.points}</td>
+                            <td className="py-2">{playerBrackets || "-"}</td>
+                            <td className="py-2">{player.email}</td>
+                            <td className="py-2">{player.phone || "-"}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1261,6 +1325,104 @@ export default function AdminPage() {
                   <li>Touchez la notification pour ouvrir le lien</li>
                   <li>Ajoutez la page a votre ecran d'accueil (optionnel)</li>
                 </ol>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bracket-tree" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <GitBranch className="h-5 w-5" />
+                Configuration du tournoi
+              </CardTitle>
+              <CardDescription>
+                Configurez le format d'elimination et les options du tournoi
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-6">
+                <div className="flex items-center gap-4">
+                  <Label className="font-medium">Type d'elimination:</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={eliminationType === "single" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setEliminationType("single")}
+                    >
+                      Simple (OK)
+                    </Button>
+                    <Button
+                      variant={eliminationType === "double" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setEliminationType("double")}
+                    >
+                      Double (KO)
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <Label className="font-medium">Match 3e place:</Label>
+                  <Button
+                    variant={hasThirdPlace ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setHasThirdPlace(!hasThirdPlace)}
+                  >
+                    <Medal className="h-4 w-4 mr-1" />
+                    {hasThirdPlace ? "Active" : "Desactive"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm font-medium mb-2">Etiquettes de tours:</p>
+                <div className="flex flex-wrap gap-2">
+                  {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", 
+                    hasThirdPlace ? "Petite Finale" : null, "Finale"]
+                    .filter(Boolean)
+                    .map((label, index) => (
+                      <Badge key={index} variant="outline">{label}</Badge>
+                    ))}
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-blue-800 mb-2">Comment utiliser</h4>
+                <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
+                  <li><strong>Elimination simple</strong>: Un joueur est elimine apres une defaite</li>
+                  <li><strong>Double elimination</strong>: Un joueur doit perdre deux fois pour etre elimine</li>
+                  <li><strong>Match 3e place</strong>: Les perdants des demi-finales s'affrontent</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Apercu de la structure</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="p-4 bg-gray-100 rounded-lg">
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "Finale"].map((label, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <div className="px-3 py-2 bg-white border rounded shadow-sm text-sm font-medium">
+                        {label}
+                      </div>
+                      {index < 7 && <span className="text-gray-400">→</span>}
+                    </div>
+                  ))}
+                </div>
+                {hasThirdPlace && (
+                  <div className="mt-4 text-center">
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-300">
+                      <Medal className="h-3 w-3 mr-1" />
+                      Petite Finale (3e place)
+                    </Badge>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
