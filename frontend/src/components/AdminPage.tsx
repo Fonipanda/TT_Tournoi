@@ -61,9 +61,14 @@ interface Table {
 
 interface Match {
   id: string;
+  player1: string;
+  player2: string;
   player1_name: string;
   player2_name: string;
+  winner: string | null;
   bracket_name: string;
+  round_name: string;
+  round_number: number;
   status: string;
   table_number: number | null;
   sets_player1: number;
@@ -384,15 +389,17 @@ export default function AdminPage() {
     }
   };
 
-  const finishMatch = async () => {
+  const finishMatch = async (winnerId?: string) => {
     if (!selectedMatch) return;
     try {
-      await api.matches.finish(selectedMatch.id, {
-        sets_player1: parseInt(finishScore.sets_player1),
-        sets_player2: parseInt(finishScore.sets_player2),
-        score_player1: 0,
-        score_player2: 0,
-      });
+      const payload: any = {};
+      if (winnerId) {
+        payload.winner_id = winnerId;
+      } else {
+        payload.sets_player1 = parseInt(finishScore.sets_player1);
+        payload.sets_player2 = parseInt(finishScore.sets_player2);
+      }
+      await api.matches.finish(selectedMatch.id, payload);
       setSelectedMatch(null);
       setFinishScore({ sets_player1: "", sets_player2: "" });
       fetchAllData();
@@ -401,6 +408,36 @@ export default function AdminPage() {
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  const deleteTreeMatch = async (matchId: string) => {
+    try {
+      await api.matches.delete(matchId);
+      await refreshTreeMatches();
+      fetchAllData();
+      showSuccess("Match supprime");
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const deleteEntireTree = async () => {
+    if (!treeBracketId) return;
+    try {
+      for (const m of treeMatches) {
+        await api.matches.delete(m.id);
+      }
+      setTreeMatches([]);
+      setTreeGenerated(false);
+      fetchAllData();
+      showSuccess("Arbre supprime");
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const modifyTree = () => {
+    setTreeGenerated(false);
   };
 
   const createMenuSection = async () => {
@@ -1607,7 +1644,7 @@ export default function AdminPage() {
             </CardContent>
           </Card>
 
-          {treeBracketId && treeSeeds.length > 0 && (
+          {treeBracketId && treeSeeds.length > 0 && !treeGenerated && (
             <>
               <Card>
                 <CardHeader>
@@ -1631,7 +1668,7 @@ export default function AdminPage() {
                           <p className="text-lg font-bold">{opt.size} joueurs / poule</p>
                           <p className="text-sm text-muted-foreground">
                             {opt.pools} poule{opt.pools > 1 ? 's' : ''}
-                            {opt.remainder > 0 && ` + 1 poule de ${opt.remainder}`}
+                            {opt.remainder > 0 && ` + ${opt.remainder} exempte(s)`}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
                             {opt.size === 2 ? `${opt.pools} matchs de pool` :
@@ -1757,106 +1794,250 @@ export default function AdminPage() {
                   <div>
                     <CardTitle>Arbre du tournoi</CardTitle>
                     <CardDescription>
-                      {treeMatches.length} matchs generes - {eliminationType === 'single' ? 'Elimination simple' : 'Double elimination'}
-                      {poolSize > 0 && ` - Poules de ${poolSize} (2 qualifies par poule)`}
+                      {treeMatches.length} matchs - {eliminationType === 'single' ? 'Elimination simple' : 'Double elimination'}
+                      {poolSize > 0 && ` - Poules de ${poolSize} (2 qualifies)`}
                     </CardDescription>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      const matchesData = await api.matches.list({ bracket_id: treeBracketId });
-                      setTreeMatches(matchesData);
-                      fetchAllData();
-                    }}
-                  >
-                    <RotateCw className="h-3 w-3 mr-1" />
-                    Rafraichir
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={async () => { const d = await api.matches.list({ bracket_id: treeBracketId }); setTreeMatches(d); fetchAllData(); }}>
+                      <RotateCw className="h-3 w-3 mr-1" /> Rafraichir
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={modifyTree}>
+                      <Pencil className="h-3 w-3 mr-1" /> Modifier
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => { if (confirm("Supprimer tout l'arbre et ses matchs ?")) deleteEntireTree(); }}>
+                      <Trash2 className="h-3 w-3 mr-1" /> Supprimer
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Cliquez sur un match pour assigner une table ou saisir le score. Les tours suivants sont generes automatiquement.
-                </p>
-                <div className="overflow-x-auto">
-                  {(() => {
-                    const roundGroups: Record<string, any[]> = {};
-                    treeMatches.forEach(m => {
-                      const rn = m.round_name || `Tour ${m.round_number || '?'}`;
-                      if (!roundGroups[rn]) roundGroups[rn] = [];
-                      roundGroups[rn].push(m);
-                    });
-                    const sortedRounds = Object.keys(roundGroups).sort((a, b) => {
-                      const ai = roundLabels.indexOf(a);
-                      const bi = roundLabels.indexOf(b);
-                      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-                    });
+                {(() => {
+                  const poolMatches = treeMatches.filter(m => (m.round_name || '').startsWith('Pool'));
+                  const elimMatches = treeMatches.filter(m => !(m.round_name || '').startsWith('Pool'));
 
-                    return (
-                      <div className="flex gap-6 min-w-max">
-                        {sortedRounds.map((roundName) => (
-                          <div key={roundName} className="flex flex-col gap-4 min-w-[240px]">
-                            <h4 className="text-center font-bold text-sm bg-gray-800 text-white py-2 rounded">
-                              {roundName}
-                            </h4>
-                            <div className="flex flex-col gap-3 justify-around flex-1">
-                              {roundGroups[roundName].map((match: any) => (
-                                <div
-                                  key={match.id}
-                                  className={`border-2 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md ${
-                                    match.status === 'finished' ? 'border-green-400' :
-                                    match.status === 'in_progress' ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300 hover:border-blue-400'
-                                  }`}
-                                  onClick={() => {
-                                    if (match.status === 'waiting' && match.player1_name && match.player2_name) {
-                                      setSelectedMatch(match);
-                                      setSelectedTable("");
-                                    } else if (match.status === 'in_progress') {
-                                      setSelectedMatch(match);
-                                      setFinishScore({ sets_player1: "", sets_player2: "" });
-                                    }
-                                  }}
-                                >
-                                  <div className={`px-3 py-2 flex justify-between items-center border-b ${
-                                    match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : 'bg-white'
-                                  }`}>
-                                    <span className="text-sm truncate flex-1">{match.player1_name || 'TBD'}</span>
-                                    {match.status === 'finished' && <span className="text-xs font-bold ml-2">{match.sets_player1}</span>}
+                  const poolGroups: Record<string, any[]> = {};
+                  poolMatches.forEach(m => {
+                    const pn = m.round_name || 'Pool';
+                    if (!poolGroups[pn]) poolGroups[pn] = [];
+                    poolGroups[pn].push(m);
+                  });
+                  const sortedPoolNames = Object.keys(poolGroups).sort();
+
+                  const elimRounds: Record<string, any[]> = {};
+                  elimMatches.forEach(m => {
+                    const rn = m.round_name || `Tour ${m.round_number}`;
+                    if (!elimRounds[rn]) elimRounds[rn] = [];
+                    elimRounds[rn].push(m);
+                  });
+                  const sortedElimRounds = Object.keys(elimRounds).sort((a, b) => {
+                    const ai = roundLabels.indexOf(a);
+                    const bi = roundLabels.indexOf(b);
+                    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+                  });
+
+                  return (
+                    <div className="space-y-8">
+                      {sortedPoolNames.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-bold mb-4">Phase de Poules</h3>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {sortedPoolNames.map((poolName) => {
+                              const pMatches = poolGroups[poolName];
+                              const playerIds = new Set<string>();
+                              pMatches.forEach(m => {
+                                if (m.player1) playerIds.add(m.player1);
+                                if (m.player2) playerIds.add(m.player2);
+                              });
+                              const playerList = Array.from(playerIds);
+                              const playerNames: Record<string, string> = {};
+                              pMatches.forEach(m => {
+                                if (m.player1) playerNames[m.player1] = m.player1_name || '?';
+                                if (m.player2) playerNames[m.player2] = m.player2_name || '?';
+                              });
+
+                              const wins: Record<string, number> = {};
+                              const matchResults: Record<string, string> = {};
+                              playerList.forEach(pid => { wins[pid] = 0; });
+                              pMatches.forEach(m => {
+                                const key1 = `${m.player1}_${m.player2}`;
+                                const key2 = `${m.player2}_${m.player1}`;
+                                if (m.status === 'finished' && m.winner) {
+                                  wins[m.winner] = (wins[m.winner] || 0) + 1;
+                                  matchResults[key1] = m.winner === m.player1 ? 'V' : 'D';
+                                  matchResults[key2] = m.winner === m.player2 ? 'V' : 'D';
+                                } else if (m.status === 'in_progress') {
+                                  matchResults[key1] = '...';
+                                  matchResults[key2] = '...';
+                                } else {
+                                  matchResults[key1] = '-';
+                                  matchResults[key2] = '-';
+                                }
+                              });
+
+                              const ranking = [...playerList].sort((a, b) => (wins[b] || 0) - (wins[a] || 0));
+                              const allDone = pMatches.every((m: any) => m.status === 'finished');
+
+                              return (
+                                <div key={poolName} className="border rounded-lg overflow-hidden">
+                                  <div className={`px-4 py-2 font-bold text-white ${allDone ? 'bg-green-700' : 'bg-blue-800'}`}>
+                                    {poolName}
+                                    {allDone && <span className="ml-2 text-xs font-normal opacity-80">- Terminee</span>}
                                   </div>
-                                  <div className={`px-3 py-2 flex justify-between items-center ${
-                                    match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : 'bg-white'
-                                  }`}>
-                                    <span className="text-sm truncate flex-1">{match.player2_name || 'TBD'}</span>
-                                    {match.status === 'finished' && <span className="text-xs font-bold ml-2">{match.sets_player2}</span>}
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="bg-gray-100">
+                                        <th className="text-left px-3 py-2 w-8">#</th>
+                                        <th className="text-left px-3 py-2">Joueur</th>
+                                        {playerList.map((_, ci) => (
+                                          <th key={ci} className="text-center px-2 py-2 w-10">{ci + 1}</th>
+                                        ))}
+                                        <th className="text-center px-3 py-2 w-10">V</th>
+                                        <th className="text-center px-3 py-2 w-20">Classement</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {ranking.map((pid, ri) => (
+                                        <tr key={pid} className={`border-t ${ri < 2 && allDone ? 'bg-green-50' : ''}`}>
+                                          <td className="px-3 py-2 font-bold text-gray-500">{ri + 1}</td>
+                                          <td className="px-3 py-2 font-medium truncate max-w-[140px]">{playerNames[pid]}</td>
+                                          {playerList.map((opId, ci) => {
+                                            const isRowPlayer = playerList.indexOf(pid);
+                                            if (isRowPlayer === ci) {
+                                              return <td key={ci} className="text-center px-2 py-2 bg-gray-200">X</td>;
+                                            }
+                                            const res = matchResults[`${pid}_${opId}`] || '-';
+                                            const match = pMatches.find((m: any) =>
+                                              (m.player1 === pid && m.player2 === opId) ||
+                                              (m.player2 === pid && m.player1 === opId)
+                                            );
+                                            return (
+                                              <td
+                                                key={ci}
+                                                className={`text-center px-2 py-2 cursor-pointer hover:bg-blue-100 transition-colors font-bold ${
+                                                  res === 'V' ? 'text-green-600' : res === 'D' ? 'text-red-500' : res === '...' ? 'text-orange-500' : 'text-gray-400'
+                                                }`}
+                                                onClick={() => {
+                                                  if (match) {
+                                                    if (match.status === 'waiting') {
+                                                      setSelectedMatch(match);
+                                                      setSelectedTable("");
+                                                    } else if (match.status === 'in_progress') {
+                                                      setSelectedMatch(match);
+                                                    }
+                                                  }
+                                                }}
+                                              >
+                                                {res}
+                                              </td>
+                                            );
+                                          })}
+                                          <td className="text-center px-3 py-2 font-bold">{wins[pid] || 0}</td>
+                                          <td className={`text-center px-3 py-2 font-bold ${
+                                            allDone ? (ri === 0 ? 'text-green-600' : ri === 1 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'
+                                          }`}>
+                                            {allDone ? (ri === 0 ? '1er' : ri === 1 ? '2eme' : `${ri + 1}eme`) : '-'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                  <div className="px-3 py-2 bg-gray-50 text-xs text-muted-foreground flex gap-3">
+                                    {pMatches.map((m: any, mi: number) => (
+                                      <button
+                                        key={m.id}
+                                        onClick={() => {
+                                          if (m.status === 'waiting' && m.player1_name && m.player2_name) {
+                                            setSelectedMatch(m); setSelectedTable("");
+                                          } else if (m.status === 'in_progress') {
+                                            setSelectedMatch(m);
+                                          }
+                                        }}
+                                        className={`px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
+                                          m.status === 'finished' ? 'bg-green-100 text-green-700' :
+                                          m.status === 'in_progress' ? 'bg-red-100 text-red-700 animate-pulse' :
+                                          'bg-gray-200 text-gray-600 hover:bg-blue-100'
+                                        }`}
+                                      >
+                                        M{mi + 1}: {(m.player1_name || '?').split(' ')[0]} vs {(m.player2_name || '?').split(' ')[0]}
+                                        {m.status === 'finished' && m.winner && ` → ${playerNames[m.winner]?.split(' ')[0] || '?'}`}
+                                        {m.table_number ? ` (T${m.table_number})` : ''}
+                                      </button>
+                                    ))}
                                   </div>
-                                  <div className={`px-3 py-1 text-xs text-center flex items-center justify-center gap-1 ${
-                                    match.status === 'in_progress' ? 'bg-red-50 text-red-700' :
-                                    match.status === 'finished' ? 'bg-green-50 text-green-700' :
-                                    match.table_number ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-500'
-                                  }`}>
-                                    {match.status === 'in_progress' && (
-                                      <><Play className="h-3 w-3" /> En cours{match.table_number ? ` - Table ${match.table_number}` : ''}</>
-                                    )}
-                                    {match.status === 'finished' && (
-                                      <><CheckCircle className="h-3 w-3" /> Termine</>
-                                    )}
-                                    {match.status === 'waiting' && match.player1_name && match.player2_name && (
-                                      <><LayoutGrid className="h-3 w-3" /> Cliquer pour assigner une table</>
-                                    )}
-                                    {match.status === 'waiting' && (!match.player1_name || !match.player2_name) && (
-                                      <>En attente des resultats</>
-                                    )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {sortedElimRounds.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-bold mb-4">Phase d'elimination</h3>
+                          <div className="overflow-x-auto">
+                            <div className="flex min-w-max">
+                              {sortedElimRounds.map((roundName, roundIdx) => (
+                                <div key={roundName} className="flex flex-col min-w-[250px]" style={{ paddingRight: roundIdx < sortedElimRounds.length - 1 ? '0' : undefined }}>
+                                  <h4 className="text-center font-bold text-sm bg-gray-800 text-white py-2 rounded-t mx-1">
+                                    {roundName}
+                                  </h4>
+                                  <div className="flex flex-col justify-around flex-1 py-2">
+                                    {elimRounds[roundName].map((match: any, matchIdx: number) => (
+                                      <div key={match.id} className="flex items-center px-1" style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                                        <div
+                                          className={`border-2 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md flex-1 ${
+                                            match.status === 'finished' ? 'border-green-400' :
+                                            match.status === 'in_progress' ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300 hover:border-blue-400'
+                                          }`}
+                                          onClick={() => {
+                                            if (match.status === 'waiting' && match.player1_name && match.player2_name) {
+                                              setSelectedMatch(match); setSelectedTable("");
+                                            } else if (match.status === 'in_progress') {
+                                              setSelectedMatch(match);
+                                            }
+                                          }}
+                                        >
+                                          <div className={`px-3 py-1.5 flex justify-between items-center border-b text-sm ${
+                                            match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : 'bg-white'
+                                          }`}>
+                                            <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
+                                            {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 ml-1" />}
+                                          </div>
+                                          <div className={`px-3 py-1.5 flex justify-between items-center text-sm ${
+                                            match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : 'bg-white'
+                                          }`}>
+                                            <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
+                                            {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 ml-1" />}
+                                          </div>
+                                          <div className={`px-2 py-0.5 text-[10px] text-center flex items-center justify-center gap-1 ${
+                                            match.status === 'in_progress' ? 'bg-red-50 text-red-700' :
+                                            match.status === 'finished' ? 'bg-green-50 text-green-700' :
+                                            match.table_number ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-500'
+                                          }`}>
+                                            {match.status === 'in_progress' && <>En cours{match.table_number ? ` - T${match.table_number}` : ''}</>}
+                                            {match.status === 'finished' && <>Termine</>}
+                                            {match.status === 'waiting' && match.player1_name && match.player2_name && <>Assigner table</>}
+                                            {match.status === 'waiting' && (!match.player1_name || !match.player2_name) && <>En attente</>}
+                                          </div>
+                                        </div>
+                                        {roundIdx < sortedElimRounds.length - 1 && (
+                                          <div className="w-8 flex items-center">
+                                            <div className="w-full border-t-2 border-gray-300" />
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               ))}
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
 
@@ -1930,39 +2111,34 @@ export default function AdminPage() {
       <Dialog open={selectedMatch !== null && selectedMatch.status === "in_progress"} onOpenChange={() => setSelectedMatch(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Terminer le match</DialogTitle>
+            <DialogTitle>Qui a gagne ?</DialogTitle>
             <DialogDescription>
               {selectedMatch?.player1_name} vs {selectedMatch?.player2_name}
+              {selectedMatch?.table_number && ` - Table ${selectedMatch.table_number}`}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Sets {selectedMatch?.player1_name?.split(" ")[0]}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="4"
-                  value={finishScore.sets_player1}
-                  onChange={(e) => setFinishScore({ ...finishScore, sets_player1: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Sets {selectedMatch?.player2_name?.split(" ")[0]}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="4"
-                  value={finishScore.sets_player2}
-                  onChange={(e) => setFinishScore({ ...finishScore, sets_player2: e.target.value })}
-                />
-              </div>
-            </div>
+          <div className="py-6 flex flex-col gap-3">
+            <Button
+              size="lg"
+              className="w-full justify-start text-left h-auto py-4 bg-blue-600 hover:bg-blue-700"
+              onClick={() => finishMatch(selectedMatch?.player1)}
+            >
+              <Trophy className="h-5 w-5 mr-3 shrink-0" />
+              <span className="font-bold text-lg">{selectedMatch?.player1_name}</span>
+            </Button>
+            <Button
+              size="lg"
+              className="w-full justify-start text-left h-auto py-4 bg-blue-600 hover:bg-blue-700"
+              onClick={() => finishMatch(selectedMatch?.player2)}
+            >
+              <Trophy className="h-5 w-5 mr-3 shrink-0" />
+              <span className="font-bold text-lg">{selectedMatch?.player2_name}</span>
+            </Button>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedMatch(null)}>Annuler</Button>
-            <Button onClick={finishMatch} disabled={!finishScore.sets_player1 || !finishScore.sets_player2}>
-              Valider le resultat
+            <Button variant="destructive" size="sm" onClick={() => { if (selectedMatch) { deleteTreeMatch(selectedMatch.id); setSelectedMatch(null); } }}>
+              <Trash2 className="h-3 w-3 mr-1" /> Supprimer le match
             </Button>
           </DialogFooter>
         </DialogContent>

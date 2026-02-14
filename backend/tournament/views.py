@@ -438,24 +438,38 @@ class MatchViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        winner_id = request.data.get('winner_id')
         sets_player1 = request.data.get('sets_player1', 0)
         sets_player2 = request.data.get('sets_player2', 0)
         score_player1 = request.data.get('score_player1', 0)
         score_player2 = request.data.get('score_player2', 0)
         
-        if sets_player1 == sets_player2:
-            return Response(
-                {'error': 'Un match ne peut pas se terminer par une égalité'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if winner_id:
+            if str(match.player1_id) == str(winner_id):
+                match.winner = match.player1
+            elif str(match.player2_id) == str(winner_id):
+                match.winner = match.player2
+            else:
+                return Response(
+                    {'error': 'Le gagnant doit etre un des deux joueurs du match'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            match.sets_player1 = sets_player1 or (1 if match.winner == match.player1 else 0)
+            match.sets_player2 = sets_player2 or (1 if match.winner == match.player2 else 0)
+        else:
+            if sets_player1 == sets_player2:
+                return Response(
+                    {'error': 'Un match ne peut pas se terminer par une egalite'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            match.sets_player1 = sets_player1
+            match.sets_player2 = sets_player2
+            match.winner = match.player1 if sets_player1 > sets_player2 else match.player2
         
-        match.sets_player1 = sets_player1
-        match.sets_player2 = sets_player2
         match.score_player1 = score_player1
         match.score_player2 = score_player2
         match.status = 'finished'
         match.end_time = timezone.now()
-        match.winner = match.player1 if sets_player1 > sets_player2 else match.player2
         match.save()
         
         if match.table:
