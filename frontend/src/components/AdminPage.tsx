@@ -145,6 +145,11 @@ export default function AdminPage() {
   const [treeGenerating, setTreeGenerating] = useState(false);
   const [treeGenerated, setTreeGenerated] = useState(false);
   const [draggedSeedIdx, setDraggedSeedIdx] = useState<number | null>(null);
+  const [roundLabels, setRoundLabels] = useState<string[]>(["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "Petite Finale", "Finale"]);
+  const [editingLabels, setEditingLabels] = useState(false);
+  const [tempLabels, setTempLabels] = useState<string[]>([]);
+  const [poolSize, setPoolSize] = useState<number>(0);
+  const [poolOptions, setPoolOptions] = useState<{size: number; pools: number; remainder: number}[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
@@ -542,15 +547,31 @@ export default function AdminPage() {
     setTreeBracketId(bracketId);
     setTreeGenerated(false);
     setTreeMatches([]);
+    setPoolSize(0);
     if (!bracketId) {
       setTreePlayers([]);
       setTreeSeeds([]);
+      setPoolOptions([]);
       return;
     }
     try {
       const players = await api.brackets.registeredPlayers(bracketId);
       setTreePlayers(players);
       setTreeSeeds([...players]);
+      const n = players.length;
+      const opts: {size: number; pools: number; remainder: number}[] = [];
+      for (const s of [2, 3, 4, 5]) {
+        if (n >= s) {
+          const pools = Math.floor(n / s);
+          const remainder = n % s;
+          opts.push({ size: s, pools, remainder });
+        }
+      }
+      setPoolOptions(opts);
+      if (opts.length > 0) {
+        const best = opts.find(o => o.remainder === 0) || opts[opts.length - 1];
+        setPoolSize(best.size);
+      }
     } catch (err: any) {
       setError(err.message);
     }
@@ -577,6 +598,8 @@ export default function AdminPage() {
         elimination_type: eliminationType,
         has_third_place: hasThirdPlace,
         seeded_players: treeSeeds.map(p => p.id),
+        pool_size: poolSize,
+        round_labels: roundLabels,
       });
       if (result.success) {
         const matchesData = await api.matches.list({ bracket_id: treeBracketId });
@@ -1480,7 +1503,7 @@ export default function AdminPage() {
                 Generateur d'arbre de tournoi
               </CardTitle>
               <CardDescription>
-                Selectionnez un tableau, ordonnez les joueurs (tetes de serie), puis generez l'arbre
+                Selectionnez un tableau, configurez les poules, ordonnez les tetes de serie, puis generez l'arbre
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -1519,90 +1542,183 @@ export default function AdminPage() {
               </div>
 
               <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm font-medium mb-2">Etiquettes de tours:</p>
-                <div className="flex flex-wrap gap-2">
-                  {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2",
-                    hasThirdPlace ? "Petite Finale" : null, "Finale"]
-                    .filter(Boolean)
-                    .map((label, index) => (
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">Etiquettes de tours:</p>
+                  {!editingLabels ? (
+                    <Button variant="outline" size="sm" onClick={() => { setTempLabels([...roundLabels]); setEditingLabels(true); }}>
+                      <Pencil className="h-3 w-3 mr-1" />
+                      Modifier
+                    </Button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => { setRoundLabels([...tempLabels]); setEditingLabels(false); }}>
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Valider
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setEditingLabels(false)}>
+                        Annuler
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {!editingLabels ? (
+                  <div className="flex flex-wrap gap-2">
+                    {roundLabels.map((label, index) => (
                       <Badge key={index} variant="outline">{label}</Badge>
                     ))}
-                </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {tempLabels.map((label, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 w-6">{index + 1}.</span>
+                        <Input
+                          value={label}
+                          onChange={(e) => { const nl = [...tempLabels]; nl[index] = e.target.value; setTempLabels(nl); }}
+                          className="h-8 text-sm"
+                        />
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => { const nl = [...tempLabels]; nl.splice(index, 1); setTempLabels(nl); }}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button variant="outline" size="sm" onClick={() => setTempLabels([...tempLabels, `Tour ${tempLabels.length + 1}`])}>
+                      <Plus className="h-3 w-3 mr-1" />
+                      Ajouter
+                    </Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
 
           {treeBracketId && treeSeeds.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Tetes de serie ({treeSeeds.length} joueurs)</CardTitle>
-                <CardDescription>
-                  Glissez-deposez pour reordonner les joueurs. Le joueur #1 est la tete de serie n°1.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1 max-h-96 overflow-y-auto">
-                  {treeSeeds.map((player, idx) => (
-                    <div
-                      key={player.id}
-                      draggable
-                      onDragStart={() => handleSeedDragStart(idx)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => handleSeedDrop(idx)}
-                      className={`flex items-center gap-3 p-2 rounded border cursor-move transition-all hover:bg-blue-50 ${
-                        draggedSeedIdx === idx ? 'opacity-50 border-blue-400 bg-blue-100' : 'border-gray-200'
-                      }`}
-                    >
-                      <span className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-sm font-bold text-gray-600">
-                        {idx + 1}
-                      </span>
-                      <div className="flex-1">
-                        <span className="font-medium">{player.name}</span>
-                        <span className="text-sm text-muted-foreground ml-2">({player.club})</span>
-                      </div>
-                      <Badge variant="outline">{player.points} pts</Badge>
-                      <span className="text-xs text-gray-400 cursor-grab">⠿</span>
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Configuration des poules</CardTitle>
+                  <CardDescription>
+                    {treeSeeds.length} joueurs inscrits - Choisissez le nombre de joueurs par poule
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {poolOptions.map((opt) => {
+                      const isSelected = poolSize === opt.size;
+                      return (
+                        <button
+                          key={opt.size}
+                          onClick={() => setPoolSize(opt.size)}
+                          className={`p-4 rounded-lg border-2 text-left transition-all ${
+                            isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-400'
+                          }`}
+                        >
+                          <p className="text-lg font-bold">{opt.size} joueurs / poule</p>
+                          <p className="text-sm text-muted-foreground">
+                            {opt.pools} poule{opt.pools > 1 ? 's' : ''}
+                            {opt.remainder > 0 && ` + 1 poule de ${opt.remainder}`}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {opt.size === 2 ? `${opt.pools} matchs de pool` :
+                             opt.size === 3 ? `${opt.pools * 3} matchs de pool` :
+                             opt.size === 4 ? `${opt.pools * 6} matchs de pool` :
+                             `${opt.pools * 10} matchs de pool`}
+                          </p>
+                          {opt.remainder === 0 && (
+                            <Badge className="mt-2 bg-green-100 text-green-800 text-xs">Repartition parfaite</Badge>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {poolSize > 0 && (
+                    <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm">
+                      <p className="font-medium text-blue-800">Deroulement prevu :</p>
+                      <ol className="mt-1 list-decimal list-inside text-blue-700 space-y-1">
+                        <li>Phase de poules : {poolSize} joueurs par poule, chacun joue contre tous les autres</li>
+                        <li>Les qualifies de chaque poule passent en phase d'elimination directe</li>
+                        <li>L'arbre d'elimination se constitue automatiquement selon les resultats des matchs (Admin &gt; Matchs)</li>
+                      </ol>
                     </div>
-                  ))}
-                </div>
-                <div className="mt-4 flex gap-3">
-                  <Button
-                    onClick={generateBracketTree}
-                    disabled={treeGenerating || treeSeeds.length < 2}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {treeGenerating ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <GitBranch className="h-4 w-4 mr-2" />
-                    )}
-                    Generer l'arbre ({treeSeeds.length} joueurs)
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const sorted = [...treePlayers].sort((a, b) => b.points - a.points);
-                      setTreeSeeds(sorted);
-                    }}
-                  >
-                    Trier par points
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const shuffled = [...treeSeeds];
-                      for (let i = shuffled.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-                      }
-                      setTreeSeeds(shuffled);
-                    }}
-                  >
-                    Tirage aleatoire
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Tetes de serie ({treeSeeds.length} joueurs)</CardTitle>
+                  <CardDescription>
+                    Glissez-deposez pour reordonner les joueurs. Le joueur #1 est la tete de serie n°1.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-1 max-h-96 overflow-y-auto">
+                    {treeSeeds.map((player, idx) => (
+                      <div
+                        key={player.id}
+                        draggable
+                        onDragStart={() => handleSeedDragStart(idx)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => handleSeedDrop(idx)}
+                        className={`flex items-center gap-3 p-2 rounded border cursor-move transition-all hover:bg-blue-50 ${
+                          draggedSeedIdx === idx ? 'opacity-50 border-blue-400 bg-blue-100' : 'border-gray-200'
+                        }`}
+                      >
+                        <span className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-sm font-bold text-gray-600">
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1">
+                          <span className="font-medium">{player.name}</span>
+                          <span className="text-sm text-muted-foreground ml-2">({player.club})</span>
+                        </div>
+                        <Badge variant="outline">{player.points} pts</Badge>
+                        {poolSize > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            P{Math.floor(idx / poolSize) + 1}
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Button
+                      onClick={generateBracketTree}
+                      disabled={treeGenerating || treeSeeds.length < 2}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {treeGenerating ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <GitBranch className="h-4 w-4 mr-2" />
+                      )}
+                      Generer {poolSize > 0 ? `les poules de ${poolSize}` : `l'arbre`} ({treeSeeds.length} joueurs)
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const sorted = [...treePlayers].sort((a, b) => b.points - a.points);
+                        setTreeSeeds(sorted);
+                      }}
+                    >
+                      Trier par points
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const shuffled = [...treeSeeds];
+                        for (let i = shuffled.length - 1; i > 0; i--) {
+                          const j = Math.floor(Math.random() * (i + 1));
+                          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                        }
+                        setTreeSeeds(shuffled);
+                      }}
+                    >
+                      Tirage aleatoire
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
           )}
 
           {treeBracketId && treeSeeds.length === 0 && (
@@ -1619,6 +1735,8 @@ export default function AdminPage() {
                 <CardTitle>Arbre du tournoi</CardTitle>
                 <CardDescription>
                   {treeMatches.length} matchs generes - {eliminationType === 'single' ? 'Elimination simple' : 'Double elimination'}
+                  {poolSize > 0 && ` - Poules de ${poolSize}`}
+                  {' - '}Les tours suivants se constituent automatiquement via les resultats saisis dans Admin &gt; Matchs
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1630,10 +1748,9 @@ export default function AdminPage() {
                       if (!roundGroups[rn]) roundGroups[rn] = [];
                       roundGroups[rn].push(m);
                     });
-                    const roundOrder = ['Pool', '1/64', '1/32', '1/16', '1/8', '1/4', '1/2', 'Petite Finale', 'Finale'];
                     const sortedRounds = Object.keys(roundGroups).sort((a, b) => {
-                      const ai = roundOrder.indexOf(a);
-                      const bi = roundOrder.indexOf(b);
+                      const ai = roundLabels.indexOf(a);
+                      const bi = roundLabels.indexOf(b);
                       return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
                     });
 

@@ -77,10 +77,13 @@ class BracketViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def generate_matches(self, request, pk=None):
         import math
+        from itertools import combinations
         bracket = self.get_object()
         elimination_type = request.data.get('elimination_type', 'single')
         has_third_place = request.data.get('has_third_place', True)
         seeded_players = request.data.get('seeded_players', [])
+        pool_size = request.data.get('pool_size', 0)
+        custom_labels = request.data.get('round_labels', [])
 
         if seeded_players:
             player_ids = seeded_players
@@ -93,14 +96,50 @@ class BracketViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Il faut au moins 2 joueurs inscrits'}, status=status.HTTP_400_BAD_REQUEST)
 
         bracket.matches.all().delete()
+        created_matches = []
 
-        round_labels = ['Pool', '1/64', '1/32', '1/16', '1/8', '1/4', '1/2', 'Finale']
+        if pool_size >= 2:
+            pools = []
+            for i in range(0, n, pool_size):
+                pool = player_ids[i:i + pool_size]
+                if len(pool) >= 2:
+                    pools.append(pool)
+
+            for pool_idx, pool in enumerate(pools):
+                pool_name = f"Pool {chr(65 + pool_idx)}"
+                for p1_id, p2_id in combinations(pool, 2):
+                    match = Match.objects.create(
+                        bracket=bracket,
+                        player1_id=p1_id,
+                        player2_id=p2_id,
+                        round_name=pool_name,
+                        round_number=1,
+                        status='waiting'
+                    )
+                    created_matches.append({
+                        'id': str(match.id),
+                        'round_name': pool_name,
+                        'round_number': 1,
+                        'player1': p1_id,
+                        'player2': p2_id,
+                    })
+
+            return Response({
+                'success': True,
+                'matches_created': len(created_matches),
+                'matches': created_matches,
+                'total_players': n,
+                'elimination_type': elimination_type,
+                'pool_size': pool_size,
+                'pools_count': len(pools),
+                'info': f'{len(pools)} poules de {pool_size} joueurs generees. '
+                        f'Les tours suivants seront crees automatiquement apres saisie des resultats.',
+            })
+
+        label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
 
         def get_round_name(total_spots, current_round):
-            if current_round == 0 and total_spots > 64:
-                return 'Pool'
             rounds_needed = int(math.log2(total_spots)) if total_spots > 1 else 1
-            label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
             round_from_end = rounds_needed - current_round
             return label_map.get(round_from_end, f'Tour {current_round + 1}')
 
@@ -108,38 +147,29 @@ class BracketViewSet(viewsets.ModelViewSet):
         while next_power < n:
             next_power *= 2
 
-        byes = next_power - n
-        created_matches = []
-
-        num_rounds = int(math.log2(next_power))
-        for round_num in range(num_rounds):
-            round_name = get_round_name(next_power, round_num)
-            if round_num == 0:
-                matches_in_round = next_power // 2
-                for i in range(matches_in_round):
-                    p1_idx = i * 2
-                    p2_idx = i * 2 + 1
-                    p1_id = player_ids[p1_idx] if p1_idx < n else None
-                    p2_id = player_ids[p2_idx] if p2_idx < n else None
-                    if p1_id and p2_id:
-                        match = Match.objects.create(
-                            bracket=bracket,
-                            player1_id=p1_id,
-                            player2_id=p2_id,
-                            round_name=round_name,
-                            round_number=round_num + 1,
-                            status='waiting'
-                        )
-                        created_matches.append({
-                            'id': str(match.id),
-                            'round_name': round_name,
-                            'round_number': round_num + 1,
-                            'player1': p1_id,
-                            'player2': p2_id,
-                        })
-
-        if has_third_place and n >= 4:
-            pass
+        matches_in_round = next_power // 2
+        round_name = get_round_name(next_power, 0)
+        for i in range(matches_in_round):
+            p1_idx = i * 2
+            p2_idx = i * 2 + 1
+            p1_id = player_ids[p1_idx] if p1_idx < n else None
+            p2_id = player_ids[p2_idx] if p2_idx < n else None
+            if p1_id and p2_id:
+                match = Match.objects.create(
+                    bracket=bracket,
+                    player1_id=p1_id,
+                    player2_id=p2_id,
+                    round_name=round_name,
+                    round_number=1,
+                    status='waiting'
+                )
+                created_matches.append({
+                    'id': str(match.id),
+                    'round_name': round_name,
+                    'round_number': 1,
+                    'player1': p1_id,
+                    'player2': p2_id,
+                })
 
         return Response({
             'success': True,
@@ -148,6 +178,7 @@ class BracketViewSet(viewsets.ModelViewSet):
             'total_players': n,
             'elimination_type': elimination_type,
             'bracket_size': next_power,
+            'info': 'Premier tour genere. Les tours suivants seront crees automatiquement apres saisie des resultats.',
         })
 
 
@@ -420,10 +451,178 @@ class MatchViewSet(viewsets.ModelViewSet):
             table.match_start_time = None
             table.save()
         
+        next_match = self._advance_bracket(match)
+        
         return Response({
             'message': 'Match terminé',
-            'winner': str(match.winner.id) if match.winner else None
+            'winner': str(match.winner.id) if match.winner else None,
+            'next_match': str(next_match.id) if next_match else None,
         })
+
+    def _advance_bracket(self, finished_match):
+        import math
+        bracket = finished_match.bracket
+        round_name = finished_match.round_name or ''
+        winner = finished_match.winner
+
+        if not winner:
+            return None
+
+        is_pool = round_name.startswith('Pool')
+        if is_pool:
+            return self._advance_pool(bracket, round_name)
+
+        label_order = ['1/64', '1/32', '1/16', '1/8', '1/4', '1/2', 'Finale']
+        current_idx = -1
+        for i, label in enumerate(label_order):
+            if label == round_name:
+                current_idx = i
+                break
+
+        if current_idx == -1 or round_name == 'Finale' or round_name == 'Petite Finale':
+            return None
+
+        next_round_name = label_order[current_idx + 1] if current_idx + 1 < len(label_order) else None
+        if not next_round_name:
+            return None
+
+        same_round_matches = list(
+            bracket.matches.filter(round_name=round_name).order_by('created_at')
+        )
+        match_index = None
+        for i, m in enumerate(same_round_matches):
+            if m.id == finished_match.id:
+                match_index = i
+                break
+
+        if match_index is None:
+            return None
+
+        partner_index = match_index ^ 1
+        if partner_index >= len(same_round_matches):
+            return None
+
+        partner_match = same_round_matches[partner_index]
+        if partner_match.status != 'finished' or not partner_match.winner:
+            return None
+
+        next_round_number = (finished_match.round_number or 1) + 1
+        pair_position = match_index // 2
+
+        existing = bracket.matches.filter(
+            round_name=next_round_name,
+            round_number=next_round_number,
+        ).order_by('created_at')
+
+        for ex in existing:
+            players = {str(ex.player1_id), str(ex.player2_id)}
+            if str(winner.id) in players or str(partner_match.winner.id) in players:
+                return None
+
+        if match_index % 2 == 0:
+            p1 = winner
+            p2 = partner_match.winner
+        else:
+            p1 = partner_match.winner
+            p2 = winner
+
+        next_match = Match.objects.create(
+            bracket=bracket,
+            player1=p1,
+            player2=p2,
+            round_name=next_round_name,
+            round_number=next_round_number,
+            status='waiting',
+        )
+        return next_match
+
+    def _advance_pool(self, bracket, pool_name):
+        pool_matches = bracket.matches.filter(round_name=pool_name)
+        all_finished = all(m.status == 'finished' for m in pool_matches)
+        if not all_finished:
+            return None
+
+        all_pool_names = list(
+            bracket.matches.filter(round_name__startswith='Pool')
+            .values_list('round_name', flat=True).distinct()
+        )
+        all_pools_done = True
+        for pn in all_pool_names:
+            pmatches = bracket.matches.filter(round_name=pn)
+            if not all(m.status == 'finished' for m in pmatches):
+                all_pools_done = False
+                break
+
+        if not all_pools_done:
+            return None
+
+        has_elim_matches = bracket.matches.filter(round_number__gt=1).exists()
+        if has_elim_matches:
+            return None
+
+        import math
+        pool_standings = {}
+        for pn in sorted(all_pool_names):
+            pmatches = bracket.matches.filter(round_name=pn)
+            players_in_pool = set()
+            wins = {}
+            sets_diff = {}
+            for m in pmatches:
+                p1id = str(m.player1_id)
+                p2id = str(m.player2_id)
+                players_in_pool.add(p1id)
+                players_in_pool.add(p2id)
+                wins.setdefault(p1id, 0)
+                wins.setdefault(p2id, 0)
+                sets_diff.setdefault(p1id, 0)
+                sets_diff.setdefault(p2id, 0)
+                if m.winner_id:
+                    wins[str(m.winner_id)] = wins.get(str(m.winner_id), 0) + 1
+                sets_diff[p1id] += (m.sets_player1 or 0) - (m.sets_player2 or 0)
+                sets_diff[p2id] += (m.sets_player2 or 0) - (m.sets_player1 or 0)
+
+            ranking = sorted(
+                players_in_pool,
+                key=lambda pid: (wins.get(pid, 0), sets_diff.get(pid, 0)),
+                reverse=True,
+            )
+            pool_standings[pn] = ranking
+
+        qualified = []
+        for pn in sorted(pool_standings.keys()):
+            ranking = pool_standings[pn]
+            if ranking:
+                qualified.append(ranking[0])
+
+        n = len(qualified)
+        if n < 2:
+            return None
+
+        next_power = 1
+        while next_power < n:
+            next_power *= 2
+
+        label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
+        rounds_needed = int(math.log2(next_power)) if next_power > 1 else 1
+        round_from_end = rounds_needed
+        round_name = label_map.get(round_from_end, 'Tour 2')
+
+        last_match = None
+        for i in range(next_power // 2):
+            p1_idx = i * 2
+            p2_idx = i * 2 + 1
+            p1_id = qualified[p1_idx] if p1_idx < n else None
+            p2_id = qualified[p2_idx] if p2_idx < n else None
+            if p1_id and p2_id:
+                last_match = Match.objects.create(
+                    bracket=bracket,
+                    player1_id=p1_id,
+                    player2_id=p2_id,
+                    round_name=round_name,
+                    round_number=2,
+                    status='waiting',
+                )
+        return last_match
 
 
 class MenuSectionViewSet(viewsets.ModelViewSet):

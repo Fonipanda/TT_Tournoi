@@ -14,7 +14,6 @@ import LivePage from "@/components/LivePage";
 import InscriptionPage from "@/components/InscriptionPage";
 import NotificationsPage from "@/components/NotificationsPage";
 import BuvettePage from "@/components/BuvettePage";
-import TableauPage from "@/components/TableauPage";
 import JoueursLivePage from "@/components/JoueursLivePage";
 import ProgressionPage from "@/components/ProgressionPage";
 import ReglementPage from "@/components/ReglementPage";
@@ -29,7 +28,6 @@ export default function Home() {
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "live", label: "Live", icon: LayoutGrid },
     { id: "joueurs", label: "Joueurs", icon: Users },
-    { id: "tableau", label: "Tableau", icon: Trophy },
     { id: "progression", label: "Progression", icon: TrendingUp },
     { id: "buvette", label: "Buvette", icon: Coffee },
     { id: "reglement", label: "Reglement", icon: FileText },
@@ -61,7 +59,7 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 md:grid-cols-10 mb-6 bg-white/80 backdrop-blur">
+          <TabsList className="grid w-full grid-cols-5 md:grid-cols-9 mb-6 bg-white/80 backdrop-blur">
             {tabs.map((tab) => (
               <TabsTrigger
                 key={tab.id}
@@ -96,9 +94,6 @@ export default function Home() {
               </TabsContent>
               <TabsContent value="buvette" className="mt-0">
                 <BuvettePage />
-              </TabsContent>
-              <TabsContent value="tableau" className="mt-0">
-                <TableauPage />
               </TabsContent>
               <TabsContent value="joueurs" className="mt-0">
                 <JoueursLivePage />
