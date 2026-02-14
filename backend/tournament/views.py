@@ -1,6 +1,6 @@
 import requests
 from django.utils import timezone
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Max
 from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework import viewsets, status
@@ -69,10 +69,10 @@ class PlayerViewSet(viewsets.ModelViewSet):
         
         if search:
             queryset = queryset.filter(
-                models.Q(first_name__icontains=search) |
-                models.Q(last_name__icontains=search) |
-                models.Q(club__icontains=search) |
-                models.Q(email__icontains=search)
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(club__icontains=search) |
+                Q(email__icontains=search)
             )
         if email:
             queryset = queryset.filter(email__iexact=email)
@@ -171,6 +171,47 @@ class PlayerBracketRegistrationViewSet(viewsets.ModelViewSet):
 class RoomViewSet(viewsets.ModelViewSet):
     queryset = Room.objects.filter(is_active=True)
     serializer_class = RoomSerializer
+
+    def perform_create(self, serializer):
+        room = serializer.save()
+        max_num = Table.objects.aggregate(Max('table_number'))['table_number__max'] or 0
+        for row in range(room.rows):
+            for col in range(room.tables_per_row):
+                max_num += 1
+                Table.objects.create(
+                    room=room,
+                    table_number=max_num,
+                    position_row=row,
+                    position_col=col,
+                )
+
+    def perform_update(self, serializer):
+        room = serializer.save()
+        existing_tables = room.tables.all()
+        existing_count = existing_tables.count()
+        desired_count = room.rows * room.tables_per_row
+        if desired_count > existing_count:
+            max_num = Table.objects.aggregate(Max('table_number'))['table_number__max'] or 0
+            idx = 0
+            for row in range(room.rows):
+                for col in range(room.tables_per_row):
+                    idx += 1
+                    if idx > existing_count:
+                        max_num += 1
+                        Table.objects.create(
+                            room=room,
+                            table_number=max_num,
+                            position_row=row,
+                            position_col=col,
+                        )
+        elif desired_count < existing_count:
+            free_tables = existing_tables.filter(status='free').order_by('-table_number')
+            to_delete = existing_count - desired_count
+            free_tables[:to_delete].delete()
+
+    def perform_destroy(self, instance):
+        instance.tables.all().delete()
+        instance.delete()
 
 
 class TableViewSet(viewsets.ModelViewSet):

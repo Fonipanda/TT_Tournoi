@@ -15,7 +15,7 @@ import { api } from "@/lib/api";
 import { 
   Settings, Lock, Trophy, Users, LayoutGrid, 
   Coffee, Plus, Trash2, Loader2, AlertCircle,
-  CheckCircle, Play, Square, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal
+  CheckCircle, Play, Square, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal, Printer
 } from "lucide-react";
 
 interface Tournament {
@@ -132,7 +132,11 @@ export default function AdminPage() {
   const [editRoom, setEditRoom] = useState<Room | null>(null);
   const [editSection, setEditSection] = useState<MenuSection | null>(null);
   const [editItem, setEditItem] = useState<MenuItem | null>(null);
+  const [editPlayer, setEditPlayer] = useState<any | null>(null);
   const [draggedTable, setDraggedTable] = useState<Table | null>(null);
+  const [qrUrl, setQrUrl] = useState(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+  const [qrText, setQrText] = useState("Tournoi Chelles Tennis de Table 2025");
+  const [qrGenerated, setQrGenerated] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
@@ -412,6 +416,7 @@ export default function AdminPage() {
         case "match": await api.matches.delete(id); break;
         case "section": await api.menuSections.delete(id); break;
         case "item": await api.menuItems.delete(id); break;
+        case "player": await api.players.delete(id); break;
       }
       fetchAllData();
       showSuccess("Element supprime");
@@ -463,7 +468,8 @@ export default function AdminPage() {
     try {
       await api.rooms.update(editRoom.id, {
         name: editRoom.name,
-        description: editRoom.description,
+        rows: editRoom.rows,
+        tables_per_row: editRoom.tables_per_row,
       });
       setEditRoom(null);
       fetchAllData();
@@ -503,6 +509,32 @@ export default function AdminPage() {
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  const updatePlayer = async () => {
+    if (!editPlayer) return;
+    try {
+      await api.players.update(editPlayer.id, {
+        first_name: editPlayer.first_name,
+        last_name: editPlayer.last_name,
+        email: editPlayer.email,
+        phone: editPlayer.phone,
+        club: editPlayer.club,
+        ranking: editPlayer.ranking,
+      });
+      setEditPlayer(null);
+      fetchAllData();
+      showSuccess("Joueur modifie");
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const printQrCode = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>QR Code</title><style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:Arial,sans-serif;margin:0;padding:20px}img{margin:20px 0}h1{font-size:28px;text-align:center;margin-bottom:10px}p{font-size:14px;color:#666;margin-top:10px}</style></head><body><h1>${qrText}</h1><img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qrUrl)}" width="400" height="400" /><p>${qrUrl}</p><script>window.onload=function(){window.print()}</script></body></html>`);
+    printWindow.document.close();
   };
 
   if (!isAuthenticated) {
@@ -1258,6 +1290,7 @@ export default function AdminPage() {
                         <th className="text-left py-2">Tableau(x)</th>
                         <th className="text-left py-2">Email</th>
                         <th className="text-left py-2">Tel</th>
+                        <th className="text-right py-2">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1271,7 +1304,7 @@ export default function AdminPage() {
                           .filter(Boolean)
                           .join(", ");
                         return (
-                          <tr key={player.id} className="border-b">
+                          <tr key={player.id} className="border-b hover:bg-gray-50">
                             <td className="py-2">{player.last_name} {player.first_name}</td>
                             <td className="py-2">{player.license_number}</td>
                             <td className="py-2">{player.club}</td>
@@ -1279,6 +1312,16 @@ export default function AdminPage() {
                             <td className="py-2">{playerBrackets || "-"}</td>
                             <td className="py-2">{player.email}</td>
                             <td className="py-2">{player.phone || "-"}</td>
+                            <td className="py-2 text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="outline" size="sm" onClick={() => setEditPlayer({...player})}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button variant="destructive" size="sm" onClick={() => deleteItem("player", player.id)}>
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
@@ -1295,36 +1338,63 @@ export default function AdminPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <QrCode className="h-5 w-5" />
-                QR Code de l'application
+                Generateur de QR Code
               </CardTitle>
+              <CardDescription>
+                Generez un QR Code personnalise pour l'acces mobile au tournoi
+              </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col items-center gap-6">
-              <p className="text-muted-foreground text-center max-w-md">
-                Scannez ce QR Code avec votre smartphone pour acceder a l'application de tournoi depuis n'importe quel appareil mobile.
-              </p>
-              <div className="bg-white p-6 rounded-lg border-2 border-gray-200 shadow-lg">
-                <div className="w-64 h-64 flex items-center justify-center bg-gray-100 rounded">
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')}`}
-                    alt="QR Code de l'application"
-                    className="w-64 h-64"
-                  />
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label>URL / Texte a encoder</Label>
+                    <Input
+                      value={qrUrl}
+                      onChange={(e) => { setQrUrl(e.target.value); setQrGenerated(true); }}
+                      placeholder="https://..."
+                    />
+                  </div>
+                  <div>
+                    <Label>Texte d'accompagnement (pour l'impression)</Label>
+                    <Input
+                      value={qrText}
+                      onChange={(e) => setQrText(e.target.value)}
+                      placeholder="Tournoi Chelles TT 2025"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={() => setQrGenerated(true)} disabled={!qrUrl}>
+                      <QrCode className="h-4 w-4 mr-2" />
+                      Generer
+                    </Button>
+                    <Button variant="outline" onClick={printQrCode} disabled={!qrGenerated || !qrUrl}>
+                      <Printer className="h-4 w-4 mr-2" />
+                      Imprimer
+                    </Button>
+                  </div>
+                  <div className="bg-blue-50 p-3 rounded-lg text-sm">
+                    <p className="font-medium text-blue-800 mb-1">Astuce :</p>
+                    <p className="text-blue-700">Le bouton Imprimer ouvre une page avec le texte + le QR Code, prete a etre imprimee ou enregistree en PDF.</p>
+                  </div>
                 </div>
-              </div>
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground mb-2">URL de l'application:</p>
-                <code className="px-3 py-1 bg-gray-100 rounded text-sm">
-                  {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}
-                </code>
-              </div>
-              <div className="bg-blue-50 p-4 rounded-lg w-full max-w-md">
-                <h4 className="font-medium text-blue-800 mb-2">Instructions:</h4>
-                <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                  <li>Ouvrez l'appareil photo de votre smartphone</li>
-                  <li>Pointez vers le QR Code</li>
-                  <li>Touchez la notification pour ouvrir le lien</li>
-                  <li>Ajoutez la page a votre ecran d'accueil (optionnel)</li>
-                </ol>
+                <div className="flex flex-col items-center gap-4">
+                  {qrGenerated && qrUrl && (
+                    <>
+                      <div className="bg-white p-6 rounded-lg border-2 border-gray-200 shadow-lg">
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`}
+                          alt="QR Code"
+                          className="w-[300px] h-[300px]"
+                        />
+                      </div>
+                      <p className="text-sm text-muted-foreground text-center font-medium">{qrText}</p>
+                      <code className="px-3 py-1 bg-gray-100 rounded text-xs break-all max-w-sm text-center">
+                        {qrUrl}
+                      </code>
+                    </>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1700,6 +1770,67 @@ export default function AdminPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditItem(null)}>Annuler</Button>
             <Button onClick={updateMenuItem}>Enregistrer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editPlayer !== null} onOpenChange={() => setEditPlayer(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier le joueur</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Nom</Label>
+                <Input
+                  value={editPlayer?.last_name || ""}
+                  onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, last_name: e.target.value } : null)}
+                />
+              </div>
+              <div>
+                <Label>Prenom</Label>
+                <Input
+                  value={editPlayer?.first_name || ""}
+                  onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, first_name: e.target.value } : null)}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Club</Label>
+              <Input
+                value={editPlayer?.club || ""}
+                onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, club: e.target.value } : null)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Points</Label>
+                <Input
+                  type="number"
+                  value={editPlayer?.ranking || ""}
+                  onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, ranking: parseInt(e.target.value) || 0 } : null)}
+                />
+              </div>
+              <div>
+                <Label>Telephone</Label>
+                <Input
+                  value={editPlayer?.phone || ""}
+                  onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, phone: e.target.value } : null)}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                value={editPlayer?.email || ""}
+                onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, email: e.target.value } : null)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPlayer(null)}>Annuler</Button>
+            <Button onClick={updatePlayer}>Enregistrer</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

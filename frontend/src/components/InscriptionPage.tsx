@@ -243,7 +243,10 @@ export default function InscriptionPage() {
       setLicenseNumber("");
       fetchBrackets();
       
-      setTimeout(() => setSubmitSuccess(false), 3000);
+      setTimeout(() => {
+        setSubmitSuccess(false);
+        window.open(`/paiement?player=${playerId}&amount=${totalFee.toFixed(2)}`, '_blank');
+      }, 1500);
     } catch (err: any) {
       setSubmitError(err.message || "Erreur lors de l'inscription");
     } finally {
