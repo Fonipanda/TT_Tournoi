@@ -56,6 +56,100 @@ class BracketViewSet(viewsets.ModelViewSet):
             'entry_fee': float(bracket.entry_fee)
         })
 
+    @action(detail=True, methods=['get'])
+    def registered_players(self, request, pk=None):
+        bracket = self.get_object()
+        regs = bracket.registrations.filter(is_active=True).select_related('player')
+        data = []
+        for reg in regs:
+            p = reg.player
+            data.append({
+                'id': str(p.id),
+                'name': f"{p.last_name} {p.first_name}",
+                'club': p.club or '',
+                'points': p.points or 0,
+                'ranking': p.ranking or '',
+                'license_number': p.license_number or '',
+            })
+        data.sort(key=lambda x: x['points'], reverse=True)
+        return Response(data)
+
+    @action(detail=True, methods=['post'])
+    def generate_matches(self, request, pk=None):
+        import math
+        bracket = self.get_object()
+        elimination_type = request.data.get('elimination_type', 'single')
+        has_third_place = request.data.get('has_third_place', True)
+        seeded_players = request.data.get('seeded_players', [])
+
+        if seeded_players:
+            player_ids = seeded_players
+        else:
+            regs = bracket.registrations.filter(is_active=True).select_related('player')
+            player_ids = [str(r.player.id) for r in regs.order_by('-player__points')]
+
+        n = len(player_ids)
+        if n < 2:
+            return Response({'error': 'Il faut au moins 2 joueurs inscrits'}, status=status.HTTP_400_BAD_REQUEST)
+
+        bracket.matches.all().delete()
+
+        round_labels = ['Pool', '1/64', '1/32', '1/16', '1/8', '1/4', '1/2', 'Finale']
+
+        def get_round_name(total_spots, current_round):
+            if current_round == 0 and total_spots > 64:
+                return 'Pool'
+            rounds_needed = int(math.log2(total_spots)) if total_spots > 1 else 1
+            label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
+            round_from_end = rounds_needed - current_round
+            return label_map.get(round_from_end, f'Tour {current_round + 1}')
+
+        next_power = 1
+        while next_power < n:
+            next_power *= 2
+
+        byes = next_power - n
+        created_matches = []
+
+        num_rounds = int(math.log2(next_power))
+        for round_num in range(num_rounds):
+            round_name = get_round_name(next_power, round_num)
+            if round_num == 0:
+                matches_in_round = next_power // 2
+                for i in range(matches_in_round):
+                    p1_idx = i * 2
+                    p2_idx = i * 2 + 1
+                    p1_id = player_ids[p1_idx] if p1_idx < n else None
+                    p2_id = player_ids[p2_idx] if p2_idx < n else None
+                    if p1_id and p2_id:
+                        match = Match.objects.create(
+                            bracket=bracket,
+                            player1_id=p1_id,
+                            player2_id=p2_id,
+                            round_name=round_name,
+                            round_number=round_num + 1,
+                            status='waiting'
+                        )
+                        created_matches.append({
+                            'id': str(match.id),
+                            'round_name': round_name,
+                            'round_number': round_num + 1,
+                            'player1': p1_id,
+                            'player2': p2_id,
+                        })
+
+        if has_third_place and n >= 4:
+            pass
+
+        return Response({
+            'success': True,
+            'matches_created': len(created_matches),
+            'matches': created_matches,
+            'total_players': n,
+            'elimination_type': elimination_type,
+            'bracket_size': next_power,
+        })
+
 
 class PlayerViewSet(viewsets.ModelViewSet):
     queryset = Player.objects.filter(is_active=True)
@@ -153,17 +247,29 @@ class PlayerBracketRegistrationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        player_total_registrations = PlayerBracketRegistration.objects.filter(
-            player=player,
-            is_active=True,
-            bracket__tournament=bracket.tournament
-        ).count()
-        
-        if player_total_registrations >= 2:
-            return Response(
-                {'error': 'Un joueur ne peut pas s\'inscrire à plus de 2 tableaux par tournoi'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if bracket.day:
+            player_day_registrations = PlayerBracketRegistration.objects.filter(
+                player=player,
+                is_active=True,
+                bracket__day=bracket.day,
+                bracket__tournament=bracket.tournament
+            ).count()
+            if player_day_registrations >= 2:
+                return Response(
+                    {'error': f'Un joueur ne peut pas s\'inscrire à plus de 2 tableaux par jour ({bracket.day})'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            player_total_registrations = PlayerBracketRegistration.objects.filter(
+                player=player,
+                is_active=True,
+                bracket__tournament=bracket.tournament
+            ).count()
+            if player_total_registrations >= 2:
+                return Response(
+                    {'error': 'Un joueur ne peut pas s\'inscrire à plus de 2 tableaux'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         return super().create(request, *args, **kwargs)
 

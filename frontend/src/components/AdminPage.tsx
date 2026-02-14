@@ -138,6 +138,14 @@ export default function AdminPage() {
   const [qrText, setQrText] = useState("Tournoi Chelles Tennis de Table 2025");
   const [qrGenerated, setQrGenerated] = useState(true);
 
+  const [treeBracketId, setTreeBracketId] = useState("");
+  const [treePlayers, setTreePlayers] = useState<any[]>([]);
+  const [treeSeeds, setTreeSeeds] = useState<any[]>([]);
+  const [treeMatches, setTreeMatches] = useState<any[]>([]);
+  const [treeGenerating, setTreeGenerating] = useState(false);
+  const [treeGenerated, setTreeGenerated] = useState(false);
+  const [draggedSeedIdx, setDraggedSeedIdx] = useState<number | null>(null);
+
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
     if (token === "admin-token-local") {
@@ -528,6 +536,70 @@ export default function AdminPage() {
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  const loadTreePlayers = async (bracketId: string) => {
+    setTreeBracketId(bracketId);
+    setTreeGenerated(false);
+    setTreeMatches([]);
+    if (!bracketId) {
+      setTreePlayers([]);
+      setTreeSeeds([]);
+      return;
+    }
+    try {
+      const players = await api.brackets.registeredPlayers(bracketId);
+      setTreePlayers(players);
+      setTreeSeeds([...players]);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleSeedDragStart = (idx: number) => {
+    setDraggedSeedIdx(idx);
+  };
+
+  const handleSeedDrop = (targetIdx: number) => {
+    if (draggedSeedIdx === null || draggedSeedIdx === targetIdx) return;
+    const newSeeds = [...treeSeeds];
+    const [moved] = newSeeds.splice(draggedSeedIdx, 1);
+    newSeeds.splice(targetIdx, 0, moved);
+    setTreeSeeds(newSeeds);
+    setDraggedSeedIdx(null);
+  };
+
+  const generateBracketTree = async () => {
+    if (!treeBracketId || treeSeeds.length < 2) return;
+    setTreeGenerating(true);
+    try {
+      const result = await api.brackets.generateMatches(treeBracketId, {
+        elimination_type: eliminationType,
+        has_third_place: hasThirdPlace,
+        seeded_players: treeSeeds.map(p => p.id),
+      });
+      if (result.success) {
+        const matchesData = await api.matches.list({ bracket_id: treeBracketId });
+        setTreeMatches(matchesData);
+        setTreeGenerated(true);
+        showSuccess(`${result.matches_created} matchs generes pour ${result.total_players} joueurs`);
+        fetchAllData();
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setTreeGenerating(false);
+    }
+  };
+
+  const loadExistingTreeMatches = async (bracketId: string) => {
+    try {
+      const matchesData = await api.matches.list({ bracket_id: bracketId });
+      if (matchesData.length > 0) {
+        setTreeMatches(matchesData);
+        setTreeGenerated(true);
+      }
+    } catch {}
   };
 
   const printQrCode = () => {
@@ -1405,51 +1477,51 @@ export default function AdminPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <GitBranch className="h-5 w-5" />
-                Configuration du tournoi
+                Generateur d'arbre de tournoi
               </CardTitle>
               <CardDescription>
-                Configurez le format d'elimination et les options du tournoi
+                Selectionnez un tableau, ordonnez les joueurs (tetes de serie), puis generez l'arbre
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-6">
-                <div className="flex items-center gap-4">
-                  <Label className="font-medium">Type d'elimination:</Label>
-                  <div className="flex gap-2">
-                    <Button
-                      variant={eliminationType === "single" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setEliminationType("single")}
-                    >
-                      Simple (OK)
-                    </Button>
-                    <Button
-                      variant={eliminationType === "double" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setEliminationType("double")}
-                    >
-                      Double (KO)
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label className="font-medium mb-2 block">Tableau</Label>
+                  <Select value={treeBracketId} onValueChange={(v) => { loadTreePlayers(v); loadExistingTreeMatches(v); }}>
+                    <SelectTrigger><SelectValue placeholder="Selectionnez un tableau" /></SelectTrigger>
+                    <SelectContent>
+                      {sortedBrackets.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.name} ({b.category})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-4">
+                    <Label className="font-medium">Elimination:</Label>
+                    <div className="flex gap-2">
+                      <Button variant={eliminationType === "single" ? "default" : "outline"} size="sm" onClick={() => setEliminationType("single")}>
+                        Simple (OK)
+                      </Button>
+                      <Button variant={eliminationType === "double" ? "default" : "outline"} size="sm" onClick={() => setEliminationType("double")}>
+                        Double (KO)
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <Label className="font-medium">3e place:</Label>
+                    <Button variant={hasThirdPlace ? "default" : "outline"} size="sm" onClick={() => setHasThirdPlace(!hasThirdPlace)}>
+                      <Medal className="h-4 w-4 mr-1" />
+                      {hasThirdPlace ? "Active" : "Desactive"}
                     </Button>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-4">
-                  <Label className="font-medium">Match 3e place:</Label>
-                  <Button
-                    variant={hasThirdPlace ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setHasThirdPlace(!hasThirdPlace)}
-                  >
-                    <Medal className="h-4 w-4 mr-1" />
-                    {hasThirdPlace ? "Active" : "Desactive"}
-                  </Button>
-                </div>
               </div>
 
-              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="text-sm font-medium mb-2">Etiquettes de tours:</p>
                 <div className="flex flex-wrap gap-2">
-                  {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", 
+                  {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2",
                     hasThirdPlace ? "Petite Finale" : null, "Finale"]
                     .filter(Boolean)
                     .map((label, index) => (
@@ -1457,45 +1529,156 @@ export default function AdminPage() {
                     ))}
                 </div>
               </div>
-
-              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                <h4 className="font-medium text-blue-800 mb-2">Comment utiliser</h4>
-                <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
-                  <li><strong>Elimination simple</strong>: Un joueur est elimine apres une defaite</li>
-                  <li><strong>Double elimination</strong>: Un joueur doit perdre deux fois pour etre elimine</li>
-                  <li><strong>Match 3e place</strong>: Les perdants des demi-finales s'affrontent</li>
-                </ul>
-              </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Apercu de la structure</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="p-4 bg-gray-100 rounded-lg">
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {["Pool", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "Finale"].map((label, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <div className="px-3 py-2 bg-white border rounded shadow-sm text-sm font-medium">
-                        {label}
+          {treeBracketId && treeSeeds.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Tetes de serie ({treeSeeds.length} joueurs)</CardTitle>
+                <CardDescription>
+                  Glissez-deposez pour reordonner les joueurs. Le joueur #1 est la tete de serie n°1.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1 max-h-96 overflow-y-auto">
+                  {treeSeeds.map((player, idx) => (
+                    <div
+                      key={player.id}
+                      draggable
+                      onDragStart={() => handleSeedDragStart(idx)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleSeedDrop(idx)}
+                      className={`flex items-center gap-3 p-2 rounded border cursor-move transition-all hover:bg-blue-50 ${
+                        draggedSeedIdx === idx ? 'opacity-50 border-blue-400 bg-blue-100' : 'border-gray-200'
+                      }`}
+                    >
+                      <span className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-sm font-bold text-gray-600">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1">
+                        <span className="font-medium">{player.name}</span>
+                        <span className="text-sm text-muted-foreground ml-2">({player.club})</span>
                       </div>
-                      {index < 7 && <span className="text-gray-400">→</span>}
+                      <Badge variant="outline">{player.points} pts</Badge>
+                      <span className="text-xs text-gray-400 cursor-grab">⠿</span>
                     </div>
                   ))}
                 </div>
-                {hasThirdPlace && (
-                  <div className="mt-4 text-center">
-                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-300">
-                      <Medal className="h-3 w-3 mr-1" />
-                      Petite Finale (3e place)
-                    </Badge>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                <div className="mt-4 flex gap-3">
+                  <Button
+                    onClick={generateBracketTree}
+                    disabled={treeGenerating || treeSeeds.length < 2}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {treeGenerating ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <GitBranch className="h-4 w-4 mr-2" />
+                    )}
+                    Generer l'arbre ({treeSeeds.length} joueurs)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const sorted = [...treePlayers].sort((a, b) => b.points - a.points);
+                      setTreeSeeds(sorted);
+                    }}
+                  >
+                    Trier par points
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const shuffled = [...treeSeeds];
+                      for (let i = shuffled.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                      }
+                      setTreeSeeds(shuffled);
+                    }}
+                  >
+                    Tirage aleatoire
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {treeBracketId && treeSeeds.length === 0 && (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-muted-foreground">Aucun joueur inscrit dans ce tableau. Inscrivez des joueurs d'abord.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {treeGenerated && treeMatches.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Arbre du tournoi</CardTitle>
+                <CardDescription>
+                  {treeMatches.length} matchs generes - {eliminationType === 'single' ? 'Elimination simple' : 'Double elimination'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  {(() => {
+                    const roundGroups: Record<string, any[]> = {};
+                    treeMatches.forEach(m => {
+                      const rn = m.round_name || `Tour ${m.round_number || '?'}`;
+                      if (!roundGroups[rn]) roundGroups[rn] = [];
+                      roundGroups[rn].push(m);
+                    });
+                    const roundOrder = ['Pool', '1/64', '1/32', '1/16', '1/8', '1/4', '1/2', 'Petite Finale', 'Finale'];
+                    const sortedRounds = Object.keys(roundGroups).sort((a, b) => {
+                      const ai = roundOrder.indexOf(a);
+                      const bi = roundOrder.indexOf(b);
+                      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+                    });
+
+                    return (
+                      <div className="flex gap-6 min-w-max">
+                        {sortedRounds.map((roundName) => (
+                          <div key={roundName} className="flex flex-col gap-4 min-w-[220px]">
+                            <h4 className="text-center font-bold text-sm bg-gray-800 text-white py-2 rounded">
+                              {roundName}
+                            </h4>
+                            <div className="flex flex-col gap-3 justify-around flex-1">
+                              {roundGroups[roundName].map((match: any) => (
+                                <div key={match.id} className={`border-2 rounded-lg overflow-hidden ${
+                                  match.status === 'finished' ? 'border-green-400' :
+                                  match.status === 'in_progress' ? 'border-red-400' : 'border-gray-300'
+                                }`}>
+                                  <div className={`px-3 py-2 flex justify-between items-center border-b ${
+                                    match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : 'bg-white'
+                                  }`}>
+                                    <span className="text-sm truncate">{match.player1_name || 'TBD'}</span>
+                                    {match.status === 'finished' && <span className="text-xs font-bold">{match.sets_player1}</span>}
+                                  </div>
+                                  <div className={`px-3 py-2 flex justify-between items-center ${
+                                    match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : 'bg-white'
+                                  }`}>
+                                    <span className="text-sm truncate">{match.player2_name || 'TBD'}</span>
+                                    {match.status === 'finished' && <span className="text-xs font-bold">{match.sets_player2}</span>}
+                                  </div>
+                                  {match.table_number && (
+                                    <div className="bg-gray-50 px-3 py-1 text-xs text-center text-gray-500">
+                                      Table {match.table_number}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 
