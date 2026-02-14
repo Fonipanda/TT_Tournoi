@@ -245,7 +245,8 @@ export default function InscriptionPage() {
       
       setTimeout(() => {
         setSubmitSuccess(false);
-        window.open(`/paiement?player=${playerId}&amount=${totalFee.toFixed(2)}`, '_blank');
+        const pName = encodeURIComponent(`${playerData.last_name} ${playerData.first_name}`.trim());
+        window.open(`/paiement?player=${pName}&amount=${totalFee.toFixed(2)}`, '_blank');
       }, 1500);
     } catch (err: any) {
       setSubmitError(err.message || "Erreur lors de l'inscription");

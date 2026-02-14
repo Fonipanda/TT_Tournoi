@@ -281,7 +281,7 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
             </CardHeader>
             <CardContent>
               <p className="text-4xl font-bold text-green-600">
-                {brackets.reduce((sum, b) => sum + (b.registered_count || 0), 0)}
+                {new Set(registrations.map(r => String(r.player))).size}
               </p>
               <p className="text-muted-foreground">joueurs inscrits</p>
             </CardContent>
@@ -351,32 +351,99 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.7 }}
       >
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="pt-6">
-            <div className="space-y-4">
-              <div className="text-center">
-                <MapPin className="h-8 w-8 mx-auto text-blue-600" />
-                <h3 className="text-lg font-semibold mt-2">Lieu du tournoi</h3>
-                <p className="font-medium">Gymnase Julien Marquay</p>
-                <p className="text-muted-foreground">Rue du Grand Cerf, Chelles (77500)</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="pt-6">
+              <div className="space-y-4">
+                <div className="text-center">
+                  <MapPin className="h-8 w-8 mx-auto text-blue-600" />
+                  <h3 className="text-lg font-semibold mt-2">Lieu du tournoi</h3>
+                  <p className="font-medium">Gymnase Julien Marquay</p>
+                  <p className="text-muted-foreground">Rue du Grand Cerf, Chelles (77500)</p>
+                </div>
+                <div className="flex justify-center">
+                  <iframe 
+                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2623.2992372501203!2d2.6079860923415947!3d48.89063409743009!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47e6105f5709be49%3A0x704e1bf12e41383!2sGymnase%20Julien%20Marquay!5e0!3m2!1sfr!2sfr!4v1770930753192!5m2!1sfr!2sfr" 
+                    width="100%" 
+                    height="250" 
+                    style={{ border: 0, borderRadius: '8px' }}
+                    allowFullScreen 
+                    loading="lazy" 
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground text-center">
+                  Acces : Parking disponible sur place
+                </p>
               </div>
-              <div className="flex justify-center">
-                <iframe 
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2623.2992372501203!2d2.6079860923415947!3d48.89063409743009!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47e6105f5709be49%3A0x704e1bf12e41383!2sGymnase%20Julien%20Marquay!5e0!3m2!1sfr!2sfr!4v1770930753192!5m2!1sfr!2sfr" 
-                  width="100%" 
-                  height="300" 
-                  style={{ border: 0, borderRadius: '8px', maxWidth: '600px' }}
-                  allowFullScreen 
-                  loading="lazy" 
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="pt-6">
+              <div className="space-y-5">
+                <h3 className="text-lg font-semibold text-center">Informations pratiques</h3>
+
+                <div className="space-y-1">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-blue-600" />
+                    Date et lieu
+                  </h4>
+                  <p className="text-sm text-muted-foreground pl-6">Dates : A definir</p>
+                </div>
+
+                <div className="space-y-1">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-blue-600" />
+                    Contact
+                  </h4>
+                  <div className="text-sm text-muted-foreground pl-6 space-y-0.5">
+                    <p>Club : Chelles Tennis de Table</p>
+                    <p>Site web : <a href="https://chellestt.fr" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">chellestt.fr</a></p>
+                    <p className="flex items-center gap-1">
+                      <Mail className="h-3 w-3" /> ttchelles@gmail.com
+                    </p>
+                    <p className="flex items-center gap-1">
+                      <Phone className="h-3 w-3" /> 07 79 94 63 56
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Star className="h-4 w-4 text-blue-600" />
+                    Reglement
+                  </h4>
+                  <p className="text-sm pl-6">
+                    <button 
+                      onClick={() => onNavigate?.("reglement")}
+                      className="text-blue-600 underline hover:text-blue-800"
+                    >
+                      Consulter le reglement du tournoi
+                    </button>
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-blue-600" />
+                    Restauration
+                  </h4>
+                  <p className="text-sm text-muted-foreground pl-6">
+                    Une buvette sera disponible sur place avec des sandwiches, boissons et desserts. 
+                    Consultez le menu dans la section{' '}
+                    <button 
+                      onClick={() => onNavigate?.("buvette")}
+                      className="text-blue-600 underline hover:text-blue-800"
+                    >
+                      Buvette
+                    </button>.
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground text-center">
-                Acces : Parking disponible sur place
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </motion.div>
 
       <Dialog open={showProgramme} onOpenChange={setShowProgramme}>
