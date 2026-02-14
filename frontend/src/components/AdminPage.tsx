@@ -361,6 +361,15 @@ export default function AdminPage() {
     }
   };
 
+  const refreshTreeMatches = async () => {
+    if (treeBracketId) {
+      try {
+        const matchesData = await api.matches.list({ bracket_id: treeBracketId });
+        setTreeMatches(matchesData);
+      } catch {}
+    }
+  };
+
   const assignMatchToTable = async () => {
     if (!selectedMatch || !selectedTable) return;
     try {
@@ -368,6 +377,7 @@ export default function AdminPage() {
       setSelectedMatch(null);
       setSelectedTable("");
       fetchAllData();
+      await refreshTreeMatches();
       showSuccess("Match assigne a la table");
     } catch (err: any) {
       setError(err.message);
@@ -386,6 +396,7 @@ export default function AdminPage() {
       setSelectedMatch(null);
       setFinishScore({ sets_player1: "", sets_player2: "" });
       fetchAllData();
+      await refreshTreeMatches();
       showSuccess("Match termine");
     } catch (err: any) {
       setError(err.message);
@@ -569,8 +580,8 @@ export default function AdminPage() {
       }
       setPoolOptions(opts);
       if (opts.length > 0) {
-        const best = opts.find(o => o.remainder === 0) || opts[opts.length - 1];
-        setPoolSize(best.size);
+        const pool3 = opts.find(o => o.size === 3);
+        setPoolSize(pool3 ? 3 : (opts.find(o => o.remainder === 0) || opts[opts.length - 1]).size);
       }
     } catch (err: any) {
       setError(err.message);
@@ -599,13 +610,17 @@ export default function AdminPage() {
         has_third_place: hasThirdPlace,
         seeded_players: treeSeeds.map(p => p.id),
         pool_size: poolSize,
+        qualifiers_per_pool: 2,
         round_labels: roundLabels,
       });
       if (result.success) {
         const matchesData = await api.matches.list({ bracket_id: treeBracketId });
         setTreeMatches(matchesData);
         setTreeGenerated(true);
-        showSuccess(`${result.matches_created} matchs generes pour ${result.total_players} joueurs`);
+        const msg = result.byes_count > 0
+          ? `${result.matches_created} matchs generes pour ${result.total_players} joueurs (${result.byes_count} exempte(s))`
+          : `${result.matches_created} matchs generes pour ${result.total_players} joueurs`;
+        showSuccess(msg);
         fetchAllData();
       }
     } catch (err: any) {
@@ -1636,8 +1651,13 @@ export default function AdminPage() {
                       <p className="font-medium text-blue-800">Deroulement prevu :</p>
                       <ol className="mt-1 list-decimal list-inside text-blue-700 space-y-1">
                         <li>Phase de poules : {poolSize} joueurs par poule, chacun joue contre tous les autres</li>
-                        <li>Les qualifies de chaque poule passent en phase d'elimination directe</li>
-                        <li>L'arbre d'elimination se constitue automatiquement selon les resultats des matchs (Admin &gt; Matchs)</li>
+                        <li>Les 2 premiers de chaque poule sont qualifies, le 3eme est elimine</li>
+                        {treeSeeds.length % poolSize > 0 && (
+                          <li className="text-orange-700 font-medium">
+                            {treeSeeds.length % poolSize} joueur(s) avec le plus de points sont exempte(s) de poule (bye)
+                          </li>
+                        )}
+                        <li>L'arbre d'elimination se constitue automatiquement selon les resultats saisis dans l'arbre ci-dessous</li>
                       </ol>
                     </div>
                   )}
@@ -1730,16 +1750,35 @@ export default function AdminPage() {
           )}
 
           {treeGenerated && treeMatches.length > 0 && (
+            <>
             <Card>
               <CardHeader>
-                <CardTitle>Arbre du tournoi</CardTitle>
-                <CardDescription>
-                  {treeMatches.length} matchs generes - {eliminationType === 'single' ? 'Elimination simple' : 'Double elimination'}
-                  {poolSize > 0 && ` - Poules de ${poolSize}`}
-                  {' - '}Les tours suivants se constituent automatiquement via les resultats saisis dans Admin &gt; Matchs
-                </CardDescription>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle>Arbre du tournoi</CardTitle>
+                    <CardDescription>
+                      {treeMatches.length} matchs generes - {eliminationType === 'single' ? 'Elimination simple' : 'Double elimination'}
+                      {poolSize > 0 && ` - Poules de ${poolSize} (2 qualifies par poule)`}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      const matchesData = await api.matches.list({ bracket_id: treeBracketId });
+                      setTreeMatches(matchesData);
+                      fetchAllData();
+                    }}
+                  >
+                    <RotateCw className="h-3 w-3 mr-1" />
+                    Rafraichir
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Cliquez sur un match pour assigner une table ou saisir le score. Les tours suivants sont generes automatiquement.
+                </p>
                 <div className="overflow-x-auto">
                   {(() => {
                     const roundGroups: Record<string, any[]> = {};
@@ -1757,33 +1796,58 @@ export default function AdminPage() {
                     return (
                       <div className="flex gap-6 min-w-max">
                         {sortedRounds.map((roundName) => (
-                          <div key={roundName} className="flex flex-col gap-4 min-w-[220px]">
+                          <div key={roundName} className="flex flex-col gap-4 min-w-[240px]">
                             <h4 className="text-center font-bold text-sm bg-gray-800 text-white py-2 rounded">
                               {roundName}
                             </h4>
                             <div className="flex flex-col gap-3 justify-around flex-1">
                               {roundGroups[roundName].map((match: any) => (
-                                <div key={match.id} className={`border-2 rounded-lg overflow-hidden ${
-                                  match.status === 'finished' ? 'border-green-400' :
-                                  match.status === 'in_progress' ? 'border-red-400' : 'border-gray-300'
-                                }`}>
+                                <div
+                                  key={match.id}
+                                  className={`border-2 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md ${
+                                    match.status === 'finished' ? 'border-green-400' :
+                                    match.status === 'in_progress' ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300 hover:border-blue-400'
+                                  }`}
+                                  onClick={() => {
+                                    if (match.status === 'waiting' && match.player1_name && match.player2_name) {
+                                      setSelectedMatch(match);
+                                      setSelectedTable("");
+                                    } else if (match.status === 'in_progress') {
+                                      setSelectedMatch(match);
+                                      setFinishScore({ sets_player1: "", sets_player2: "" });
+                                    }
+                                  }}
+                                >
                                   <div className={`px-3 py-2 flex justify-between items-center border-b ${
                                     match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : 'bg-white'
                                   }`}>
-                                    <span className="text-sm truncate">{match.player1_name || 'TBD'}</span>
-                                    {match.status === 'finished' && <span className="text-xs font-bold">{match.sets_player1}</span>}
+                                    <span className="text-sm truncate flex-1">{match.player1_name || 'TBD'}</span>
+                                    {match.status === 'finished' && <span className="text-xs font-bold ml-2">{match.sets_player1}</span>}
                                   </div>
                                   <div className={`px-3 py-2 flex justify-between items-center ${
                                     match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : 'bg-white'
                                   }`}>
-                                    <span className="text-sm truncate">{match.player2_name || 'TBD'}</span>
-                                    {match.status === 'finished' && <span className="text-xs font-bold">{match.sets_player2}</span>}
+                                    <span className="text-sm truncate flex-1">{match.player2_name || 'TBD'}</span>
+                                    {match.status === 'finished' && <span className="text-xs font-bold ml-2">{match.sets_player2}</span>}
                                   </div>
-                                  {match.table_number && (
-                                    <div className="bg-gray-50 px-3 py-1 text-xs text-center text-gray-500">
-                                      Table {match.table_number}
-                                    </div>
-                                  )}
+                                  <div className={`px-3 py-1 text-xs text-center flex items-center justify-center gap-1 ${
+                                    match.status === 'in_progress' ? 'bg-red-50 text-red-700' :
+                                    match.status === 'finished' ? 'bg-green-50 text-green-700' :
+                                    match.table_number ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-500'
+                                  }`}>
+                                    {match.status === 'in_progress' && (
+                                      <><Play className="h-3 w-3" /> En cours{match.table_number ? ` - Table ${match.table_number}` : ''}</>
+                                    )}
+                                    {match.status === 'finished' && (
+                                      <><CheckCircle className="h-3 w-3" /> Termine</>
+                                    )}
+                                    {match.status === 'waiting' && match.player1_name && match.player2_name && (
+                                      <><LayoutGrid className="h-3 w-3" /> Cliquer pour assigner une table</>
+                                    )}
+                                    {match.status === 'waiting' && (!match.player1_name || !match.player2_name) && (
+                                      <>En attente des resultats</>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1795,6 +1859,42 @@ export default function AdminPage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <LayoutGrid className="h-5 w-5" />
+                  Tables disponibles
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {tables.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`p-3 rounded-lg border-2 text-center ${
+                        t.status === 'free'
+                          ? 'border-green-300 bg-green-50'
+                          : 'border-red-300 bg-red-50'
+                      }`}
+                    >
+                      <p className="font-bold text-lg">Table {t.table_number}</p>
+                      <p className="text-xs text-muted-foreground">{t.room_name}</p>
+                      <Badge
+                        variant={t.status === 'free' ? 'success' : 'destructive'}
+                        className="mt-1 text-xs"
+                      >
+                        {t.status === 'free' ? 'Libre' : 'Occupee'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {tables.filter(t => t.status === 'free').length} table(s) libre(s) sur {tables.length}
+                </p>
+              </CardContent>
+            </Card>
+            </>
           )}
         </TabsContent>
       </Tabs>

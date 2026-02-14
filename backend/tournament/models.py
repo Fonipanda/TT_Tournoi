@@ -30,6 +30,8 @@ class Bracket(models.Model):
     day = models.CharField(max_length=50, blank=True, null=True)
     checkin_end = models.CharField(max_length=20, blank=True, null=True)
     start_time = models.CharField(max_length=20, blank=True, null=True)
+    pool_qualifiers = models.IntegerField(default=2)
+    bye_players = models.TextField(blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

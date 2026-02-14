@@ -82,7 +82,8 @@ class BracketViewSet(viewsets.ModelViewSet):
         elimination_type = request.data.get('elimination_type', 'single')
         has_third_place = request.data.get('has_third_place', True)
         seeded_players = request.data.get('seeded_players', [])
-        pool_size = request.data.get('pool_size', 0)
+        pool_size = request.data.get('pool_size', 3)
+        qualifiers_per_pool = request.data.get('qualifiers_per_pool', 2)
         custom_labels = request.data.get('round_labels', [])
 
         if seeded_players:
@@ -99,9 +100,13 @@ class BracketViewSet(viewsets.ModelViewSet):
         created_matches = []
 
         if pool_size >= 2:
+            num_byes = n % pool_size
+            bye_players = player_ids[:num_byes]
+            pool_players = player_ids[num_byes:]
+
             pools = []
-            for i in range(0, n, pool_size):
-                pool = player_ids[i:i + pool_size]
+            for i in range(0, len(pool_players), pool_size):
+                pool = pool_players[i:i + pool_size]
                 if len(pool) >= 2:
                     pools.append(pool)
 
@@ -124,6 +129,10 @@ class BracketViewSet(viewsets.ModelViewSet):
                         'player2': p2_id,
                     })
 
+            bracket.pool_qualifiers = qualifiers_per_pool
+            bracket.bye_players = ','.join(bye_players) if bye_players else ''
+            bracket.save(update_fields=['pool_qualifiers', 'bye_players'])
+
             return Response({
                 'success': True,
                 'matches_created': len(created_matches),
@@ -132,8 +141,15 @@ class BracketViewSet(viewsets.ModelViewSet):
                 'elimination_type': elimination_type,
                 'pool_size': pool_size,
                 'pools_count': len(pools),
+                'byes_count': num_byes,
+                'bye_players': bye_players,
+                'qualifiers_per_pool': qualifiers_per_pool,
                 'info': f'{len(pools)} poules de {pool_size} joueurs generees. '
-                        f'Les tours suivants seront crees automatiquement apres saisie des resultats.',
+                        f'{qualifiers_per_pool} qualifies par poule. '
+                        f'{num_byes} joueur(s) exempte(s) de poule.'
+                        if num_byes > 0 else
+                        f'{len(pools)} poules de {pool_size} joueurs generees. '
+                        f'{qualifiers_per_pool} qualifies par poule.',
             })
 
         label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
@@ -561,6 +577,8 @@ class MatchViewSet(viewsets.ModelViewSet):
             return None
 
         import math
+        qualifiers_per_pool = getattr(bracket, 'pool_qualifiers', 2) or 2
+
         pool_standings = {}
         for pn in sorted(all_pool_names):
             pmatches = bracket.matches.filter(round_name=pn)
@@ -591,10 +609,13 @@ class MatchViewSet(viewsets.ModelViewSet):
         qualified = []
         for pn in sorted(pool_standings.keys()):
             ranking = pool_standings[pn]
-            if ranking:
-                qualified.append(ranking[0])
+            qualified.extend(ranking[:qualifiers_per_pool])
 
-        n = len(qualified)
+        bye_str = getattr(bracket, 'bye_players', '') or ''
+        bye_ids = [pid for pid in bye_str.split(',') if pid]
+        all_qualified = bye_ids + qualified
+
+        n = len(all_qualified)
         if n < 2:
             return None
 
@@ -602,26 +623,44 @@ class MatchViewSet(viewsets.ModelViewSet):
         while next_power < n:
             next_power *= 2
 
+        num_elim_byes = next_power - n
+
         label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
         rounds_needed = int(math.log2(next_power)) if next_power > 1 else 1
         round_from_end = rounds_needed
-        round_name = label_map.get(round_from_end, 'Tour 2')
+        first_round_name = label_map.get(round_from_end, 'Tour 2')
 
         last_match = None
+        match_idx = 0
+        player_cursor = 0
         for i in range(next_power // 2):
-            p1_idx = i * 2
-            p2_idx = i * 2 + 1
-            p1_id = qualified[p1_idx] if p1_idx < n else None
-            p2_id = qualified[p2_idx] if p2_idx < n else None
-            if p1_id and p2_id:
-                last_match = Match.objects.create(
-                    bracket=bracket,
-                    player1_id=p1_id,
-                    player2_id=p2_id,
-                    round_name=round_name,
-                    round_number=2,
-                    status='waiting',
-                )
+            p1_idx = player_cursor
+            if p1_idx < n:
+                p1_id = all_qualified[p1_idx]
+                player_cursor += 1
+            else:
+                p1_id = None
+
+            if i < num_elim_byes:
+                pass
+            else:
+                p2_idx = player_cursor
+                if p2_idx < n:
+                    p2_id = all_qualified[p2_idx]
+                    player_cursor += 1
+                else:
+                    p2_id = None
+
+                if p1_id and p2_id:
+                    last_match = Match.objects.create(
+                        bracket=bracket,
+                        player1_id=p1_id,
+                        player2_id=p2_id,
+                        round_name=first_round_name,
+                        round_number=2,
+                        status='waiting',
+                    )
+
         return last_match
 
 
