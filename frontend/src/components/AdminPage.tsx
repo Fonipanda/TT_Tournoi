@@ -507,7 +507,7 @@ export default function AdminPage() {
 
   if (!isAuthenticated) {
     return (
-      <Dialog open={showLoginDialog} onOpenChange={() => {}}>
+      <Dialog open={showLoginDialog} onOpenChange={(open) => { if (!open) router.push("/"); }}>
         <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -603,7 +603,7 @@ export default function AdminPage() {
       )}
 
       <Tabs value={adminTab} onValueChange={setAdminTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="tournaments" className="flex items-center gap-1">
             <Trophy className="h-4 w-4" />
             <span className="hidden md:inline">Tournois</span>
@@ -1625,12 +1625,25 @@ export default function AdminPage() {
                 onChange={(e) => setEditRoom(editRoom ? { ...editRoom, name: e.target.value } : null)}
               />
             </div>
-            <div>
-              <Label>Description</Label>
-              <Input
-                value={editRoom?.description || ""}
-                onChange={(e) => setEditRoom(editRoom ? { ...editRoom, description: e.target.value } : null)}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Nombre de rangees</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={editRoom?.rows || ""}
+                  onChange={(e) => setEditRoom(editRoom ? { ...editRoom, rows: parseInt(e.target.value) || 1 } : null)}
+                />
+              </div>
+              <div>
+                <Label>Tables par rangee</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={editRoom?.tables_per_row || ""}
+                  onChange={(e) => setEditRoom(editRoom ? { ...editRoom, tables_per_row: parseInt(e.target.value) || 1 } : null)}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>

@@ -512,7 +512,7 @@ export default function InscriptionPage() {
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="font-bold text-lg">{Number(bracket.entry_fee).toFixed(2)} €</p>
+                              <p className="font-bold text-lg">{(Number(bracket.entry_fee) || 0).toFixed(2)} €</p>
                               {(isSelected || isExisting) && (
                                 <CheckCircle className={`h-5 w-5 ml-auto mt-1 ${
                                   isExisting ? "text-blue-500" : "text-green-500"
@@ -552,7 +552,7 @@ export default function InscriptionPage() {
                   <div className="mt-6 pt-4 border-t">
                     <div className="flex justify-between items-center mb-4">
                       <span className="font-medium">Total a payer :</span>
-                      <span className="text-2xl font-bold">{Number(totalFee).toFixed(2)} €</span>
+                      <span className="text-2xl font-bold">{totalFee.toFixed(2)} €</span>
                     </div>
                     <Button 
                       className="w-full bg-[#00a651] hover:bg-[#008c44]" 
@@ -642,7 +642,7 @@ export default function InscriptionPage() {
                                 Tournoi: {reg.tournament_name}
                               </p>
                             </div>
-                            <Badge>{Number(reg.entry_fee).toFixed(2)} €</Badge>
+                            <Badge>{(Number(reg.entry_fee) || 0).toFixed(2)} €</Badge>
                           </div>
                         </div>
                       ))}

@@ -41,6 +41,12 @@ interface Player {
   ranking: number;
 }
 
+interface Registration {
+  id: string;
+  player: string;
+  bracket: string;
+}
+
 interface AccueilPageProps {
   onNavigate?: (tab: string) => void;
 }
@@ -53,6 +59,7 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
   const [showProgramme, setShowProgramme] = useState(false);
   const [showInscrits, setShowInscrits] = useState(false);
   const [showPlaces, setShowPlaces] = useState(false);
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
 
   useEffect(() => {
     fetchData();
@@ -68,6 +75,12 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
       }
       const playersData = await api.players.list();
       setPlayers(playersData);
+      try {
+        const regsData = await api.registrations.list({});
+        setRegistrations(regsData);
+      } catch (e) {
+        console.error("Erreur chargement registrations:", e);
+      }
     } catch (error) {
       console.error("Erreur chargement donnees:", error);
     } finally {
@@ -93,6 +106,16 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
   });
 
   const availableBrackets = brackets.filter(b => (b.max_players - (b.registered_count || 0)) > 0);
+
+  const getPlayerBrackets = (playerId: string) => {
+    return registrations
+      .filter(r => String(r.player) === String(playerId))
+      .map(r => {
+        const bracket = brackets.find(b => String(b.id) === String(r.bracket));
+        return bracket ? bracket.name : '';
+      })
+      .filter(Boolean);
+  };
 
   if (loading) {
     return (
@@ -200,17 +223,17 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
 
         <Card 
           className="border-blue-200 bg-gradient-to-br from-blue-50 to-white hover:shadow-lg transition-shadow cursor-pointer"
-          onClick={() => setShowProgramme(true)}
+          onClick={() => onNavigate?.("progression")}
         >
           <CardContent className="pt-6">
             <div className="flex items-start gap-4">
               <div className="p-3 bg-blue-100 rounded-full">
-                <Trophy className="h-6 w-6 text-blue-600" />
+                <TrendingUp className="h-6 w-6 text-blue-600" />
               </div>
               <div>
-                <h3 className="font-bold text-lg text-blue-700">Tableaux</h3>
+                <h3 className="font-bold text-lg text-blue-700">Progression</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Recherchez un joueur et suivez son parcours dans le tournoi
+                  Suivez votre parcours et les resultats du tournoi
                 </p>
               </div>
             </div>
@@ -318,13 +341,6 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
               <code className="px-2 py-1 bg-gray-100 rounded text-xs">
                 {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}
               </code>
-            </div>
-            <div className="bg-blue-50 p-3 rounded-lg w-full max-w-sm text-sm">
-              <ol className="text-blue-700 space-y-1 list-decimal list-inside">
-                <li>Ouvrez l'appareil photo</li>
-                <li>Pointez vers le QR Code</li>
-                <li>Touchez le lien pour ouvrir</li>
-              </ol>
             </div>
           </CardContent>
         </Card>
@@ -453,6 +469,7 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
                       <th className="text-left py-3 px-2">Licence</th>
                       <th className="text-left py-3 px-2">Club</th>
                       <th className="text-center py-3 px-2">Points</th>
+                      <th className="text-left py-3 px-2">Tableaux</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -464,6 +481,13 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
                         <td className="py-3 px-2 text-sm text-muted-foreground">{player.club}</td>
                         <td className="py-3 px-2 text-center">
                           <Badge variant="outline">{player.ranking} pts</Badge>
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className="flex flex-wrap gap-1">
+                            {getPlayerBrackets(player.id).map((name, i) => (
+                              <Badge key={i} variant="secondary" className="text-xs">{name}</Badge>
+                            ))}
+                          </div>
                         </td>
                       </tr>
                     ))}
