@@ -164,15 +164,28 @@ export default function AdminPage() {
   const [poolAssignTable, setPoolAssignTable] = useState("");
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  const calcFFTTPoints = (winnerPts: number, loserPts: number) => {
-    const diff = winnerPts - loserPts;
-    let gain: number;
-    if (diff >= 0) {
-      gain = tournamentCoef * Math.max(0, 6 - diff / 25);
-    } else {
-      gain = tournamentCoef * (Math.abs(diff) / 25 + 6);
-    }
-    return Math.round(gain * 10) / 10;
+  const calcFFTTResult = (winnerPts: number, loserPts: number) => {
+    const ecart = Math.abs(winnerPts - loserPts);
+    const isPerf = winnerPts < loserPts && ecart >= 25;
+    const table = [
+      { max: 24, vN: 6, vP: 6, dN: 5, dC: 5 },
+      { max: 49, vN: 5.5, vP: 7, dN: 4.5, dC: 6 },
+      { max: 99, vN: 5, vP: 8, dN: 4, dC: 7 },
+      { max: 149, vN: 4, vP: 10, dN: 3, dC: 8 },
+      { max: 199, vN: 3, vP: 13, dN: 2, dC: 10 },
+      { max: 299, vN: 2, vP: 17, dN: 1, dC: 12.5 },
+      { max: 399, vN: 1, vP: 22, dN: 0, dC: 16 },
+      { max: 499, vN: 0.5, vP: 28, dN: 0, dC: 22 },
+      { max: Infinity, vN: 0, vP: 40, dN: 0, dC: 29 },
+    ];
+    const row = table.find(r => ecart <= r.max)!;
+    const gain = isPerf ? row.vP : row.vN;
+    const loss = isPerf ? row.dC : row.dN;
+    return {
+      gain: Math.round(gain * tournamentCoef * 10) / 10,
+      loss: Math.round(loss * tournamentCoef * 10) / 10,
+      isPerf,
+    };
   };
 
   useEffect(() => {
@@ -2002,13 +2015,16 @@ export default function AdminPage() {
                                                   <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
                                                   <span className="text-[9px] text-gray-500 ml-1 shrink-0">
                                                     {match.player1_ranking ? `${match.player1_ranking}` : ''}
-                                                    {match.status === 'finished' && match.winner && match.player1_ranking && match.player2_ranking && (
-                                                      <span className={match.winner === match.player1 ? 'text-green-600' : 'text-red-500'}>
-                                                        {match.winner === match.player1
-                                                          ? ` +${calcFFTTPoints(Number(match.player1_ranking), Number(match.player2_ranking))}`
-                                                          : ` -${calcFFTTPoints(Number(match.player2_ranking), Number(match.player1_ranking))}`}
-                                                      </span>
-                                                    )}
+                                                    {match.status === 'finished' && match.winner && match.player1_ranking && match.player2_ranking && (() => {
+                                                      const r = calcFFTTResult(Number(match.winner === match.player1 ? match.player1_ranking : match.player2_ranking), Number(match.winner === match.player1 ? match.player2_ranking : match.player1_ranking));
+                                                      const isW = match.winner === match.player1;
+                                                      return (
+                                                        <span className={isW ? 'text-green-600' : 'text-red-500'}>
+                                                          {isW ? ` +${r.gain}` : ` -${r.loss}`}
+                                                          {r.isPerf && <span className="font-bold ml-0.5">{isW ? 'P' : 'C'}</span>}
+                                                        </span>
+                                                      );
+                                                    })()}
                                                   </span>
                                                   {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
                                                 </div>
@@ -2018,13 +2034,16 @@ export default function AdminPage() {
                                                   <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
                                                   <span className="text-[9px] text-gray-500 ml-1 shrink-0">
                                                     {match.player2_ranking ? `${match.player2_ranking}` : ''}
-                                                    {match.status === 'finished' && match.winner && match.player1_ranking && match.player2_ranking && (
-                                                      <span className={match.winner === match.player2 ? 'text-green-600' : 'text-red-500'}>
-                                                        {match.winner === match.player2
-                                                          ? ` +${calcFFTTPoints(Number(match.player2_ranking), Number(match.player1_ranking))}`
-                                                          : ` -${calcFFTTPoints(Number(match.player1_ranking), Number(match.player2_ranking))}`}
-                                                      </span>
-                                                    )}
+                                                    {match.status === 'finished' && match.winner && match.player1_ranking && match.player2_ranking && (() => {
+                                                      const r = calcFFTTResult(Number(match.winner === match.player2 ? match.player2_ranking : match.player1_ranking), Number(match.winner === match.player2 ? match.player1_ranking : match.player2_ranking));
+                                                      const isW = match.winner === match.player2;
+                                                      return (
+                                                        <span className={isW ? 'text-green-600' : 'text-red-500'}>
+                                                          {isW ? ` +${r.gain}` : ` -${r.loss}`}
+                                                          {r.isPerf && <span className="font-bold ml-0.5">{isW ? 'P' : 'C'}</span>}
+                                                        </span>
+                                                      );
+                                                    })()}
                                                   </span>
                                                   {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
                                                 </div>

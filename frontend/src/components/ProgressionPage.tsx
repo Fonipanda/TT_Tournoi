@@ -16,6 +16,8 @@ interface Match {
   player2: string;
   player1_name: string;
   player2_name: string;
+  player1_ranking: number | null;
+  player2_ranking: number | null;
   winner: string | null;
   bracket_name: string;
   bracket: string;
@@ -25,6 +27,7 @@ interface Match {
   table_number: number | null;
   sets_player1: number;
   sets_player2: number;
+  is_forfeit: boolean;
 }
 
 const ROUND_ORDER = ['Pool', '1/64', '1/32', '1/16', '1/8', '1/4', '1/2', 'Petite Finale', 'Finale'];
@@ -33,6 +36,32 @@ const MATCH_GAP = 14;
 const COL_W = 230;
 const CONN_W = 36;
 const HEADER_H = 32;
+const TOURNAMENT_COEF = 0.5;
+
+const FFTT_TABLE = [
+  { max: 24, vN: 6, vP: 6, dN: 5, dC: 5 },
+  { max: 49, vN: 5.5, vP: 7, dN: 4.5, dC: 6 },
+  { max: 99, vN: 5, vP: 8, dN: 4, dC: 7 },
+  { max: 149, vN: 4, vP: 10, dN: 3, dC: 8 },
+  { max: 199, vN: 3, vP: 13, dN: 2, dC: 10 },
+  { max: 299, vN: 2, vP: 17, dN: 1, dC: 12.5 },
+  { max: 399, vN: 1, vP: 22, dN: 0, dC: 16 },
+  { max: 499, vN: 0.5, vP: 28, dN: 0, dC: 22 },
+  { max: Infinity, vN: 0, vP: 40, dN: 0, dC: 29 },
+];
+
+function calcFFTTResult(winnerPts: number, loserPts: number) {
+  const ecart = Math.abs(winnerPts - loserPts);
+  const isPerf = winnerPts < loserPts && ecart >= 25;
+  const row = FFTT_TABLE.find(r => ecart <= r.max)!;
+  const gain = isPerf ? row.vP : row.vN;
+  const loss = isPerf ? row.dC : row.dN;
+  return {
+    gain: Math.round(gain * TOURNAMENT_COEF * 10) / 10,
+    loss: Math.round(loss * TOURNAMENT_COEF * 10) / 10,
+    isPerf,
+  };
+}
 
 export default function ProgressionPage() {
   const [loading, setLoading] = useState(true);
@@ -303,6 +332,23 @@ function BracketMatchCard({ match }: { match: Match }) {
   const live = match.status === 'in_progress';
   const p1W = match.winner === match.player1;
   const p2W = match.winner === match.player2;
+  const hasRankings = match.player1_ranking && match.player2_ranking;
+
+  const renderPoints = (isThisPlayer1: boolean) => {
+    if (!fin || !match.winner || !hasRankings) return null;
+    const isW = isThisPlayer1 ? p1W : p2W;
+    const myPts = Number(isThisPlayer1 ? match.player1_ranking : match.player2_ranking);
+    const oppPts = Number(isThisPlayer1 ? match.player2_ranking : match.player1_ranking);
+    const winnerPts = isW ? myPts : oppPts;
+    const loserPts = isW ? oppPts : myPts;
+    const r = calcFFTTResult(winnerPts, loserPts);
+    return (
+      <span className={isW ? 'text-green-600' : 'text-red-500'}>
+        {isW ? ` +${r.gain}` : ` -${r.loss}`}
+        {r.isPerf && <span className="font-bold ml-0.5">{isW ? 'P' : 'C'}</span>}
+      </span>
+    );
+  };
 
   return (
     <div
@@ -313,17 +359,25 @@ function BracketMatchCard({ match }: { match: Match }) {
       }`}
       style={{ height: MATCH_H }}
     >
-      <div className={`flex items-center justify-between px-3 border-b text-xs ${
+      <div className={`flex items-center justify-between px-2 border-b text-xs ${
         p1W ? 'bg-green-50 font-bold text-green-900' : 'bg-white text-gray-700'
       }`} style={{ height: 24 }}>
         <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
-        {p1W && <Trophy className="h-3 w-3 text-green-600 ml-1 shrink-0" />}
+        <span className="text-[9px] text-gray-500 ml-1 shrink-0 flex items-center gap-0.5">
+          {match.player1_ranking ? `${match.player1_ranking}` : ''}
+          {renderPoints(true)}
+        </span>
+        {p1W && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
       </div>
-      <div className={`flex items-center justify-between px-3 text-xs ${
+      <div className={`flex items-center justify-between px-2 text-xs ${
         p2W ? 'bg-green-50 font-bold text-green-900' : 'bg-white text-gray-700'
       }`} style={{ height: 24 }}>
         <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
-        {p2W && <Trophy className="h-3 w-3 text-green-600 ml-1 shrink-0" />}
+        <span className="text-[9px] text-gray-500 ml-1 shrink-0 flex items-center gap-0.5">
+          {match.player2_ranking ? `${match.player2_ranking}` : ''}
+          {renderPoints(false)}
+        </span>
+        {p2W && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
       </div>
       <div
         className={`text-[10px] text-center ${
