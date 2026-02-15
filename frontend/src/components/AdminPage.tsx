@@ -686,7 +686,7 @@ export default function AdminPage() {
 
   if (!isAuthenticated) {
     return (
-      <Dialog open={showLoginDialog} onOpenChange={(open) => { if (!open) router.push("/"); }}>
+      <Dialog open={showLoginDialog} onOpenChange={(open) => { if (!open) { setShowLoginDialog(false); router.push("/"); } }}>
         <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

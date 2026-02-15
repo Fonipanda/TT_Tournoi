@@ -412,6 +412,18 @@ class MatchViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        busy = []
+        in_progress_qs = Match.objects.filter(status='in_progress').exclude(id=match.id)
+        if match.player1 and in_progress_qs.filter(Q(player1=match.player1) | Q(player2=match.player1)).exists():
+            busy.append(f"{match.player1.first_name} {match.player1.last_name}")
+        if match.player2 and in_progress_qs.filter(Q(player1=match.player2) | Q(player2=match.player2)).exists():
+            busy.append(f"{match.player2.first_name} {match.player2.last_name}")
+        if busy:
+            return Response(
+                {'error': f'Joueur(s) deja en cours de match : {", ".join(busy)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         match.table = table
         match.status = 'in_progress'
         match.start_time = timezone.now()
