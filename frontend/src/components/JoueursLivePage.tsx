@@ -77,7 +77,7 @@ export default function JoueursLivePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Joueurs en Match ({inProgressMatches.length})
+            Match en cours ({inProgressMatches.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -153,7 +153,7 @@ export default function JoueursLivePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-yellow-600" />
-            Joueurs en Attente ({waitingMatches.length})
+            Match en Attente ({waitingMatches.length})
           </CardTitle>
         </CardHeader>
         <CardContent>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,8 @@ import { api } from "@/lib/api";
 import { 
   Settings, Lock, Trophy, Users, LayoutGrid, 
   Coffee, Plus, Trash2, Loader2, AlertCircle,
-  CheckCircle, Play, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal, Printer
+  CheckCircle, Play, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal, Printer,
+  ArrowUp, ArrowDown, Edit2
 } from "lucide-react";
 
 interface Tournament {
@@ -90,8 +90,8 @@ interface MenuItem {
 }
 
 export default function AdminPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showLoginDialog, setShowLoginDialog] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -101,7 +101,6 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const router = useRouter();
 
   const [eliminationType, setEliminationType] = useState<"single" | "double">("single");
   const [hasThirdPlace, setHasThirdPlace] = useState(true);
@@ -142,6 +141,7 @@ export default function AdminPage() {
   const [qrUrl, setQrUrl] = useState(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
   const [qrText, setQrText] = useState("Tournoi Chelles Tennis de Table 2025");
   const [qrGenerated, setQrGenerated] = useState(true);
+  const [qrKey, setQrKey] = useState(0);
 
   const [treeBracketId, setTreeBracketId] = useState("");
   const [treePlayers, setTreePlayers] = useState<any[]>([]);
@@ -154,48 +154,30 @@ export default function AdminPage() {
   const [editingLabels, setEditingLabels] = useState(false);
   const [tempLabels, setTempLabels] = useState<string[]>([]);
   const [poolSize, setPoolSize] = useState<number>(0);
+  const [tournamentCoef, setTournamentCoef] = useState<number>(0.5);
   const [poolOptions, setPoolOptions] = useState<{size: number; pools: number; remainder: number}[]>([]);
+  const [editMatchDialog, setEditMatchDialog] = useState<any | null>(null);
+  const [editWinner, setEditWinner] = useState<string>("");
 
-  useEffect(() => {
-    const token = localStorage.getItem("admin_token");
-    if (token === "admin-token-local") {
-      setIsAuthenticated(true);
-      setShowLoginDialog(false);
+  const [poolAssignName, setPoolAssignName] = useState<string | null>(null);
+  const [poolAssignBracketId, setPoolAssignBracketId] = useState("");
+  const [poolAssignTable, setPoolAssignTable] = useState("");
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  const calcFFTTPoints = (winnerPts: number, loserPts: number) => {
+    const diff = winnerPts - loserPts;
+    let gain: number;
+    if (diff >= 0) {
+      gain = tournamentCoef * Math.max(0, 6 - diff / 25);
+    } else {
+      gain = tournamentCoef * (Math.abs(diff) / 25 + 6);
     }
-  }, []);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchAllData();
-    }
-  }, [isAuthenticated, adminTab]);
-
-  const handleLogin = async () => {
-    setLoggingIn(true);
-    setLoginError(null);
-
-    try {
-      const result = await api.auth.adminLogin(loginUsername, loginPassword);
-      if (result.success) {
-        localStorage.setItem("admin_token", result.token);
-        setIsAuthenticated(true);
-        setShowLoginDialog(false);
-      }
-    } catch (err: any) {
-      setLoginError(err.message || "Identifiants incorrects");
-    } finally {
-      setLoggingIn(false);
-    }
+    return Math.round(gain * 10) / 10;
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("admin_token");
-    setIsAuthenticated(false);
-    setShowLoginDialog(true);
-    setLoginUsername("");
-    setLoginPassword("");
-    router.push("/");
-  };
+  useEffect(() => {
+    fetchAllData();
+  }, [adminTab]);
 
   const fetchAllData = async () => {
     setLoading(true);
@@ -377,6 +359,7 @@ export default function AdminPage() {
 
   const assignMatchToTable = async () => {
     if (!selectedMatch || !selectedTable) return;
+    setAssignError(null);
     try {
       await api.matches.assignTable(selectedMatch.id, selectedTable);
       setSelectedMatch(null);
@@ -385,7 +368,23 @@ export default function AdminPage() {
       await refreshTreeMatches();
       showSuccess("Match assigne a la table");
     } catch (err: any) {
-      setError(err.message);
+      setAssignError(err.message);
+    }
+  };
+
+  const assignPoolToTable = async () => {
+    if (!poolAssignName || !poolAssignTable || !poolAssignBracketId) return;
+    setAssignError(null);
+    try {
+      await api.matches.assignPool(poolAssignBracketId, poolAssignName, poolAssignTable);
+      setPoolAssignName(null);
+      setPoolAssignTable("");
+      setPoolAssignBracketId("");
+      fetchAllData();
+      await refreshTreeMatches();
+      showSuccess(`Pool assignee a la table`);
+    } catch (err: any) {
+      setAssignError(err.message);
     }
   };
 
@@ -399,12 +398,23 @@ export default function AdminPage() {
         payload.sets_player1 = parseInt(finishScore.sets_player1);
         payload.sets_player2 = parseInt(finishScore.sets_player2);
       }
+      const wasPoolMatch = (selectedMatch.round_name || '').startsWith('Pool');
+      
       await api.matches.finish(selectedMatch.id, payload);
       setSelectedMatch(null);
       setFinishScore({ sets_player1: "", sets_player2: "" });
-      fetchAllData();
+      
       await refreshTreeMatches();
-      showSuccess("Match termine");
+      fetchAllData();
+      
+      if (wasPoolMatch) {
+        setTimeout(async () => {
+          await refreshTreeMatches();
+          showSuccess("Match termine - Arbre mis a jour");
+        }, 800);
+      } else {
+        showSuccess("Match termine");
+      }
     } catch (err: any) {
       setError(err.message);
     }
@@ -416,6 +426,26 @@ export default function AdminPage() {
       await refreshTreeMatches();
       fetchAllData();
       showSuccess("Match supprime");
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const updateMatchWinner = async (isForfeit = false) => {
+    if (!editMatchDialog || !editWinner) return;
+    try {
+      const payload: any = { winner_id: editWinner };
+      if (isForfeit) {
+        payload.is_forfeit = true;
+        payload.sets_player1 = 0;
+        payload.sets_player2 = 0;
+      }
+      await api.matches.finish(editMatchDialog.id, payload);
+      setEditMatchDialog(null);
+      setEditWinner("");
+      await refreshTreeMatches();
+      fetchAllData();
+      showSuccess(isForfeit ? "Forfait enregistre" : "Resultat modifie");
     } catch (err: any) {
       setError(err.message);
     }
@@ -465,6 +495,33 @@ export default function AdminPage() {
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  const moveSectionOrder = (idx: number, direction: 'up' | 'down') => {
+    const sorted = [...menuSections];
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= sorted.length) return;
+    const temp = sorted[idx];
+    sorted[idx] = sorted[targetIdx];
+    sorted[targetIdx] = temp;
+    sorted.forEach(async (s, i) => {
+      try { await api.menuSections.update(s.id, { ...s, order: i }); } catch {}
+    });
+    setMenuSections(sorted);
+  };
+
+  const moveItemOrder = (sectionId: string, items: any[], idx: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= items.length) return;
+    const sorted = [...items];
+    const temp = sorted[idx];
+    sorted[idx] = sorted[targetIdx];
+    sorted[targetIdx] = temp;
+    sorted.forEach(async (item, i) => {
+      try { await api.menuItems.update(item.id, { ...item, order: i }); } catch {}
+    });
+    const newMenuItems = menuItems.filter(i => i.section !== sectionId).concat(sorted);
+    setMenuItems(newMenuItems);
   };
 
   const deleteItem = async (type: string, id: string) => {
@@ -578,6 +635,7 @@ export default function AdminPage() {
       await api.players.update(editPlayer.id, {
         first_name: editPlayer.first_name,
         last_name: editPlayer.last_name,
+        license_number: editPlayer.license_number,
         email: editPlayer.email,
         phone: editPlayer.phone,
         club: editPlayer.club,
@@ -684,63 +742,6 @@ export default function AdminPage() {
     printWindow.document.close();
   };
 
-  if (!isAuthenticated) {
-    return (
-      <Dialog open={showLoginDialog} onOpenChange={(open) => { if (!open) { setShowLoginDialog(false); router.push("/"); } }}>
-        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Lock className="h-5 w-5" />
-              Connexion Admin
-            </DialogTitle>
-            <DialogDescription>
-              Entrez vos identifiants administrateur
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Nom d'utilisateur</Label>
-              <Input
-                id="username"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                placeholder="admin"
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Mot de passe</Label>
-              <Input
-                id="password"
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="********"
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              />
-            </div>
-            {loginError && (
-              <p className="text-sm text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-4 w-4" />
-                {loginError}
-              </p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button onClick={handleLogin} disabled={loggingIn} className="w-full">
-              {loggingIn ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Lock className="h-4 w-4 mr-2" />
-              )}
-              Se connecter
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -748,10 +749,6 @@ export default function AdminPage() {
           <Settings className="h-6 w-6" />
           Administration
         </h2>
-        <Button variant="outline" onClick={handleLogout}>
-          <LogOut className="h-4 w-4 mr-2" />
-          Deconnexion
-        </Button>
       </div>
 
       {error && (
@@ -1258,11 +1255,17 @@ export default function AdminPage() {
                 <p className="text-muted-foreground">Aucune section</p>
               ) : (
                 <div className="space-y-4">
-                  {menuSections.map((section) => (
+                  {menuSections.map((section, sIdx) => (
                     <div key={section.id} className="border rounded p-4">
                       <div className="flex justify-between items-center mb-3">
                         <h4 className="font-medium">{section.name}</h4>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" disabled={sIdx === 0} onClick={() => moveSectionOrder(sIdx, 'up')}>
+                            <ArrowUp className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" disabled={sIdx === menuSections.length - 1} onClick={() => moveSectionOrder(sIdx, 'down')}>
+                            <ArrowDown className="h-4 w-4" />
+                          </Button>
                           <Button variant="outline" size="sm" onClick={() => setEditSection(section)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -1272,20 +1275,29 @@ export default function AdminPage() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        {menuItems.filter(i => i.section === section.id).map((item) => (
-                          <div key={item.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                            <span>{item.name}</span>
-                            <div className="flex items-center gap-2">
-                              <Badge>{Number(item.price).toFixed(2)} €</Badge>
-                              <Button variant="outline" size="sm" onClick={() => setEditItem(item)}>
-                                <Pencil className="h-3 w-3" />
-                              </Button>
-                              <Button variant="ghost" size="sm" onClick={() => deleteItem("item", item.id)}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+                        {(() => {
+                          const sectionItems = menuItems.filter(i => i.section === section.id);
+                          return sectionItems.map((item, iIdx) => (
+                            <div key={item.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                              <span>{item.name}</span>
+                              <div className="flex items-center gap-1">
+                                <Badge>{Number(item.price).toFixed(2)} €</Badge>
+                                <Button variant="ghost" size="sm" disabled={iIdx === 0} onClick={() => moveItemOrder(section.id, sectionItems, iIdx, 'up')}>
+                                  <ArrowUp className="h-3 w-3" />
+                                </Button>
+                                <Button variant="ghost" size="sm" disabled={iIdx === sectionItems.length - 1} onClick={() => moveItemOrder(section.id, sectionItems, iIdx, 'down')}>
+                                  <ArrowDown className="h-3 w-3" />
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => setEditItem(item)}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => deleteItem("item", item.id)}>
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ));
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -1324,20 +1336,22 @@ export default function AdminPage() {
                           .filter(r => r.player === player.id)
                           .map(r => {
                             const bracket = brackets.find(b => b.id === r.bracket);
-                            return bracket?.name || "";
+                            if (!bracket?.name) return "";
+                            return bracket.name.replace(/^Tableau\s+/i, '');
                           })
                           .filter(Boolean)
+                          .sort((a, b) => a.localeCompare(b, 'fr'))
                           .join(", ");
                         return (
                           <tr key={player.id} className="border-b hover:bg-gray-50">
-                            <td className="py-2">{player.last_name} {player.first_name}</td>
-                            <td className="py-2">{player.license_number}</td>
-                            <td className="py-2">{player.club}</td>
-                            <td className="py-2">{player.ranking || player.points}</td>
-                            <td className="py-2">{playerBrackets || "-"}</td>
-                            <td className="py-2">{player.email}</td>
-                            <td className="py-2">{player.phone || "-"}</td>
-                            <td className="py-2 text-right">
+                            <td className="py-2 whitespace-nowrap">{player.last_name} {player.first_name}</td>
+                            <td className="py-2 whitespace-nowrap">{player.license_number}</td>
+                            <td className="py-2 whitespace-nowrap">{player.club}</td>
+                            <td className="py-2 whitespace-nowrap">{player.ranking || player.points}</td>
+                            <td className="py-2 whitespace-nowrap">{playerBrackets || "-"}</td>
+                            <td className="py-2 whitespace-nowrap">{player.email}</td>
+                            <td className="py-2 whitespace-nowrap">{player.phone || "-"}</td>
+                            <td className="py-2 text-right whitespace-nowrap">
                               <div className="flex justify-end gap-1">
                                 <Button variant="outline" size="sm" onClick={() => setEditPlayer({...player})}>
                                   <Pencil className="h-3 w-3" />
@@ -1389,13 +1403,14 @@ export default function AdminPage() {
                     />
                   </div>
                   <div className="flex gap-2">
-                    <Button onClick={() => setQrGenerated(true)} disabled={!qrUrl}>
+                    <Button onClick={() => { setQrGenerated(false); setTimeout(() => { setQrKey(k => k + 1); setQrGenerated(true); }, 100); }} disabled={!qrUrl}>
                       <QrCode className="h-4 w-4 mr-2" />
                       Generer
                     </Button>
                     <Button variant="outline" onClick={() => {
                       const lanUrl = `http://${window.location.hostname}:3000`;
                       setQrUrl(lanUrl);
+                      setQrKey(k => k + 1);
                       setQrGenerated(true);
                     }}>
                       Detecter IP LAN
@@ -1415,6 +1430,7 @@ export default function AdminPage() {
                     <>
                       <div className="bg-white p-6 rounded-lg border-2 border-gray-200 shadow-lg">
                         <img 
+                          key={qrKey}
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`}
                           alt="QR Code"
                           className="w-[300px] h-[300px]"
@@ -1474,6 +1490,17 @@ export default function AdminPage() {
                       <Medal className="h-4 w-4 mr-1" />
                       {hasThirdPlace ? "Active" : "Desactive"}
                     </Button>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <Label className="font-medium">Coefficient FFTT:</Label>
+                    <div className="flex gap-2">
+                      <Button variant={tournamentCoef === 0.5 ? "default" : "outline"} size="sm" onClick={() => setTournamentCoef(0.5)}>
+                        Regional (0.5)
+                      </Button>
+                      <Button variant={tournamentCoef === 0.75 ? "default" : "outline"} size="sm" onClick={() => setTournamentCoef(0.75)}>
+                        National (0.75)
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1570,16 +1597,18 @@ export default function AdminPage() {
                   </div>
                   {poolSize > 0 && (
                     <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm">
-                      <p className="font-medium text-blue-800">Deroulement prevu :</p>
+                      <p className="font-medium text-blue-800">Reglement FFTT (Articles I.301 a I.305) :</p>
                       <ol className="mt-1 list-decimal list-inside text-blue-700 space-y-1">
-                        <li>Phase de poules : {poolSize} joueurs par poule, chacun joue contre tous les autres</li>
-                        <li>Les 2 premiers de chaque poule sont qualifies, le 3eme est elimine</li>
+                        <li>Ordre des matchs en poule conforme a l&apos;article I.301 ({poolSize} joueurs/poule)</li>
+                        <li>Classement FFTT I.303 : V=2pts, D=1pt, forfait=0pt. Departage : confrontation directe, puis quotient manches</li>
+                        <li>Les 2 premiers de chaque poule sont qualifies (I.305), le 3eme est elimine</li>
                         {treeSeeds.length % poolSize > 0 && (
                           <li className="text-orange-700 font-medium">
                             {treeSeeds.length % poolSize} joueur(s) avec le plus de points sont exempte(s) de poule (bye)
                           </li>
                         )}
-                        <li>L'arbre d'elimination se constitue automatiquement selon les resultats saisis dans l'arbre ci-dessous</li>
+                        <li>Placement des qualifies : 1ers de poule places comme tetes de serie (I.304.2), 2emes dans le demi-tableau oppose (I.305)</li>
+                        <li>Seeding standard : 1er en haut, 2e en bas, 3-4 tirage, 5-8 tirage, etc.</li>
                       </ol>
                     </div>
                   )}
@@ -1741,14 +1770,18 @@ export default function AdminPage() {
                                 if (m.player2) playerNames[m.player2] = m.player2_name || '?';
                               });
 
+                              const ffttPts: Record<string, number> = {};
                               const wins: Record<string, number> = {};
                               const matchResults: Record<string, string> = {};
-                              playerList.forEach(pid => { wins[pid] = 0; });
+                              playerList.forEach(pid => { ffttPts[pid] = 0; wins[pid] = 0; });
                               pMatches.forEach(m => {
                                 const key1 = `${m.player1}_${m.player2}`;
                                 const key2 = `${m.player2}_${m.player1}`;
                                 if (m.status === 'finished' && m.winner) {
                                   wins[m.winner] = (wins[m.winner] || 0) + 1;
+                                  ffttPts[m.winner] = (ffttPts[m.winner] || 0) + 2;
+                                  const loser = m.winner === m.player1 ? m.player2 : m.player1;
+                                  ffttPts[loser] = (ffttPts[loser] || 0) + 1;
                                   matchResults[key1] = m.winner === m.player1 ? 'V' : 'D';
                                   matchResults[key2] = m.winner === m.player2 ? 'V' : 'D';
                                 } else if (m.status === 'in_progress') {
@@ -1760,14 +1793,34 @@ export default function AdminPage() {
                                 }
                               });
 
-                              const ranking = [...playerList].sort((a, b) => (wins[b] || 0) - (wins[a] || 0));
+                              const ranking = [...playerList].sort((a, b) => (ffttPts[b] || 0) - (ffttPts[a] || 0));
                               const allDone = pMatches.every((m: any) => m.status === 'finished');
+                              const hasWaiting = pMatches.some((m: any) => m.status === 'waiting');
+                              const hasInProgress = pMatches.some((m: any) => m.status === 'in_progress');
+                              const poolTable = pMatches.find((m: any) => m.table_number)?.table_number;
 
                               return (
                                 <div key={poolName} className="border rounded-lg overflow-hidden">
-                                  <div className={`px-4 py-2 font-bold text-white ${allDone ? 'bg-green-700' : 'bg-blue-800'}`}>
-                                    {poolName}
-                                    {allDone && <span className="ml-2 text-xs font-normal opacity-80">- Terminee</span>}
+                                  <div className={`px-4 py-2 font-bold text-white flex items-center justify-between ${allDone ? 'bg-green-700' : hasInProgress ? 'bg-red-700' : 'bg-blue-800'}`}>
+                                    <span>
+                                      {poolName}
+                                      {allDone && <span className="ml-2 text-xs font-normal opacity-80">- Terminee</span>}
+                                      {hasInProgress && <span className="ml-2 text-xs font-normal opacity-80">- En cours{poolTable ? ` (Table ${poolTable})` : ''}</span>}
+                                    </span>
+                                    {hasWaiting && !hasInProgress && (
+                                      <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        className="h-7 text-xs"
+                                        onClick={() => {
+                                          setPoolAssignName(poolName);
+                                          setPoolAssignBracketId(treeBracketId);
+                                          setPoolAssignTable("");
+                                        }}
+                                      >
+                                        <Play className="h-3 w-3 mr-1" /> Assigner table
+                                      </Button>
+                                    )}
                                   </div>
                                   <table className="w-full text-sm">
                                     <thead>
@@ -1777,7 +1830,7 @@ export default function AdminPage() {
                                         {playerList.map((_, ci) => (
                                           <th key={ci} className="text-center px-2 py-2 w-10">{ci + 1}</th>
                                         ))}
-                                        <th className="text-center px-3 py-2 w-10">V</th>
+                                        <th className="text-center px-3 py-2 w-10">Pts</th>
                                         <th className="text-center px-3 py-2 w-20">Classement</th>
                                       </tr>
                                     </thead>
@@ -1803,13 +1856,8 @@ export default function AdminPage() {
                                                   res === 'V' ? 'text-green-600' : res === 'D' ? 'text-red-500' : res === '...' ? 'text-orange-500' : 'text-gray-400'
                                                 }`}
                                                 onClick={() => {
-                                                  if (match) {
-                                                    if (match.status === 'waiting') {
-                                                      setSelectedMatch(match);
-                                                      setSelectedTable("");
-                                                    } else if (match.status === 'in_progress') {
-                                                      setSelectedMatch(match);
-                                                    }
+                                                  if (match && match.status === 'in_progress') {
+                                                    setSelectedMatch(match);
                                                   }
                                                 }}
                                               >
@@ -1817,7 +1865,7 @@ export default function AdminPage() {
                                               </td>
                                             );
                                           })}
-                                          <td className="text-center px-3 py-2 font-bold">{wins[pid] || 0}</td>
+                                          <td className="text-center px-3 py-2 font-bold">{ffttPts[pid] || 0}</td>
                                           <td className={`text-center px-3 py-2 font-bold ${
                                             allDone ? (ri === 0 ? 'text-green-600' : ri === 1 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'
                                           }`}>
@@ -1827,27 +1875,23 @@ export default function AdminPage() {
                                       ))}
                                     </tbody>
                                   </table>
-                                  <div className="px-3 py-2 bg-gray-50 text-xs text-muted-foreground flex gap-3">
+                                  <div className="px-3 py-2 bg-gray-50 text-xs text-muted-foreground flex gap-3 flex-wrap">
                                     {pMatches.map((m: any, mi: number) => (
-                                      <button
+                                      <span
                                         key={m.id}
-                                        onClick={() => {
-                                          if (m.status === 'waiting' && m.player1_name && m.player2_name) {
-                                            setSelectedMatch(m); setSelectedTable("");
-                                          } else if (m.status === 'in_progress') {
-                                            setSelectedMatch(m);
-                                          }
-                                        }}
-                                        className={`px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
+                                        className={`px-2 py-1 rounded text-xs ${
                                           m.status === 'finished' ? 'bg-green-100 text-green-700' :
-                                          m.status === 'in_progress' ? 'bg-red-100 text-red-700 animate-pulse' :
-                                          'bg-gray-200 text-gray-600 hover:bg-blue-100'
+                                          m.status === 'in_progress' ? 'bg-red-100 text-red-700 animate-pulse cursor-pointer' :
+                                          'bg-gray-200 text-gray-600'
                                         }`}
+                                        onClick={() => {
+                                          if (m.status === 'in_progress') setSelectedMatch(m);
+                                        }}
                                       >
                                         M{mi + 1}: {(m.player1_name || '?').split(' ')[0]} vs {(m.player2_name || '?').split(' ')[0]}
                                         {m.status === 'finished' && m.winner && ` → ${playerNames[m.winner]?.split(' ')[0] || '?'}`}
                                         {m.table_number ? ` (T${m.table_number})` : ''}
-                                      </button>
+                                      </span>
                                     ))}
                                   </div>
                                 </div>
@@ -1858,7 +1902,7 @@ export default function AdminPage() {
                       )}
 
                       {sortedElimRounds.length > 0 && (() => {
-                        const MH = 56;
+                        const MH = 72;
                         const MG = 10;
                         const CW = 220;
                         const SW = 36;
@@ -1927,23 +1971,55 @@ export default function AdminPage() {
                                               >
                                                 <div className={`px-2 flex items-center justify-between border-b text-xs ${
                                                   match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : ''
-                                                }`} style={{ height: 22 }}>
+                                                }`} style={{ height: 24 }}>
                                                   <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
+                                                  <span className="text-[9px] text-gray-500 ml-1 shrink-0">
+                                                    {match.player1_ranking ? `${match.player1_ranking}` : ''}
+                                                    {match.status === 'finished' && match.winner && match.player1_ranking && match.player2_ranking && (
+                                                      <span className={match.winner === match.player1 ? 'text-green-600' : 'text-red-500'}>
+                                                        {match.winner === match.player1
+                                                          ? ` +${calcFFTTPoints(Number(match.player1_ranking), Number(match.player2_ranking))}`
+                                                          : ` -${calcFFTTPoints(Number(match.player2_ranking), Number(match.player1_ranking))}`}
+                                                      </span>
+                                                    )}
+                                                  </span>
                                                   {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
                                                 </div>
                                                 <div className={`px-2 flex items-center justify-between text-xs ${
                                                   match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : ''
-                                                }`} style={{ height: 22 }}>
+                                                }`} style={{ height: 24 }}>
                                                   <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
+                                                  <span className="text-[9px] text-gray-500 ml-1 shrink-0">
+                                                    {match.player2_ranking ? `${match.player2_ranking}` : ''}
+                                                    {match.status === 'finished' && match.winner && match.player1_ranking && match.player2_ranking && (
+                                                      <span className={match.winner === match.player2 ? 'text-green-600' : 'text-red-500'}>
+                                                        {match.winner === match.player2
+                                                          ? ` +${calcFFTTPoints(Number(match.player2_ranking), Number(match.player1_ranking))}`
+                                                          : ` -${calcFFTTPoints(Number(match.player1_ranking), Number(match.player2_ranking))}`}
+                                                      </span>
+                                                    )}
+                                                  </span>
                                                   {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
                                                 </div>
-                                                <div className={`text-[9px] text-center ${
+                                                <div className={`text-[9px] text-center flex items-center justify-center gap-1 ${
                                                   match.status === 'in_progress' ? 'bg-red-500 text-white' :
                                                   match.status === 'finished' ? 'bg-green-100 text-green-700' :
                                                   'bg-gray-50 text-gray-400'
-                                                }`} style={{ height: MH - 44, lineHeight: `${MH - 44}px` }}>
+                                                }`} style={{ height: MH - 48, lineHeight: `${MH - 48}px` }}>
                                                   {match.status === 'in_progress' && `En cours${match.table_number ? ` T${match.table_number}` : ''}`}
-                                                  {match.status === 'finished' && 'Termine'}
+                                                  {match.status === 'finished' && (
+                                                    <>
+                                                      <span>Termine</span>
+                                                      <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-4 w-4 p-0 hover:bg-green-200"
+                                                        onClick={(e) => { e.stopPropagation(); setEditMatchDialog(match); setEditWinner(match.winner || ""); }}
+                                                      >
+                                                        <Edit2 className="h-3 w-3" />
+                                                      </Button>
+                                                    </>
+                                                  )}
                                                   {match.status === 'waiting' && (match.table_number ? `T${match.table_number}` : 'Cliquer pour assigner')}
                                                 </div>
                                               </div>
@@ -1996,6 +2072,42 @@ export default function AdminPage() {
               </CardContent>
             </Card>
 
+            {(() => {
+              const elimWaiting = treeMatches.filter(
+                (m: any) => !(m.round_name || '').startsWith('Pool') && m.status === 'waiting' && m.player1_name && m.player2_name
+              );
+              if (elimWaiting.length === 0) return null;
+              return (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Play className="h-5 w-5" />
+                      Matchs a assigner (apres Poules)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {elimWaiting.map((m: any) => (
+                        <div
+                          key={m.id}
+                          className="border rounded-lg p-3 cursor-pointer hover:border-blue-400 hover:shadow transition-all"
+                          onClick={() => { setSelectedMatch(m); setSelectedTable(""); }}
+                        >
+                          <div className="flex justify-between items-center mb-1">
+                            <Badge variant="outline" className="text-xs">{m.round_name}</Badge>
+                          </div>
+                          <div className="text-sm font-medium">{m.player1_name} vs {m.player2_name}</div>
+                          <Button size="sm" className="mt-2 w-full h-7 text-xs" variant="outline">
+                            <Play className="h-3 w-3 mr-1" /> Assigner une table
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -2035,27 +2147,36 @@ export default function AdminPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={selectedMatch !== null && selectedMatch.status === "waiting"} onOpenChange={() => setSelectedMatch(null)}>
+      <Dialog open={selectedMatch !== null && selectedMatch.status === "waiting"} onOpenChange={() => { setSelectedMatch(null); setAssignError(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assigner une table</DialogTitle>
             <DialogDescription>
               {selectedMatch?.player1_name} vs {selectedMatch?.player2_name}
+              {selectedMatch?.round_name && ` - ${selectedMatch.round_name}`}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Label>Table</Label>
-            <Select value={selectedTable} onValueChange={setSelectedTable}>
-              <SelectTrigger><SelectValue placeholder="Selectionnez une table" /></SelectTrigger>
-              <SelectContent>
-                {tables.filter(t => t.status === "free").map((t) => (
-                  <SelectItem key={t.id} value={t.id}>Table {t.table_number} - {t.room_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="py-4 space-y-3">
+            <div>
+              <Label>Table</Label>
+              <Select value={selectedTable} onValueChange={setSelectedTable}>
+                <SelectTrigger><SelectValue placeholder="Selectionnez une table" /></SelectTrigger>
+                <SelectContent>
+                  {tables.filter(t => t.status === "free").map((t) => (
+                    <SelectItem key={t.id} value={t.id}>Table {t.table_number} - {t.room_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {assignError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {assignError}
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedMatch(null)}>Annuler</Button>
+            <Button variant="outline" onClick={() => { setSelectedMatch(null); setAssignError(null); }}>Annuler</Button>
             <Button onClick={assignMatchToTable} disabled={!selectedTable}>
               Assigner
             </Button>
@@ -2094,6 +2215,70 @@ export default function AdminPage() {
             <Button variant="outline" onClick={() => setSelectedMatch(null)}>Annuler</Button>
             <Button variant="destructive" size="sm" onClick={() => { if (selectedMatch) { deleteTreeMatch(selectedMatch.id); setSelectedMatch(null); } }}>
               <Trash2 className="h-3 w-3 mr-1" /> Supprimer le match
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editMatchDialog !== null} onOpenChange={() => { setEditMatchDialog(null); setEditWinner(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier le resultat du match</DialogTitle>
+            <DialogDescription>
+              {editMatchDialog?.player1_name} vs {editMatchDialog?.player2_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <Label className="mb-2 block font-semibold">Selectionner le vainqueur :</Label>
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant={editWinner === editMatchDialog?.player1 ? "default" : "outline"}
+                  className="w-full justify-start h-auto py-3"
+                  onClick={() => setEditWinner(editMatchDialog?.player1 || "")}
+                >
+                  <Trophy className="h-4 w-4 mr-2" />
+                  {editMatchDialog?.player1_name}
+                </Button>
+                <Button
+                  variant={editWinner === editMatchDialog?.player2 ? "default" : "outline"}
+                  className="w-full justify-start h-auto py-3"
+                  onClick={() => setEditWinner(editMatchDialog?.player2 || "")}
+                >
+                  <Trophy className="h-4 w-4 mr-2" />
+                  {editMatchDialog?.player2_name}
+                </Button>
+              </div>
+            </div>
+            <div className="border-t pt-4">
+              <Label className="mb-2 block font-semibold text-red-600">Declarer un forfait :</Label>
+              <p className="text-xs text-gray-500 mb-3">Le joueur forfait perd automatiquement le match</p>
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3 border-red-300 hover:bg-red-50"
+                  onClick={() => { setEditWinner(editMatchDialog?.player2 || ""); updateMatchWinner(true); }}
+                >
+                  <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
+                  {editMatchDialog?.player1_name} - Forfait
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3 border-red-300 hover:bg-red-50"
+                  onClick={() => { setEditWinner(editMatchDialog?.player1 || ""); updateMatchWinner(true); }}
+                >
+                  <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
+                  {editMatchDialog?.player2_name} - Forfait
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditMatchDialog(null); setEditWinner(""); }}>
+              Annuler
+            </Button>
+            <Button onClick={() => updateMatchWinner(false)} disabled={!editWinner}>
+              Valider
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2327,12 +2512,21 @@ export default function AdminPage() {
                 />
               </div>
             </div>
-            <div>
-              <Label>Club</Label>
-              <Input
-                value={editPlayer?.club || ""}
-                onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, club: e.target.value } : null)}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>N° Licence</Label>
+                <Input
+                  value={editPlayer?.license_number || ""}
+                  onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, license_number: e.target.value } : null)}
+                />
+              </div>
+              <div>
+                <Label>Club</Label>
+                <Input
+                  value={editPlayer?.club || ""}
+                  onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, club: e.target.value } : null)}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -2362,6 +2556,42 @@ export default function AdminPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditPlayer(null)}>Annuler</Button>
             <Button onClick={updatePlayer}>Enregistrer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={poolAssignName !== null} onOpenChange={() => { setPoolAssignName(null); setAssignError(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assigner la pool a une table</DialogTitle>
+            <DialogDescription>
+              {poolAssignName} - Les matchs seront joues sequentiellement sur la table choisie.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <div>
+              <Label>Table</Label>
+              <Select value={poolAssignTable} onValueChange={setPoolAssignTable}>
+                <SelectTrigger><SelectValue placeholder="Selectionnez une table" /></SelectTrigger>
+                <SelectContent>
+                  {tables.filter(t => t.status === "free").map((t) => (
+                    <SelectItem key={t.id} value={t.id}>Table {t.table_number} - {t.room_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {assignError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {assignError}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setPoolAssignName(null); setAssignError(null); }}>Annuler</Button>
+            <Button onClick={assignPoolToTable} disabled={!poolAssignTable}>
+              Assigner la pool
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

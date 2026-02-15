@@ -86,6 +86,15 @@ export default function LivePage() {
     return acc;
   }, {} as Record<string, TableData[]>);
 
+  const formatShortName = (fullName: string) => {
+    if (!fullName) return '?';
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length < 2) return fullName.toUpperCase();
+    const lastName = parts[0].toUpperCase();
+    const firstInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+    return `${lastName}.${firstInitial}`;
+  };
+
   const PingPongTable = ({ table, index }: { table: TableData; index: number }) => {
     const isOccupied = table.status === "occupied";
     const isFree = table.status === "free";
@@ -145,15 +154,15 @@ export default function LivePage() {
         {isOccupied && table.player1 && table.player2 && (
           <div className="mt-2 p-2 bg-white rounded-lg border shadow-sm">
             <div className="flex items-center justify-between text-xs">
-              <div className="flex-1 text-center">
-                <p className="font-semibold truncate">{table.player1.name}</p>
+              <div className="flex-1 text-center min-w-0">
+                <p className="font-semibold truncate" title={table.player1.name}>{formatShortName(table.player1.name)}</p>
                 <p className="text-muted-foreground text-[10px]">
                   {table.player1.ranking} pts
                 </p>
               </div>
-              <div className="px-2 font-bold text-gray-400">VS</div>
-              <div className="flex-1 text-center">
-                <p className="font-semibold truncate">{table.player2.name}</p>
+              <div className="px-1 font-bold text-gray-400 shrink-0">VS</div>
+              <div className="flex-1 text-center min-w-0">
+                <p className="font-semibold truncate" title={table.player2.name}>{formatShortName(table.player2.name)}</p>
                 <p className="text-muted-foreground text-[10px]">
                   {table.player2.ranking} pts
                 </p>

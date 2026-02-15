@@ -1,4 +1,8 @@
 import requests
+import random
+import math
+import hashlib
+from itertools import combinations
 from django.utils import timezone
 from django.db.models import Count, Q, Max
 from django.core.mail import send_mail
@@ -9,14 +13,197 @@ from rest_framework.response import Response
 from .models import (
     Tournament, Bracket, Player, PlayerBracketRegistration,
     Room, Table, Match, MenuSection, MenuItem,
-    PlayerNotificationSubscription, Notification
+    PlayerNotificationSubscription, Notification, UserAccount
 )
 from .serializers import (
     TournamentSerializer, BracketSerializer, PlayerSerializer,
     PlayerBracketRegistrationSerializer, RoomSerializer, TableSerializer,
     MatchSerializer, MenuSectionSerializer, MenuItemSerializer,
-    PlayerNotificationSubscriptionSerializer, NotificationSerializer
+    PlayerNotificationSubscriptionSerializer, NotificationSerializer,
+    UserAccountSerializer
 )
+
+
+# ============================================================
+# FFTT Rules - Articles I.301 to I.305
+# Reglements sportifs 2025 (16 janvier 2026)
+# ============================================================
+
+# I.301 - Ordre des parties dans une poule
+# (pool_size, qualifiers_per_pool) -> [(p1_0based, p2_0based), ...]
+FFTT_POOL_ORDERS = {
+    (3, 1): [(0,2), (1,2), (0,1)],
+    (3, 2): [(0,2), (0,1), (1,2)],
+    (3, 3): [(0,2), (1,2), (0,1)],
+    (4, 1): [(0,3),(1,2), (0,2),(1,3), (0,1),(2,3)],
+    (4, 2): [(0,2),(1,3), (0,1),(2,3), (0,3),(1,2)],
+    (4, 3): [(0,3),(1,2), (0,2),(1,3), (0,1),(2,3)],
+    (5, 1): [(1,4),(2,3), (0,4),(1,2), (0,3),(2,4), (0,2),(1,3), (0,1),(3,4)],
+    (5, 2): [(1,4),(2,3), (0,3),(2,4), (0,2),(1,3), (0,1),(3,4), (0,4),(1,2)],
+    (6, 1): [(0,5),(1,4),(2,3), (0,4),(3,5),(1,2), (0,3),(2,4),(1,5),
+             (0,2),(1,3),(4,5), (0,1),(2,5),(3,4)],
+    (6, 2): [(0,5),(1,4),(2,3), (0,3),(2,4),(1,5), (0,2),(1,3),(4,5),
+             (0,1),(2,5),(3,4), (0,4),(3,5),(1,2)],
+}
+
+
+def fftt_pool_match_order(pool_size, qualifiers):
+    key = (pool_size, min(qualifiers, pool_size - 1))
+    if key in FFTT_POOL_ORDERS:
+        return FFTT_POOL_ORDERS[key]
+    return list(combinations(range(pool_size), 2))
+
+
+def fftt_pool_ranking(pool_matches, players_in_pool):
+    """I.303 - Classement des joueurs dans une poule.
+    V=2pts, D=1pt, absent/forfait=0pt.
+    Departage: confrontation directe, quotient manches, quotient points-jeu."""
+    pts = {pid: 0 for pid in players_in_pool}
+    sets_w = {pid: 0 for pid in players_in_pool}
+    sets_l = {pid: 0 for pid in players_in_pool}
+    direct = {}
+
+    for m in pool_matches:
+        p1 = str(m.player1_id)
+        p2 = str(m.player2_id)
+        if m.status == 'finished' and m.winner_id:
+            w = str(m.winner_id)
+            lo = p2 if w == p1 else p1
+            pts[w] = pts.get(w, 0) + 2
+            pts[lo] = pts.get(lo, 0) + 1
+            direct[(p1, p2)] = w
+            direct[(p2, p1)] = w
+        sets_w[p1] = sets_w.get(p1, 0) + (m.sets_player1 or 0)
+        sets_l[p1] = sets_l.get(p1, 0) + (m.sets_player2 or 0)
+        sets_w[p2] = sets_w.get(p2, 0) + (m.sets_player2 or 0)
+        sets_l[p2] = sets_l.get(p2, 0) + (m.sets_player1 or 0)
+
+    def sort_key(pid):
+        sw = sets_w.get(pid, 0)
+        sl = sets_l.get(pid, 0)
+        quotient = sw / sl if sl > 0 else (sw * 100 if sw > 0 else 0)
+        return (pts.get(pid, 0), quotient)
+
+    ranking = sorted(players_in_pool, key=sort_key, reverse=True)
+
+    i = 0
+    while i < len(ranking) - 1:
+        j = i + 1
+        while j < len(ranking) and sort_key(ranking[j]) == sort_key(ranking[i]):
+            j += 1
+        if j - i == 2:
+            p1, p2 = ranking[i], ranking[i + 1]
+            w = direct.get((p1, p2))
+            if w == p2:
+                ranking[i], ranking[i + 1] = ranking[i + 1], ranking[i]
+        i = j
+
+    return ranking
+
+
+def fftt_seeding_positions(bracket_size):
+    """I.304.2 - Standard bracket seeding positions.
+    Returns list where result[i] = seed number (1-based) at bracket position i."""
+    if bracket_size <= 1:
+        return [1]
+    seeds = [1, 2]
+    while len(seeds) < bracket_size:
+        new_seeds = []
+        for s in seeds:
+            new_seeds.append(s)
+            new_seeds.append(len(seeds) * 2 + 1 - s)
+        seeds = new_seeds
+    return seeds[:bracket_size]
+
+
+def fftt_place_qualifiers(pool_standings, qualifiers_per_pool, bye_ids):
+    """I.305 - Placement des qualifies de poules dans un tableau elimination directe.
+    1ers de poule places comme tetes de serie (I.304.2).
+    2emes de poule dans le demi-tableau oppose de leur 1er respectif."""
+    firsts = []
+    seconds = []
+    thirds = []
+    pool_names_sorted = sorted(pool_standings.keys())
+
+    for pn in pool_names_sorted:
+        ranking = pool_standings[pn]
+        if len(ranking) >= 1:
+            firsts.append(ranking[0])
+        if len(ranking) >= 2 and qualifiers_per_pool >= 2:
+            seconds.append(ranking[1])
+        if len(ranking) >= 3 and qualifiers_per_pool >= 3:
+            thirds.append(ranking[2])
+
+    all_qualified = list(bye_ids) + firsts + seconds + thirds
+    n = len(all_qualified)
+    if n < 2:
+        return all_qualified
+
+    next_power = 1
+    while next_power < n:
+        next_power *= 2
+
+    seed_at_pos = fftt_seeding_positions(next_power)
+    pos_for_seed = {s: i for i, s in enumerate(seed_at_pos)}
+
+    ordered = [None] * next_power
+
+    all_seeds = list(range(1, len(bye_ids) + len(firsts) + 1))
+    random.shuffle(all_seeds[2:4] if len(all_seeds) > 3 else [])
+
+    seed_groups = [(0, 2), (2, 4), (4, 8), (8, 16), (16, 32), (32, 64)]
+    shuffled_seeds = list(all_seeds[:2])
+    for start, end in seed_groups:
+        group = [s for s in all_seeds if start < s <= end]
+        random.shuffle(group)
+        shuffled_seeds.extend(group)
+    shuffled_seeds = shuffled_seeds[:len(bye_ids) + len(firsts)]
+
+    first_players = list(bye_ids) + firsts
+    for idx, seed_num in enumerate(shuffled_seeds):
+        if idx < len(first_players) and seed_num <= next_power:
+            pos = pos_for_seed.get(seed_num, idx)
+            if pos < next_power:
+                ordered[pos] = first_players[idx]
+
+    if qualifiers_per_pool >= 2:
+        half = next_power // 2
+        for sec_idx, sec_pid in enumerate(seconds):
+            first_pid = firsts[sec_idx] if sec_idx < len(firsts) else None
+            if first_pid:
+                first_pos = None
+                for p, pid in enumerate(ordered):
+                    if pid == first_pid:
+                        first_pos = p
+                        break
+                if first_pos is not None:
+                    target_half = 1 if first_pos < half else 0
+                    start = target_half * half
+                    end_pos = start + half
+                    placed = False
+                    for p in range(start, end_pos):
+                        if ordered[p] is None:
+                            ordered[p] = sec_pid
+                            placed = True
+                            break
+                    if not placed:
+                        for p in range(next_power):
+                            if ordered[p] is None:
+                                ordered[p] = sec_pid
+                                break
+            else:
+                for p in range(next_power):
+                    if ordered[p] is None:
+                        ordered[p] = sec_pid
+                        break
+
+    for pid in thirds:
+        for p in range(next_power):
+            if ordered[p] is None:
+                ordered[p] = pid
+                break
+
+    return [pid for pid in ordered if pid is not None]
 
 
 class TournamentViewSet(viewsets.ModelViewSet):
@@ -76,8 +263,6 @@ class BracketViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def generate_matches(self, request, pk=None):
-        import math
-        from itertools import combinations
         bracket = self.get_object()
         elimination_type = request.data.get('elimination_type', 'single')
         has_third_place = request.data.get('has_third_place', True)
@@ -112,22 +297,24 @@ class BracketViewSet(viewsets.ModelViewSet):
 
             for pool_idx, pool in enumerate(pools):
                 pool_name = f"Pool {chr(65 + pool_idx)}"
-                for p1_id, p2_id in combinations(pool, 2):
-                    match = Match.objects.create(
-                        bracket=bracket,
-                        player1_id=p1_id,
-                        player2_id=p2_id,
-                        round_name=pool_name,
-                        round_number=1,
-                        status='waiting'
-                    )
-                    created_matches.append({
-                        'id': str(match.id),
-                        'round_name': pool_name,
-                        'round_number': 1,
-                        'player1': p1_id,
-                        'player2': p2_id,
-                    })
+                match_order = fftt_pool_match_order(len(pool), qualifiers_per_pool)
+                for p1_idx, p2_idx in match_order:
+                    if p1_idx < len(pool) and p2_idx < len(pool):
+                        match = Match.objects.create(
+                            bracket=bracket,
+                            player1_id=pool[p1_idx],
+                            player2_id=pool[p2_idx],
+                            round_name=pool_name,
+                            round_number=1,
+                            status='waiting'
+                        )
+                        created_matches.append({
+                            'id': str(match.id),
+                            'round_name': pool_name,
+                            'round_number': 1,
+                            'player1': pool[p1_idx],
+                            'player2': pool[p2_idx],
+                        })
 
             bracket.pool_qualifiers = qualifiers_per_pool
             bracket.bye_players = ','.join(bye_players) if bye_players else ''
@@ -144,12 +331,10 @@ class BracketViewSet(viewsets.ModelViewSet):
                 'byes_count': num_byes,
                 'bye_players': bye_players,
                 'qualifiers_per_pool': qualifiers_per_pool,
-                'info': f'{len(pools)} poules de {pool_size} joueurs generees. '
-                        f'{qualifiers_per_pool} qualifies par poule. '
-                        f'{num_byes} joueur(s) exempte(s) de poule.'
-                        if num_byes > 0 else
-                        f'{len(pools)} poules de {pool_size} joueurs generees. '
-                        f'{qualifiers_per_pool} qualifies par poule.',
+                'info': f'{len(pools)} poules de {pool_size} generees (ordre FFTT I.301). '
+                        f'Classement FFTT I.303 (V=2pts, D=1pt). '
+                        f'{qualifiers_per_pool} qualifie(s)/poule. '
+                        + (f'{num_byes} exempte(s).' if num_byes > 0 else ''),
             })
 
         label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
@@ -439,6 +624,67 @@ class MatchViewSet(viewsets.ModelViewSet):
         send_match_notification(match, 'table_assigned')
         
         return Response({'message': 'Match assigné à la table'})
+
+    @action(detail=False, methods=['post'])
+    def assign_pool(self, request):
+        bracket_id = request.data.get('bracket_id')
+        pool_name = request.data.get('pool_name')
+        table_id = request.data.get('table_id')
+
+        if not all([bracket_id, pool_name, table_id]):
+            return Response({'error': 'bracket_id, pool_name et table_id requis'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            table = Table.objects.get(id=table_id)
+        except Table.DoesNotExist:
+            return Response({'error': 'Table non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+
+        if table.status != 'free':
+            return Response({'error': 'Cette table n\'est pas disponible'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pool_matches = Match.objects.filter(
+            bracket_id=bracket_id,
+            round_name=pool_name,
+            status='waiting'
+        ).order_by('created_at')
+
+        if not pool_matches.exists():
+            return Response({'error': 'Aucun match en attente dans cette poule'}, status=status.HTTP_400_BAD_REQUEST)
+
+        first_match = pool_matches.first()
+
+        busy = []
+        in_progress_qs = Match.objects.filter(status='in_progress')
+        if first_match.player1 and in_progress_qs.filter(Q(player1=first_match.player1) | Q(player2=first_match.player1)).exists():
+            busy.append(f"{first_match.player1.first_name} {first_match.player1.last_name}")
+        if first_match.player2 and in_progress_qs.filter(Q(player1=first_match.player2) | Q(player2=first_match.player2)).exists():
+            busy.append(f"{first_match.player2.first_name} {first_match.player2.last_name}")
+        if busy:
+            return Response(
+                {'error': f'Joueur(s) deja en cours de match : {", ".join(busy)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        first_match.table = table
+        first_match.status = 'in_progress'
+        first_match.start_time = timezone.now()
+        first_match.save()
+
+        table.status = 'occupied'
+        table.current_match = first_match
+        table.player1 = first_match.player1
+        table.player2 = first_match.player2
+        table.match_start_time = timezone.now()
+        table.save()
+
+        send_match_notification(first_match, 'table_assigned')
+
+        remaining = pool_matches.count() - 1
+        return Response({
+            'message': f'Pool {pool_name} assignee a la table {table.table_number}. Match 1 en cours.',
+            'match_id': str(first_match.id),
+            'remaining_matches': remaining,
+        })
     
     @action(detail=True, methods=['post'])
     def finish(self, request, pk=None):
@@ -484,7 +730,40 @@ class MatchViewSet(viewsets.ModelViewSet):
         match.end_time = timezone.now()
         match.save()
         
-        if match.table:
+        auto_next = None
+        is_pool = (match.round_name or '').startswith('Pool')
+        
+        if match.table and is_pool:
+            next_pool_match = Match.objects.filter(
+                bracket_id=match.bracket_id,
+                round_name=match.round_name,
+                status='waiting'
+            ).order_by('created_at').first()
+
+            if next_pool_match:
+                next_pool_match.table = match.table
+                next_pool_match.status = 'in_progress'
+                next_pool_match.start_time = timezone.now()
+                next_pool_match.save()
+
+                table = match.table
+                table.current_match = next_pool_match
+                table.player1 = next_pool_match.player1
+                table.player2 = next_pool_match.player2
+                table.match_start_time = timezone.now()
+                table.save()
+
+                send_match_notification(next_pool_match, 'table_assigned')
+                auto_next = next_pool_match
+            else:
+                table = match.table
+                table.status = 'free'
+                table.current_match = None
+                table.player1 = None
+                table.player2 = None
+                table.match_start_time = None
+                table.save()
+        elif match.table:
             table = match.table
             table.status = 'free'
             table.current_match = None
@@ -499,6 +778,7 @@ class MatchViewSet(viewsets.ModelViewSet):
             'message': 'Match terminé',
             'winner': str(match.winner.id) if match.winner else None,
             'next_match': str(next_match.id) if next_match else None,
+            'auto_next_pool_match': str(auto_next.id) if auto_next else None,
         })
 
     def _advance_bracket(self, finished_match):
@@ -598,49 +878,22 @@ class MatchViewSet(viewsets.ModelViewSet):
         if not all_pools_done:
             return None
 
-        has_elim_matches = bracket.matches.filter(round_number__gt=1).exists()
-        if has_elim_matches:
-            return None
-
-        import math
         qualifiers_per_pool = getattr(bracket, 'pool_qualifiers', 2) or 2
 
         pool_standings = {}
         for pn in sorted(all_pool_names):
-            pmatches = bracket.matches.filter(round_name=pn)
+            pmatches = list(bracket.matches.filter(round_name=pn))
             players_in_pool = set()
-            wins = {}
-            sets_diff = {}
             for m in pmatches:
-                p1id = str(m.player1_id)
-                p2id = str(m.player2_id)
-                players_in_pool.add(p1id)
-                players_in_pool.add(p2id)
-                wins.setdefault(p1id, 0)
-                wins.setdefault(p2id, 0)
-                sets_diff.setdefault(p1id, 0)
-                sets_diff.setdefault(p2id, 0)
-                if m.winner_id:
-                    wins[str(m.winner_id)] = wins.get(str(m.winner_id), 0) + 1
-                sets_diff[p1id] += (m.sets_player1 or 0) - (m.sets_player2 or 0)
-                sets_diff[p2id] += (m.sets_player2 or 0) - (m.sets_player1 or 0)
-
-            ranking = sorted(
-                players_in_pool,
-                key=lambda pid: (wins.get(pid, 0), sets_diff.get(pid, 0)),
-                reverse=True,
-            )
+                players_in_pool.add(str(m.player1_id))
+                players_in_pool.add(str(m.player2_id))
+            ranking = fftt_pool_ranking(pmatches, list(players_in_pool))
             pool_standings[pn] = ranking
-
-        qualified = []
-        for pn in sorted(pool_standings.keys()):
-            ranking = pool_standings[pn]
-            qualified.extend(ranking[:qualifiers_per_pool])
 
         bye_str = getattr(bracket, 'bye_players', '') or ''
         bye_ids = [pid for pid in bye_str.split(',') if pid]
-        all_qualified = bye_ids + qualified
 
+        all_qualified = fftt_place_qualifiers(pool_standings, qualifiers_per_pool, bye_ids)
         n = len(all_qualified)
         if n < 2:
             return None
@@ -649,43 +902,53 @@ class MatchViewSet(viewsets.ModelViewSet):
         while next_power < n:
             next_power *= 2
 
-        num_elim_byes = next_power - n
-
         label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
         rounds_needed = int(math.log2(next_power)) if next_power > 1 else 1
         round_from_end = rounds_needed
         first_round_name = label_map.get(round_from_end, 'Tour 2')
 
+        expected_first_round_matches = next_power // 2
+        existing_first_round_count = bracket.matches.filter(
+            round_name=first_round_name,
+            round_number=2
+        ).count()
+        
+        if existing_first_round_count >= expected_first_round_matches:
+            return None
+
+        seed_positions = fftt_seeding_positions(next_power)
+        pos_for_seed = {s: i for i, s in enumerate(seed_positions)}
+
+        ordered_players = [None] * next_power
+        for idx, pid in enumerate(all_qualified):
+            seed_num = idx + 1
+            pos = pos_for_seed.get(seed_num, idx)
+            if pos < next_power:
+                ordered_players[pos] = pid
+
         last_match = None
-        match_idx = 0
-        player_cursor = 0
-        for i in range(next_power // 2):
-            p1_idx = player_cursor
-            if p1_idx < n:
-                p1_id = all_qualified[p1_idx]
-                player_cursor += 1
-            else:
-                p1_id = None
+        for i in range(0, next_power, 2):
+            p1_id = ordered_players[i]
+            p2_id = ordered_players[i + 1] if i + 1 < next_power else None
 
-            if i < num_elim_byes:
-                pass
-            else:
-                p2_idx = player_cursor
-                if p2_idx < n:
-                    p2_id = all_qualified[p2_idx]
-                    player_cursor += 1
-                else:
-                    p2_id = None
-
-                if p1_id and p2_id:
-                    last_match = Match.objects.create(
-                        bracket=bracket,
-                        player1_id=p1_id,
-                        player2_id=p2_id,
-                        round_name=first_round_name,
-                        round_number=2,
-                        status='waiting',
-                    )
+            if p1_id and p2_id:
+                last_match = Match.objects.create(
+                    bracket=bracket,
+                    player1_id=p1_id,
+                    player2_id=p2_id,
+                    round_name=first_round_name,
+                    round_number=2,
+                    status='waiting',
+                )
+            elif p1_id and not p2_id:
+                next_rn = label_map.get(round_from_end - 1, first_round_name)
+                last_match = Match.objects.create(
+                    bracket=bracket,
+                    player1_id=p1_id,
+                    round_name=next_rn,
+                    round_number=3,
+                    status='waiting',
+                )
 
         return last_match
 
@@ -864,12 +1127,68 @@ def admin_login(request):
         return Response({
             'success': True,
             'message': 'Connexion réussie',
-            'token': 'admin-token-local'
+            'token': 'admin-token-local',
+            'role': 'admin',
         })
+
+    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+    try:
+        account = UserAccount.objects.get(username=username, password_hash=pwd_hash)
+        return Response({
+            'success': True,
+            'message': 'Connexion réussie',
+            'token': f'{account.role}-token-{account.id}',
+            'role': account.role,
+            'player_id': str(account.player_id) if account.player else None,
+            'username': account.username,
+        })
+    except UserAccount.DoesNotExist:
+        pass
+
     return Response({
         'success': False,
         'error': 'Identifiants incorrects'
     }, status=status.HTTP_401_UNAUTHORIZED)
+
+
+@api_view(['POST'])
+def player_register(request):
+    username = request.data.get('username', '').strip()
+    password = request.data.get('password', '').strip()
+    license_number = request.data.get('license_number', '').strip()
+
+    if not username or not password:
+        return Response({'success': False, 'error': 'Nom d\'utilisateur et mot de passe requis'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if len(password) < 4:
+        return Response({'success': False, 'error': 'Le mot de passe doit contenir au moins 4 caracteres'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if UserAccount.objects.filter(username=username).exists():
+        return Response({'success': False, 'error': 'Ce nom d\'utilisateur existe deja'}, status=status.HTTP_400_BAD_REQUEST)
+
+    player = None
+    if license_number:
+        try:
+            player = Player.objects.get(license_number=license_number)
+        except Player.DoesNotExist:
+            pass
+
+    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+    account = UserAccount.objects.create(
+        username=username,
+        password_hash=pwd_hash,
+        role='player',
+        player=player,
+    )
+
+    return Response({
+        'success': True,
+        'message': 'Compte cree avec succes',
+        'token': f'player-token-{account.id}',
+        'role': 'player',
+        'player_id': str(player.id) if player else None,
+        'username': account.username,
+    })
 
 
 def send_match_notification(match, notification_type):

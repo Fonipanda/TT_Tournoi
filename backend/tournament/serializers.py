@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Tournament, Bracket, Player, PlayerBracketRegistration,
     Room, Table, Match, MenuSection, MenuItem,
-    PlayerNotificationSubscription, Notification
+    PlayerNotificationSubscription, Notification, UserAccount
 )
 
 
@@ -73,12 +73,12 @@ class TableSerializer(serializers.ModelSerializer):
 class MatchSerializer(serializers.ModelSerializer):
     player1_name = serializers.SerializerMethodField()
     player2_name = serializers.SerializerMethodField()
-    player1_club = serializers.CharField(source='player1.club', read_only=True)
-    player2_club = serializers.CharField(source='player2.club', read_only=True)
-    player1_ranking = serializers.CharField(source='player1.ranking', read_only=True)
-    player2_ranking = serializers.CharField(source='player2.ranking', read_only=True)
-    table_number = serializers.IntegerField(source='table.table_number', read_only=True)
-    bracket_name = serializers.CharField(source='bracket.name', read_only=True)
+    player1_club = serializers.SerializerMethodField()
+    player2_club = serializers.SerializerMethodField()
+    player1_ranking = serializers.SerializerMethodField()
+    player2_ranking = serializers.SerializerMethodField()
+    table_number = serializers.SerializerMethodField()
+    bracket_name = serializers.CharField(source='bracket.name', read_only=True, default='')
     winner_name = serializers.SerializerMethodField()
     
     class Meta:
@@ -86,10 +86,33 @@ class MatchSerializer(serializers.ModelSerializer):
         fields = '__all__'
     
     def get_player1_name(self, obj):
-        return f"{obj.player1.last_name} {obj.player1.first_name}"
+        if obj.player1:
+            return f"{obj.player1.last_name} {obj.player1.first_name}"
+        return None
     
     def get_player2_name(self, obj):
-        return f"{obj.player2.last_name} {obj.player2.first_name}"
+        if obj.player2:
+            return f"{obj.player2.last_name} {obj.player2.first_name}"
+        return None
+
+    def get_player1_club(self, obj):
+        return obj.player1.club if obj.player1 else None
+
+    def get_player2_club(self, obj):
+        return obj.player2.club if obj.player2 else None
+
+    def get_player1_ranking(self, obj):
+        if obj.player1:
+            return obj.player1.points or obj.player1.ranking
+        return None
+
+    def get_player2_ranking(self, obj):
+        if obj.player2:
+            return obj.player2.points or obj.player2.ranking
+        return None
+
+    def get_table_number(self, obj):
+        return obj.table.table_number if obj.table else None
     
     def get_winner_name(self, obj):
         if obj.winner:
@@ -134,3 +157,16 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = '__all__'
+
+
+class UserAccountSerializer(serializers.ModelSerializer):
+    player_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserAccount
+        fields = ['id', 'username', 'role', 'player', 'player_name', 'created_at']
+
+    def get_player_name(self, obj):
+        if obj.player:
+            return f"{obj.player.last_name} {obj.player.first_name}"
+        return None

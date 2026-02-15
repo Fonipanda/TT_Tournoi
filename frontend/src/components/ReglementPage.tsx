@@ -24,14 +24,17 @@ export default function ReglementPage() {
     },
     {
       icon: Trophy,
-      title: "Format des matchs",
+      title: "Format des matchs (FFTT)",
       color: "text-yellow-600",
       bgColor: "bg-yellow-50",
       items: [
-        "Tours preliminaires : Matchs au meilleur des 5 sets (premier a 3 sets gagnes)",
-        "Demi-finales et finales : Matchs au meilleur des 7 sets (premier a 4 sets gagnes)",
+        "Phase de poules : matchs au meilleur des 5 sets (3 sets gagnants). Ordre des matchs conforme a l'article I.301 du reglement FFTT",
+        "Phase d'elimination : matchs au meilleur des 5 sets (3 sets gagnants)",
+        "Demi-finales et finales : matchs au meilleur des 7 sets (4 sets gagnants)",
         "Chaque set se joue en 11 points, avec 2 points d'ecart minimum",
-        "En cas d'egalite 10-10, le premier joueur a mener de 2 points remporte le set"
+        "Classement en poule FFTT (I.303) : Victoire = 2 pts, Defaite = 1 pt, Forfait/absence = 0 pt",
+        "Departage : confrontation directe, puis quotient de manches gagnees/perdues",
+        "Placement dans le tableau (I.304.2/I.305) : 1ers de poule places comme tetes de serie, 2emes dans le demi-tableau oppose"
       ]
     },
     {
@@ -41,7 +44,7 @@ export default function ReglementPage() {
       bgColor: "bg-green-50",
       items: [
         "Les inscriptions se font exclusivement en ligne sur cette plateforme",
-        "Chaque joueur peut s'inscrire dans maximum 2 tableaux differents",
+        "Chaque joueur peut s'inscrire dans maximum 2 tableaux par jour",
         "Les frais d'inscription varient selon le tableau choisi",
         "Paiement possible par carte bancaire ou sur place le jour du tournoi",
         "Les inscriptions sont closes 48h avant le debut du tournoi"

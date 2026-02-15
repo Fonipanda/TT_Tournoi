@@ -49,9 +49,10 @@ interface Registration {
 
 interface AccueilPageProps {
   onNavigate?: (tab: string) => void;
+  userRole?: string;
 }
 
-export default function AccueilPage({ onNavigate }: AccueilPageProps) {
+export default function AccueilPage({ onNavigate, userRole = 'visitor' }: AccueilPageProps) {
   const [loading, setLoading] = useState(true);
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
@@ -60,6 +61,7 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
   const [showInscrits, setShowInscrits] = useState(false);
   const [showPlaces, setShowPlaces] = useState(false);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [loginMessage, setLoginMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -102,7 +104,15 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
   const sortedDays = Object.keys(groupedBrackets).sort((a, b) => {
     if (a === "Non defini") return 1;
     if (b === "Non defini") return -1;
-    return a.localeCompare(b);
+    const dateRegex = /(\d{1,2})\/(\d{1,2})/;
+    const ma = a.match(dateRegex);
+    const mb = b.match(dateRegex);
+    if (ma && mb) {
+      const da = parseInt(ma[2]) * 100 + parseInt(ma[1]);
+      const db = parseInt(mb[2]) * 100 + parseInt(mb[1]);
+      return da - db;
+    }
+    return a.localeCompare(b, 'fr');
   });
 
   const availableBrackets = brackets.filter(b => (b.max_players - (b.registered_count || 0)) > 0);
@@ -204,7 +214,14 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
 
         <Card 
           className="border-yellow-200 bg-gradient-to-br from-yellow-50 to-white hover:shadow-lg transition-shadow cursor-pointer"
-          onClick={() => onNavigate?.("notifications")}
+          onClick={() => {
+            if (userRole === 'visitor') {
+              setLoginMessage("Connectez-vous pour acceder aux Notifications");
+              setTimeout(() => setLoginMessage(null), 3000);
+            } else {
+              onNavigate?.("notifications");
+            }
+          }}
         >
           <CardContent className="pt-6">
             <div className="flex items-start gap-4">
@@ -223,7 +240,14 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
 
         <Card 
           className="border-blue-200 bg-gradient-to-br from-blue-50 to-white hover:shadow-lg transition-shadow cursor-pointer"
-          onClick={() => onNavigate?.("progression")}
+          onClick={() => {
+            if (userRole === 'visitor') {
+              setLoginMessage("Connectez-vous pour acceder a la Progression");
+              setTimeout(() => setLoginMessage(null), 3000);
+            } else {
+              onNavigate?.("progression");
+            }
+          }}
         >
           <CardContent className="pt-6">
             <div className="flex items-start gap-4">
@@ -615,6 +639,13 @@ export default function AccueilPage({ onNavigate }: AccueilPageProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {loginMessage && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
+          <Bell className="h-4 w-4" />
+          {loginMessage}
+        </div>
+      )}
     </div>
   );
 }

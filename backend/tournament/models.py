@@ -218,3 +218,23 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class UserAccount(models.Model):
+    ROLE_CHOICES = [
+        ('player', 'Joueur'),
+        ('admin', 'Administrateur'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    username = models.CharField(max_length=100, unique=True)
+    password_hash = models.CharField(max_length=200)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='player')
+    player = models.OneToOneField(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='account')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.username} ({self.role})"

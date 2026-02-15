@@ -38,7 +38,7 @@ export default function ProgressionPage() {
   const [loading, setLoading] = useState(true);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [selectedBracket, setSelectedBracket] = useState<string>("all");
+  const [selectedBracket, setSelectedBracket] = useState<string>("");
 
   useEffect(() => { fetchData(); }, []);
 
@@ -47,7 +47,11 @@ export default function ProgressionPage() {
       const tournaments = await api.tournaments.list();
       if (tournaments.length > 0) {
         const bracketsData = await api.brackets.list(tournaments[0].id);
-        setBrackets(bracketsData);
+        const sorted = [...bracketsData].sort((a: Bracket, b: Bracket) => a.name.localeCompare(b.name, 'fr'));
+        setBrackets(sorted);
+        if (sorted.length > 0 && !selectedBracket) {
+          setSelectedBracket(sorted[0].id);
+        }
       }
       const matchesData = await api.matches.list({});
       setMatches(matchesData);
@@ -58,9 +62,9 @@ export default function ProgressionPage() {
     }
   };
 
-  const filteredMatches = selectedBracket === "all"
-    ? matches
-    : matches.filter(m => m.bracket === selectedBracket);
+  const filteredMatches = selectedBracket
+    ? matches.filter(m => m.bracket === selectedBracket)
+    : [];
 
   const { poolGroups, sortedPoolNames, mainElimRounds, sortedMainElim, petiteFinaleMatches, finaleMatches } = useMemo(() => {
     const poolM = filteredMatches.filter(m => (m.round_name || '').startsWith('Pool'));
@@ -152,11 +156,10 @@ export default function ProgressionPage() {
         <div className="flex flex-wrap gap-4">
           <Select value={selectedBracket} onValueChange={setSelectedBracket}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Tous les tableaux" />
+              <SelectValue placeholder="Selectionnez un tableau" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tous les tableaux</SelectItem>
-              {[...brackets].sort((a, b) => a.name.localeCompare(b.name, 'fr')).map((b) => (
+              {brackets.map((b) => (
                 <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
               ))}
             </SelectContent>
@@ -426,11 +429,17 @@ function PoolColumn({
             if (m.player2) playerNames[m.player2] = m.player2_name || '?';
           });
           const wins: Record<string, number> = {};
-          playerList.forEach(pid => { wins[pid] = 0; });
+          const ffttPts: Record<string, number> = {};
+          playerList.forEach(pid => { wins[pid] = 0; ffttPts[pid] = 0; });
           pMatches.forEach(m => {
-            if (m.status === 'finished' && m.winner) wins[m.winner] = (wins[m.winner] || 0) + 1;
+            if (m.status === 'finished' && m.winner) {
+              wins[m.winner] = (wins[m.winner] || 0) + 1;
+              ffttPts[m.winner] = (ffttPts[m.winner] || 0) + 2;
+              const loser = m.winner === m.player1 ? m.player2 : m.player1;
+              if (loser) ffttPts[loser] = (ffttPts[loser] || 0) + 1;
+            }
           });
-          const ranking = [...playerList].sort((a, b) => (wins[b] || 0) - (wins[a] || 0));
+          const ranking = [...playerList].sort((a, b) => (ffttPts[b] || 0) - (ffttPts[a] || 0));
           const allDone = pMatches.every(m => m.status === 'finished');
           const inProg = pMatches.some(m => m.status === 'in_progress');
 
@@ -464,7 +473,7 @@ function PoolColumn({
                       ri >= 2 && allDone ? 'text-gray-400 line-through' : 'text-gray-700'
                     }`}>
                       <span className="truncate">{ri + 1}. {playerNames[pid]}</span>
-                      <span className="ml-2 font-bold text-[10px]">{wins[pid]}V</span>
+                      <span className="ml-2 font-bold text-[10px]">{ffttPts[pid]}pt{ffttPts[pid] > 1 ? 's' : ''}</span>
                     </div>
                   ))}
                 </div>
@@ -556,20 +565,24 @@ function PoolDetailSection({
             if (m.player2) playerNames[m.player2] = m.player2_name || '?';
           });
           const wins: Record<string, number> = {};
+          const ffttPts: Record<string, number> = {};
           const matchResults: Record<string, string> = {};
-          playerList.forEach(pid => { wins[pid] = 0; });
+          playerList.forEach(pid => { wins[pid] = 0; ffttPts[pid] = 0; });
           pMatches.forEach(m => {
             const k1 = `${m.player1}_${m.player2}`;
             const k2 = `${m.player2}_${m.player1}`;
             if (m.status === 'finished' && m.winner) {
               wins[m.winner] = (wins[m.winner] || 0) + 1;
+              ffttPts[m.winner] = (ffttPts[m.winner] || 0) + 2;
+              const loser = m.winner === m.player1 ? m.player2 : m.player1;
+              if (loser) ffttPts[loser] = (ffttPts[loser] || 0) + 1;
               matchResults[k1] = m.winner === m.player1 ? 'V' : 'D';
               matchResults[k2] = m.winner === m.player2 ? 'V' : 'D';
             } else if (m.status === 'in_progress') {
               matchResults[k1] = '...'; matchResults[k2] = '...';
             } else { matchResults[k1] = '-'; matchResults[k2] = '-'; }
           });
-          const ranking = [...playerList].sort((a, b) => (wins[b] || 0) - (wins[a] || 0));
+          const ranking = [...playerList].sort((a, b) => (ffttPts[b] || 0) - (ffttPts[a] || 0));
           const allDone = pMatches.every(m => m.status === 'finished');
 
           return (
@@ -585,7 +598,7 @@ function PoolDetailSection({
                     {playerList.map((_, ci) => (
                       <th key={ci} className="text-center px-2 py-2 w-10">{ci + 1}</th>
                     ))}
-                    <th className="text-center px-3 py-2 w-10">V</th>
+                    <th className="text-center px-3 py-2 w-10">Pts</th>
                     <th className="text-center px-3 py-2 w-20">Rang</th>
                   </tr>
                 </thead>
@@ -606,7 +619,7 @@ function PoolDetailSection({
                           }`}>{res}</td>
                         );
                       })}
-                      <td className="text-center px-3 py-2 font-bold">{wins[pid] || 0}</td>
+                      <td className="text-center px-3 py-2 font-bold">{ffttPts[pid] || 0}</td>
                       <td className={`text-center px-3 py-2 font-bold ${
                         allDone ? (ri < 2 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'
                       }`}>

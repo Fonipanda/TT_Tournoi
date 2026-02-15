@@ -21,4 +21,5 @@ urlpatterns = [
     path('live/matches/', views.live_matches, name='live-matches'),
     path('fftt/lookup/<str:license_number>/', views.fftt_lookup, name='fftt-lookup'),
     path('auth/admin-login/', views.admin_login, name='admin-login'),
+    path('auth/player-register/', views.player_register, name='player-register'),
 ]
