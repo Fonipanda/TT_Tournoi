@@ -796,6 +796,66 @@ class MatchViewSet(viewsets.ModelViewSet):
             'auto_next_pool_match': str(auto_next.id) if auto_next else None,
         })
 
+    @action(detail=True, methods=['post'])
+    def modify(self, request, pk=None):
+        match = self.get_object()
+        if match.status != 'finished':
+            return Response(
+                {'error': 'Seuls les matchs termines peuvent etre modifies'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        winner_id = request.data.get('winner_id')
+        is_forfeit = request.data.get('is_forfeit', False)
+        forfeit_player_id = request.data.get('forfeit_player_id')
+        sets_player1 = request.data.get('sets_player1', 0)
+        sets_player2 = request.data.get('sets_player2', 0)
+
+        if winner_id:
+            if str(match.player1_id) == str(winner_id):
+                match.winner = match.player1
+            elif str(match.player2_id) == str(winner_id):
+                match.winner = match.player2
+            else:
+                return Response(
+                    {'error': 'Le gagnant doit etre un des deux joueurs du match'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            match.sets_player1 = sets_player1 or (1 if match.winner == match.player1 else 0)
+            match.sets_player2 = sets_player2 or (1 if match.winner == match.player2 else 0)
+        elif not is_forfeit:
+            return Response(
+                {'error': 'Un gagnant doit etre specifie'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if is_forfeit:
+            match.is_forfeit = True
+            if forfeit_player_id:
+                if str(match.player1_id) == str(forfeit_player_id):
+                    match.forfeit_player = match.player1
+                    match.winner = match.player2
+                elif str(match.player2_id) == str(forfeit_player_id):
+                    match.forfeit_player = match.player2
+                    match.winner = match.player1
+                else:
+                    return Response(
+                        {'error': 'Le joueur forfait doit etre un des deux joueurs'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                match.sets_player1 = 0
+                match.sets_player2 = 0
+        else:
+            match.is_forfeit = False
+            match.forfeit_player = None
+
+        match.save()
+
+        return Response({
+            'message': 'Match modifie',
+            'winner': str(match.winner.id) if match.winner else None,
+        })
+
     def _advance_bracket(self, finished_match):
         import math
         bracket = finished_match.bracket

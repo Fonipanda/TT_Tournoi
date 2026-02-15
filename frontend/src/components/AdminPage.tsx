@@ -434,7 +434,7 @@ export default function AdminPage() {
   const updateMatchWinner = async (isForfeit = false, winnerId?: string, forfeitPlayerId?: string) => {
     if (!editMatchDialog) return;
     const finalWinner = winnerId || editWinner;
-    if (!finalWinner) return;
+    if (!finalWinner && !isForfeit) return;
     try {
       const payload: any = { winner_id: finalWinner };
       if (isForfeit) {
@@ -445,7 +445,12 @@ export default function AdminPage() {
           payload.forfeit_player_id = forfeitPlayerId;
         }
       }
-      await api.matches.finish(editMatchDialog.id, payload);
+      const isAlreadyFinished = editMatchDialog.status === 'finished';
+      if (isAlreadyFinished) {
+        await api.matches.modify(editMatchDialog.id, payload);
+      } else {
+        await api.matches.finish(editMatchDialog.id, payload);
+      }
       setEditMatchDialog(null);
       setEditWinner("");
       await refreshTreeMatches();
@@ -1812,20 +1817,35 @@ export default function AdminPage() {
                                       {allDone && <span className="ml-2 text-xs font-normal opacity-80">- Terminee</span>}
                                       {hasInProgress && <span className="ml-2 text-xs font-normal opacity-80">- En cours{poolTable ? ` (Table ${poolTable})` : ''}</span>}
                                     </span>
-                                    {hasWaiting && !hasInProgress && (
-                                      <Button
-                                        size="sm"
-                                        variant="secondary"
-                                        className="h-7 text-xs"
-                                        onClick={() => {
-                                          setPoolAssignName(poolName);
-                                          setPoolAssignBracketId(treeBracketId);
-                                          setPoolAssignTable("");
-                                        }}
-                                      >
-                                        <Play className="h-3 w-3 mr-1" /> Assigner table
-                                      </Button>
-                                    )}
+                                    <div className="flex gap-1">
+                                      {hasWaiting && !hasInProgress && (
+                                        <Button
+                                          size="sm"
+                                          variant="secondary"
+                                          className="h-7 text-xs"
+                                          onClick={() => {
+                                            setPoolAssignName(poolName);
+                                            setPoolAssignBracketId(treeBracketId);
+                                            setPoolAssignTable("");
+                                          }}
+                                        >
+                                          <Play className="h-3 w-3 mr-1" /> Assigner table
+                                        </Button>
+                                      )}
+                                      {pMatches.some((m: any) => m.status === 'finished') && (
+                                        <Button
+                                          size="sm"
+                                          variant="secondary"
+                                          className="h-7 text-xs bg-yellow-500 hover:bg-yellow-600 text-black"
+                                          onClick={() => {
+                                            const finishedMatch = pMatches.find((m: any) => m.status === 'finished');
+                                            if (finishedMatch) setEditMatchDialog(finishedMatch);
+                                          }}
+                                        >
+                                          <Edit2 className="h-3 w-3 mr-1" /> Modifier
+                                        </Button>
+                                      )}
+                                    </div>
                                   </div>
                                   <table className="w-full text-sm">
                                     <thead>
@@ -1884,17 +1904,19 @@ export default function AdminPage() {
                                     {pMatches.map((m: any, mi: number) => (
                                       <span
                                         key={m.id}
-                                        className={`px-2 py-1 rounded text-xs ${
-                                          m.status === 'finished' ? 'bg-green-100 text-green-700' :
-                                          m.status === 'in_progress' ? 'bg-red-100 text-red-700 animate-pulse cursor-pointer' :
+                                        className={`px-2 py-1 rounded text-xs cursor-pointer ${
+                                          m.status === 'finished' ? 'bg-green-100 text-green-700 hover:bg-green-200' :
+                                          m.status === 'in_progress' ? 'bg-red-100 text-red-700 animate-pulse' :
                                           'bg-gray-200 text-gray-600'
                                         }`}
                                         onClick={() => {
                                           if (m.status === 'in_progress') setSelectedMatch(m);
+                                          if (m.status === 'finished') setEditMatchDialog(m);
                                         }}
                                       >
                                         M{mi + 1}: {(m.player1_name || '?').split(' ')[0]} vs {(m.player2_name || '?').split(' ')[0]}
-                                        {m.status === 'finished' && m.winner && ` → ${playerNames[m.winner]?.split(' ')[0] || '?'}`}
+                                        {m.status === 'finished' && m.winner && ` \u2192 ${playerNames[m.winner]?.split(' ')[0] || '?'}`}
+                                        {m.is_forfeit && ' \u26a0\ufe0f'}
                                         {m.table_number ? ` (T${m.table_number})` : ''}
                                       </span>
                                     ))}
