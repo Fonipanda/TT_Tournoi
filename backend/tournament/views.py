@@ -697,6 +697,8 @@ class MatchViewSet(viewsets.ModelViewSet):
             )
         
         winner_id = request.data.get('winner_id')
+        is_forfeit = request.data.get('is_forfeit', False)
+        forfeit_player_id = request.data.get('forfeit_player_id')
         sets_player1 = request.data.get('sets_player1', 0)
         sets_player2 = request.data.get('sets_player2', 0)
         score_player1 = request.data.get('score_player1', 0)
@@ -723,7 +725,20 @@ class MatchViewSet(viewsets.ModelViewSet):
             match.sets_player1 = sets_player1
             match.sets_player2 = sets_player2
             match.winner = match.player1 if sets_player1 > sets_player2 else match.player2
-        
+
+        if is_forfeit:
+            match.is_forfeit = True
+            if forfeit_player_id:
+                if str(match.player1_id) == str(forfeit_player_id):
+                    match.forfeit_player = match.player1
+                elif str(match.player2_id) == str(forfeit_player_id):
+                    match.forfeit_player = match.player2
+                else:
+                    return Response(
+                        {'error': 'Le joueur forfait doit etre un des deux joueurs du match'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
         match.score_player1 = score_player1
         match.score_player2 = score_player2
         match.status = 'finished'

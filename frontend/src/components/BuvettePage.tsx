@@ -107,7 +107,7 @@ export default function BuvettePage() {
                               </div>
                               <div className="text-right ml-4">
                                 <span className="text-lg font-bold text-blue-600">
-                                  {Number(item.price).toFixed(2)} €
+                                  {(Number(item.price) || 0).toFixed(2)} €
                                 </span>
                                 {!item.is_available && (
                                   <Badge variant="destructive" className="block mt-1">

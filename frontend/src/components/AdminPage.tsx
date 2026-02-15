@@ -431,14 +431,19 @@ export default function AdminPage() {
     }
   };
 
-  const updateMatchWinner = async (isForfeit = false) => {
-    if (!editMatchDialog || !editWinner) return;
+  const updateMatchWinner = async (isForfeit = false, winnerId?: string, forfeitPlayerId?: string) => {
+    if (!editMatchDialog) return;
+    const finalWinner = winnerId || editWinner;
+    if (!finalWinner) return;
     try {
-      const payload: any = { winner_id: editWinner };
+      const payload: any = { winner_id: finalWinner };
       if (isForfeit) {
         payload.is_forfeit = true;
         payload.sets_player1 = 0;
         payload.sets_player2 = 0;
+        if (forfeitPlayerId) {
+          payload.forfeit_player_id = forfeitPlayerId;
+        }
       }
       await api.matches.finish(editMatchDialog.id, payload);
       setEditMatchDialog(null);
@@ -982,7 +987,7 @@ export default function AdminPage() {
                         <div>
                           <p className="font-medium">{b.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {b.category} - {Number(b.entry_fee).toFixed(2)} €
+                            {b.category} - {(Number(b.entry_fee) || 0).toFixed(2)} €
                             {b.day && ` - ${b.day}`}
                             {b.checkin_end && ` | Pointage: ${b.checkin_end}`}
                             {b.start_time && ` | Debut: ${b.start_time}`}
@@ -1281,7 +1286,7 @@ export default function AdminPage() {
                             <div key={item.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                               <span>{item.name}</span>
                               <div className="flex items-center gap-1">
-                                <Badge>{Number(item.price).toFixed(2)} €</Badge>
+                                <Badge>{(Number(item.price) || 0).toFixed(2)} €</Badge>
                                 <Button variant="ghost" size="sm" disabled={iIdx === 0} onClick={() => moveItemOrder(section.id, sectionItems, iIdx, 'up')}>
                                   <ArrowUp className="h-3 w-3" />
                                 </Button>
@@ -2010,6 +2015,12 @@ export default function AdminPage() {
                                                   {match.status === 'finished' && (
                                                     <>
                                                       <span>Termine</span>
+                                                      {match.is_forfeit && (
+                                                        <span className="flex items-center gap-1 text-red-600 font-semibold">
+                                                          <AlertCircle className="h-3 w-3" />
+                                                          Forfait
+                                                        </span>
+                                                      )}
                                                       <Button
                                                         size="sm"
                                                         variant="ghost"
@@ -2257,7 +2268,7 @@ export default function AdminPage() {
                 <Button
                   variant="outline"
                   className="w-full justify-start h-auto py-3 border-red-300 hover:bg-red-50"
-                  onClick={() => { setEditWinner(editMatchDialog?.player2 || ""); updateMatchWinner(true); }}
+                  onClick={() => updateMatchWinner(true, editMatchDialog?.player2 || "", editMatchDialog?.player1 || "")}
                 >
                   <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
                   {editMatchDialog?.player1_name} - Forfait
@@ -2265,7 +2276,7 @@ export default function AdminPage() {
                 <Button
                   variant="outline"
                   className="w-full justify-start h-auto py-3 border-red-300 hover:bg-red-50"
-                  onClick={() => { setEditWinner(editMatchDialog?.player1 || ""); updateMatchWinner(true); }}
+                  onClick={() => updateMatchWinner(true, editMatchDialog?.player1 || "", editMatchDialog?.player2 || "")}
                 >
                   <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
                   {editMatchDialog?.player2_name} - Forfait

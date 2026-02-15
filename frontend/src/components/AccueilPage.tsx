@@ -522,7 +522,7 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
                                 </span>
                               )}
                               <span className="font-medium ml-auto">
-                                {Number(bracket.entry_fee).toFixed(2)} €
+                                {(Number(bracket.entry_fee) || 0).toFixed(2)} €
                               </span>
                             </div>
                           </div>
@@ -623,7 +623,7 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
                         <Badge variant={remaining <= 3 ? "warning" : "success"}>
                           {remaining} place{remaining > 1 ? 's' : ''}
                         </Badge>
-                        <span className="font-medium">{Number(bracket.entry_fee).toFixed(2)} €</span>
+                        <span className="font-medium">{(Number(bracket.entry_fee) || 0).toFixed(2)} €</span>
                       </div>
                     </div>
                   );
