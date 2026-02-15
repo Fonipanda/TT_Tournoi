@@ -1857,91 +1857,139 @@ export default function AdminPage() {
                         </div>
                       )}
 
-                      {sortedElimRounds.length > 0 && (
-                        <div>
-                          <h3 className="text-lg font-bold mb-4">Phase d'elimination</h3>
-                          <div className="overflow-x-auto pb-4">
-                            <div className="flex min-w-max items-start">
-                              {sortedElimRounds.map((roundName, roundIdx) => {
-                                const matchCount = elimRounds[roundName].length;
-                                const spacingMultiplier = Math.pow(2, roundIdx);
-                                return (
-                                  <div key={roundName} className="flex flex-col" style={{ minWidth: 220 }}>
-                                    <h4 className="text-center font-bold text-xs bg-gray-800 text-white py-1.5 rounded mx-1 mb-2">
-                                      {roundName}
-                                    </h4>
-                                    <div className="flex flex-col" style={{ gap: 0 }}>
-                                      {elimRounds[roundName].map((match: any, matchIdx: number) => {
-                                        const matchHeight = 56;
-                                        const baseGap = 8;
-                                        const topPad = roundIdx === 0 ? 0 : (spacingMultiplier - 1) * (matchHeight + baseGap) / 2;
+                      {sortedElimRounds.length > 0 && (() => {
+                        const MH = 56;
+                        const MG = 10;
+                        const CW = 220;
+                        const SW = 36;
 
-                                        return (
-                                          <div key={match.id} className="flex items-center" style={{ paddingTop: matchIdx === 0 ? topPad : (spacingMultiplier - 1) * (matchHeight + baseGap), paddingBottom: 0 }}>
-                                            {roundIdx > 0 && (
-                                              <div className="flex flex-col items-center justify-center" style={{ width: 20 }}>
-                                                <div className="border-t-2 border-gray-400 w-full" />
-                                              </div>
-                                            )}
+                        const pos: Record<string, number[]> = {};
+                        const r0 = sortedElimRounds[0];
+                        pos[r0] = Array.from({ length: elimRounds[r0].length }, (_, i) => i * (MH + MG));
+                        for (let ri = 1; ri < sortedElimRounds.length; ri++) {
+                          const rn = sortedElimRounds[ri];
+                          const prev = sortedElimRounds[ri - 1];
+                          const pp = pos[prev];
+                          pos[rn] = Array.from({ length: elimRounds[rn].length }, (_, j) => {
+                            const t = pp[j * 2] ?? pp[pp.length - 1] ?? 0;
+                            const b = (j * 2 + 1) < pp.length ? pp[j * 2 + 1] : t;
+                            return (t + b) / 2;
+                          });
+                        }
+                        const firstP = pos[r0];
+                        const tH = (firstP[firstP.length - 1] ?? 0) + MH + 40;
+
+                        return (
+                          <div>
+                            <h3 className="text-lg font-bold mb-4">Phase d&apos;elimination</h3>
+                            <div className="overflow-x-auto pb-4">
+                              <div className="inline-flex items-start">
+                                {sortedElimRounds.map((roundName, roundIdx) => {
+                                  const rMatches = elimRounds[roundName];
+                                  const rPos = pos[roundName] || [];
+                                  const isLast = roundIdx === sortedElimRounds.length - 1;
+
+                                  return (
+                                    <div key={roundName} className="flex items-start">
+                                      <div style={{ width: CW }}>
+                                        <div className={`text-center font-bold text-xs py-1.5 rounded mx-1 mb-3 ${
+                                          roundName === 'Finale' ? 'bg-yellow-600 text-white' :
+                                          roundName === 'Petite Finale' ? 'bg-orange-600 text-white' :
+                                          'bg-gray-800 text-white'
+                                        }`}>
+                                          {roundName}
+                                        </div>
+                                        <div className="relative" style={{ height: tH }}>
+                                          {rMatches.map((match: any, mIdx: number) => (
                                             <div
-                                              className={`flex-1 border rounded overflow-hidden cursor-pointer transition-all hover:shadow-lg ${
-                                                match.status === 'finished' ? 'border-green-500 bg-white' :
-                                                match.status === 'in_progress' ? 'border-red-500 ring-1 ring-red-200 bg-white' :
-                                                'border-gray-300 bg-white hover:border-blue-400'
-                                              }`}
-                                              style={{ minHeight: matchHeight }}
-                                              onClick={() => {
-                                                if (match.status === 'waiting' && match.player1_name && match.player2_name) {
-                                                  setSelectedMatch(match); setSelectedTable("");
-                                                } else if (match.status === 'in_progress') {
-                                                  setSelectedMatch(match);
-                                                }
+                                              key={match.id}
+                                              style={{
+                                                position: 'absolute',
+                                                top: rPos[mIdx] ?? 0,
+                                                left: 4,
+                                                width: CW - 8,
                                               }}
                                             >
-                                              <div className={`px-2 py-1 flex justify-between items-center border-b text-xs ${
-                                                match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : ''
-                                              }`}>
-                                                <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
-                                                {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
-                                              </div>
-                                              <div className={`px-2 py-1 flex justify-between items-center text-xs ${
-                                                match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : ''
-                                              }`}>
-                                                <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
-                                                {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
-                                              </div>
-                                              {(match.status !== 'waiting' || match.table_number) && (
-                                                <div className={`px-1 py-0.5 text-[9px] text-center ${
-                                                  match.status === 'in_progress' ? 'bg-red-50 text-red-700' :
-                                                  match.status === 'finished' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-600'
-                                                }`}>
+                                              <div
+                                                className={`border-2 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-lg ${
+                                                  match.status === 'finished' ? 'border-green-400 bg-white' :
+                                                  match.status === 'in_progress' ? 'border-red-400 ring-1 ring-red-200 bg-white' :
+                                                  'border-gray-200 bg-white hover:border-blue-400'
+                                                }`}
+                                                style={{ height: MH }}
+                                                onClick={() => {
+                                                  if (match.status === 'waiting' && match.player1_name && match.player2_name) {
+                                                    setSelectedMatch(match); setSelectedTable("");
+                                                  } else if (match.status === 'in_progress') {
+                                                    setSelectedMatch(match);
+                                                  }
+                                                }}
+                                              >
+                                                <div className={`px-2 flex items-center justify-between border-b text-xs ${
+                                                  match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : ''
+                                                }`} style={{ height: 22 }}>
+                                                  <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
+                                                  {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
+                                                </div>
+                                                <div className={`px-2 flex items-center justify-between text-xs ${
+                                                  match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : ''
+                                                }`} style={{ height: 22 }}>
+                                                  <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
+                                                  {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
+                                                </div>
+                                                <div className={`text-[9px] text-center ${
+                                                  match.status === 'in_progress' ? 'bg-red-500 text-white' :
+                                                  match.status === 'finished' ? 'bg-green-100 text-green-700' :
+                                                  'bg-gray-50 text-gray-400'
+                                                }`} style={{ height: MH - 44, lineHeight: `${MH - 44}px` }}>
                                                   {match.status === 'in_progress' && `En cours${match.table_number ? ` T${match.table_number}` : ''}`}
                                                   {match.status === 'finished' && 'Termine'}
-                                                  {match.status === 'waiting' && match.table_number && `T${match.table_number}`}
+                                                  {match.status === 'waiting' && (match.table_number ? `T${match.table_number}` : 'Cliquer pour assigner')}
                                                 </div>
-                                              )}
-                                            </div>
-                                            {roundIdx < sortedElimRounds.length - 1 && (
-                                              <div className="flex flex-col items-center" style={{ width: 20 }}>
-                                                <div className="border-t-2 border-gray-400 w-full" />
-                                                {matchIdx % 2 === 0 ? (
-                                                  <div className="border-r-2 border-gray-400 h-full" style={{ minHeight: (matchHeight + baseGap) * spacingMultiplier / 2 }} />
-                                                ) : (
-                                                  <div className="border-r-2 border-gray-400" style={{ minHeight: 0 }} />
-                                                )}
                                               </div>
-                                            )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {!isLast && roundIdx < sortedElimRounds.length - 1 && (() => {
+                                        const nextRound = sortedElimRounds[roundIdx + 1];
+                                        const nextPos = pos[nextRound] || [];
+                                        return (
+                                          <div style={{ width: SW, marginTop: 32 + 12 }}>
+                                            <svg width={SW} height={tH} style={{ display: 'block' }}>
+                                              {nextPos.map((ny, j) => {
+                                                const ti = j * 2;
+                                                const bi = j * 2 + 1;
+                                                if (ti >= rPos.length) return null;
+                                                const topY = rPos[ti] + MH / 2;
+                                                const botY = bi < rPos.length ? rPos[bi] + MH / 2 : topY;
+                                                const midY = ny + MH / 2;
+                                                const vx = SW * 0.45;
+                                                if (bi >= rPos.length) {
+                                                  return <line key={j} x1={0} y1={topY} x2={SW} y2={midY} stroke="#CBD5E1" strokeWidth="2" />;
+                                                }
+                                                return (
+                                                  <g key={j}>
+                                                    <line x1={0} y1={topY} x2={vx} y2={topY} stroke="#CBD5E1" strokeWidth="2" />
+                                                    <line x1={0} y1={botY} x2={vx} y2={botY} stroke="#CBD5E1" strokeWidth="2" />
+                                                    <line x1={vx} y1={topY} x2={vx} y2={botY} stroke="#CBD5E1" strokeWidth="2" />
+                                                    <line x1={vx} y1={midY} x2={SW} y2={midY} stroke="#CBD5E1" strokeWidth="2" />
+                                                  </g>
+                                                );
+                                              })}
+                                            </svg>
                                           </div>
                                         );
-                                      })}
+                                      })()}
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })()}
