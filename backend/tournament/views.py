@@ -152,11 +152,14 @@ def fftt_place_qualifiers(pool_standings, qualifiers_per_pool, bye_ids):
     random.shuffle(all_seeds[2:4] if len(all_seeds) > 3 else [])
 
     seed_groups = [(0, 2), (2, 4), (4, 8), (8, 16), (16, 32), (32, 64)]
-    shuffled_seeds = list(all_seeds[:2])
+    shuffled_seeds = []
     for start, end in seed_groups:
         group = [s for s in all_seeds if start < s <= end]
-        random.shuffle(group)
-        shuffled_seeds.extend(group)
+        if start == 0:
+            shuffled_seeds.extend(group)
+        else:
+            random.shuffle(group)
+            shuffled_seeds.extend(group)
     shuffled_seeds = shuffled_seeds[:len(bye_ids) + len(firsts)]
 
     first_players = list(bye_ids) + firsts
@@ -991,15 +994,10 @@ class MatchViewSet(viewsets.ModelViewSet):
         if existing_first_round_count >= expected_first_round_matches:
             return None
 
-        seed_positions = fftt_seeding_positions(next_power)
-        pos_for_seed = {s: i for i, s in enumerate(seed_positions)}
-
         ordered_players = [None] * next_power
         for idx, pid in enumerate(all_qualified):
-            seed_num = idx + 1
-            pos = pos_for_seed.get(seed_num, idx)
-            if pos < next_power:
-                ordered_players[pos] = pid
+            if idx < next_power:
+                ordered_players[idx] = pid
 
         last_match = None
         for i in range(0, next_power, 2):

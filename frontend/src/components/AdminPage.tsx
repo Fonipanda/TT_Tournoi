@@ -2105,41 +2105,6 @@ export default function AdminPage() {
               </CardContent>
             </Card>
 
-            {(() => {
-              const elimWaiting = treeMatches.filter(
-                (m: any) => !(m.round_name || '').startsWith('Pool') && m.status === 'waiting' && m.player1_name && m.player2_name
-              );
-              if (elimWaiting.length === 0) return null;
-              return (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Play className="h-5 w-5" />
-                      Matchs a assigner (apres Poules)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {elimWaiting.map((m: any) => (
-                        <div
-                          key={m.id}
-                          className="border rounded-lg p-3 cursor-pointer hover:border-blue-400 hover:shadow transition-all"
-                          onClick={() => { setSelectedMatch(m); setSelectedTable(""); }}
-                        >
-                          <div className="flex justify-between items-center mb-1">
-                            <Badge variant="outline" className="text-xs">{m.round_name}</Badge>
-                          </div>
-                          <div className="text-sm font-medium">{m.player1_name} vs {m.player2_name}</div>
-                          <Button size="sm" className="mt-2 w-full h-7 text-xs" variant="outline">
-                            <Play className="h-3 w-3 mr-1" /> Assigner une table
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })()}
 
             <Card>
               <CardHeader>
