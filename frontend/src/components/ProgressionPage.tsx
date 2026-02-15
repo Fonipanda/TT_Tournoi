@@ -5,13 +5,9 @@ import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
-import { 
-  Trophy, Loader2, Users, GitBranch, 
-  Medal, RefreshCcw
-} from "lucide-react";
+import { Trophy, Loader2, RefreshCcw } from "lucide-react";
 
 interface Bracket {
   id: string;
@@ -21,26 +17,19 @@ interface Bracket {
 
 interface Match {
   id: string;
+  player1: string;
+  player2: string;
   player1_name: string;
   player2_name: string;
+  winner: string | null;
   bracket_name: string;
   bracket: string;
   status: string;
+  round_name: string;
   round_number: number;
+  table_number: number | null;
   sets_player1: number;
   sets_player2: number;
-}
-
-interface BracketMatch {
-  id: string;
-  round: number;
-  position: number;
-  player1: string | null;
-  player2: string | null;
-  winner: string | null;
-  score1: number;
-  score2: number;
-  isLosers?: boolean;
 }
 
 export default function ProgressionPage() {
@@ -48,14 +37,8 @@ export default function ProgressionPage() {
   const [brackets, setBrackets] = useState<Bracket[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [selectedBracket, setSelectedBracket] = useState<string>("all");
-  
-  const [eliminationType, setEliminationType] = useState<"single" | "double">("single");
-  const [hasThirdPlace, setHasThirdPlace] = useState(true);
-  const [roundLabels, setRoundLabels] = useState<string[]>([]);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     try {
@@ -73,45 +56,32 @@ export default function ProgressionPage() {
     }
   };
 
-  const getRoundLabel = (round: number, totalRounds: number): string => {
-    const labels: Record<number, string> = {
-      1: "Pool",
-      2: "1/64",
-      3: "1/32",
-      4: "1/16",
-      5: "1/8",
-      6: "1/4",
-      7: "1/2",
-      8: "Finale"
-    };
-
-    const diff = 8 - totalRounds;
-    const adjustedRound = round + diff;
-    
-    if (adjustedRound === 8) return "Finale";
-    if (adjustedRound === 7) return "1/2";
-    if (adjustedRound === 6) return "1/4";
-    if (adjustedRound === 5) return "1/8";
-    if (adjustedRound === 4) return "1/16";
-    if (adjustedRound === 3) return "1/32";
-    if (adjustedRound === 2) return "1/64";
-    return "Pool";
-  };
-
-  const filteredMatches = selectedBracket === "all" 
-    ? matches 
+  const filteredMatches = selectedBracket === "all"
+    ? matches
     : matches.filter(m => m.bracket === selectedBracket);
 
-  const groupByRound = (matchList: Match[]) => {
-    return matchList.reduce((acc, match) => {
-      const round = match.round_number || 1;
-      if (!acc[round]) acc[round] = [];
-      acc[round].push(match);
-      return acc;
-    }, {} as Record<number, Match[]>);
-  };
+  const poolMatches = filteredMatches.filter(m => (m.round_name || '').startsWith('Pool'));
+  const elimMatches = filteredMatches.filter(m => !(m.round_name || '').startsWith('Pool'));
 
-  const maxRound = Math.max(...matches.map(m => m.round_number || 1), 1);
+  const poolGroups: Record<string, Match[]> = {};
+  poolMatches.forEach(m => {
+    const pn = m.round_name || 'Pool';
+    if (!poolGroups[pn]) poolGroups[pn] = [];
+    poolGroups[pn].push(m);
+  });
+
+  const elimRounds: Record<string, Match[]> = {};
+  elimMatches.forEach(m => {
+    const rn = m.round_name || `Tour ${m.round_number}`;
+    if (!elimRounds[rn]) elimRounds[rn] = [];
+    elimRounds[rn].push(m);
+  });
+  const roundOrder = ['Pool', '1/64', '1/32', '1/16', '1/8', '1/4', '1/2', 'Petite Finale', 'Finale'];
+  const sortedElimRounds = Object.keys(elimRounds).sort((a, b) => {
+    const ai = roundOrder.indexOf(a);
+    const bi = roundOrder.indexOf(b);
+    return (ai === -1 ? 50 : ai) - (bi === -1 ? 50 : bi);
+  });
 
   if (loading) {
     return (
@@ -121,9 +91,6 @@ export default function ProgressionPage() {
     );
   }
 
-  const roundedMatches = groupByRound(filteredMatches);
-  const rounds = Object.keys(roundedMatches).map(Number).sort((a, b) => a - b);
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -132,11 +99,8 @@ export default function ProgressionPage() {
             <Trophy className="h-6 w-6" />
             Progression du Tournoi
           </h2>
-          <p className="text-muted-foreground">
-            Visualisez l'arbre des matchs et la progression
-          </p>
+          <p className="text-muted-foreground">Arbre des matchs et progression en temps reel</p>
         </div>
-        
         <div className="flex flex-wrap gap-4">
           <Select value={selectedBracket} onValueChange={setSelectedBracket}>
             <SelectTrigger className="w-[200px]">
@@ -149,165 +113,180 @@ export default function ProgressionPage() {
               ))}
             </SelectContent>
           </Select>
-          
           <Button variant="outline" onClick={fetchData}>
-            <RefreshCcw className="h-4 w-4 mr-2" />
-            Actualiser
+            <RefreshCcw className="h-4 w-4 mr-2" /> Actualiser
           </Button>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Arbre du tournoi</CardTitle>
-          <CardDescription>
-            {eliminationType === "single" ? "Elimination simple" : "Double elimination"} 
-            {hasThirdPlace && " - Match pour la 3e place"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {filteredMatches.length === 0 ? (
-            <div className="text-center py-12">
+      {filteredMatches.length === 0 ? (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center">
               <Trophy className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-              <p className="text-muted-foreground">
-                Aucun match configure pour ce tableau
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Les matchs apparaitront ici une fois crees dans l'onglet Admin
-              </p>
+              <p className="text-muted-foreground">Aucun match configure pour ce tableau</p>
+              <p className="text-sm text-muted-foreground mt-1">Les matchs apparaitront ici une fois generes dans Admin &gt; Arbre Tournoi</p>
             </div>
-          ) : (
-            <div className="overflow-x-auto pb-4">
-              <div className="flex gap-8 min-w-max">
-                {rounds.map((round) => {
-                  const roundMatches = roundedMatches[round] || [];
-                  const label = getRoundLabel(round, maxRound);
-                  
-                  return (
-                    <div key={round} className="flex flex-col min-w-[220px]">
-                      <div className="text-center mb-4">
-                        <Badge variant="secondary" className="text-sm font-semibold">
-                          {label}
-                        </Badge>
-                      </div>
-                      
-                      <div className="space-y-4 flex-1 flex flex-col justify-around">
-                        {roundMatches.map((match, idx) => {
-                          const isCompleted = match.status === "completed";
-                          const isInProgress = match.status === "in_progress";
-                          const winner = isCompleted 
-                            ? (match.sets_player1 > match.sets_player2 ? 1 : 2)
-                            : null;
-                          
-                          return (
-                            <motion.div
-                              key={match.id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: idx * 0.1 }}
-                              className={`border-2 rounded-lg overflow-hidden ${
-                                isInProgress 
-                                  ? "border-blue-500 shadow-md" 
-                                  : isCompleted 
-                                  ? "border-green-300" 
-                                  : "border-gray-200"
-                              }`}
-                            >
-                              <div className={`p-2 ${
-                                isInProgress ? "bg-blue-50" : isCompleted ? "bg-green-50" : "bg-gray-50"
-                              }`}>
-                                <div className={`flex justify-between items-center p-2 rounded ${
-                                  winner === 1 && isCompleted ? "bg-green-100 font-bold" : ""
-                                }`}>
-                                  <span className="text-sm truncate flex-1">
-                                    {match.player1_name || "TBD"}
-                                  </span>
-                                  <span className={`text-sm font-bold ml-2 ${
-                                    winner === 1 ? "text-green-600" : ""
-                                  }`}>
-                                    {isInProgress || isCompleted ? match.sets_player1 : "-"}
-                                  </span>
-                                </div>
-                                
-                                <div className="border-t border-gray-200 my-1"></div>
-                                
-                                <div className={`flex justify-between items-center p-2 rounded ${
-                                  winner === 2 && isCompleted ? "bg-green-100 font-bold" : ""
-                                }`}>
-                                  <span className="text-sm truncate flex-1">
-                                    {match.player2_name || "TBD"}
-                                  </span>
-                                  <span className={`text-sm font-bold ml-2 ${
-                                    winner === 2 ? "text-green-600" : ""
-                                  }`}>
-                                    {isInProgress || isCompleted ? match.sets_player2 : "-"}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              <div className={`px-2 py-1 text-xs text-center ${
-                                isInProgress 
-                                  ? "bg-blue-500 text-white" 
-                                  : isCompleted 
-                                  ? "bg-green-500 text-white" 
-                                  : "bg-gray-200"
-                              }`}>
-                                {isInProgress ? "En cours" : isCompleted ? "Termine" : "A venir"}
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-
-                      {round === maxRound - 1 && hasThirdPlace && (
-                        <div className="mt-8 pt-4 border-t-2 border-dashed">
-                          <div className="text-center mb-2">
-                            <Badge variant="outline" className="text-xs">
-                              <Medal className="h-3 w-3 mr-1" />
-                              Petite Finale
-                            </Badge>
-                          </div>
-                          <div className="border-2 border-orange-300 rounded-lg overflow-hidden">
-                            <div className="bg-orange-50 p-2">
-                              <div className="flex justify-between items-center p-2">
-                                <span className="text-sm">Perdant 1/2 A</span>
-                                <span className="text-sm font-bold">-</span>
-                              </div>
-                              <div className="border-t border-gray-200 my-1"></div>
-                              <div className="flex justify-between items-center p-2">
-                                <span className="text-sm">Perdant 1/2 B</span>
-                                <span className="text-sm font-bold">-</span>
-                              </div>
-                            </div>
-                            <div className="bg-orange-200 px-2 py-1 text-xs text-center">
-                              3e place
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {eliminationType === "double" && (
-        <Card className="border-orange-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-orange-700">
-              <GitBranch className="h-5 w-5 rotate-180" />
-              Tableau des perdants (Losers Bracket)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-center py-8">
-              Le tableau des perdants sera genere automatiquement lors de la creation des matchs
-            </p>
           </CardContent>
         </Card>
+      ) : (
+        <>
+          {Object.keys(poolGroups).length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Phase de Poules</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {Object.keys(poolGroups).sort().map((poolName) => {
+                    const pMatches = poolGroups[poolName];
+                    const playerIds = new Set<string>();
+                    pMatches.forEach(m => { if (m.player1) playerIds.add(m.player1); if (m.player2) playerIds.add(m.player2); });
+                    const playerList = Array.from(playerIds);
+                    const playerNames: Record<string, string> = {};
+                    pMatches.forEach(m => {
+                      if (m.player1) playerNames[m.player1] = m.player1_name || '?';
+                      if (m.player2) playerNames[m.player2] = m.player2_name || '?';
+                    });
+                    const wins: Record<string, number> = {};
+                    const matchResults: Record<string, string> = {};
+                    playerList.forEach(pid => { wins[pid] = 0; });
+                    pMatches.forEach(m => {
+                      const k1 = `${m.player1}_${m.player2}`;
+                      const k2 = `${m.player2}_${m.player1}`;
+                      if (m.status === 'finished' && m.winner) {
+                        wins[m.winner] = (wins[m.winner] || 0) + 1;
+                        matchResults[k1] = m.winner === m.player1 ? 'V' : 'D';
+                        matchResults[k2] = m.winner === m.player2 ? 'V' : 'D';
+                      } else if (m.status === 'in_progress') {
+                        matchResults[k1] = '...'; matchResults[k2] = '...';
+                      } else { matchResults[k1] = '-'; matchResults[k2] = '-'; }
+                    });
+                    const ranking = [...playerList].sort((a, b) => (wins[b] || 0) - (wins[a] || 0));
+                    const allDone = pMatches.every(m => m.status === 'finished');
+
+                    return (
+                      <div key={poolName} className="border rounded-lg overflow-hidden">
+                        <div className={`px-4 py-2 font-bold text-white ${allDone ? 'bg-green-700' : 'bg-blue-800'}`}>
+                          {poolName}{allDone && <span className="ml-2 text-xs opacity-80">- Terminee</span>}
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-100">
+                              <th className="text-left px-3 py-2 w-8">#</th>
+                              <th className="text-left px-3 py-2">Joueur</th>
+                              {playerList.map((_, ci) => (<th key={ci} className="text-center px-2 py-2 w-10">{ci + 1}</th>))}
+                              <th className="text-center px-3 py-2 w-10">V</th>
+                              <th className="text-center px-3 py-2 w-20">Rang</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ranking.map((pid, ri) => (
+                              <tr key={pid} className={`border-t ${ri < 2 && allDone ? 'bg-green-50' : ''}`}>
+                                <td className="px-3 py-2 font-bold text-gray-500">{ri + 1}</td>
+                                <td className="px-3 py-2 font-medium truncate max-w-[140px]">{playerNames[pid]}</td>
+                                {playerList.map((opId, ci) => {
+                                  if (playerList.indexOf(pid) === ci) return <td key={ci} className="text-center px-2 py-2 bg-gray-200">X</td>;
+                                  const res = matchResults[`${pid}_${opId}`] || '-';
+                                  return (
+                                    <td key={ci} className={`text-center px-2 py-2 font-bold ${
+                                      res === 'V' ? 'text-green-600' : res === 'D' ? 'text-red-500' : res === '...' ? 'text-orange-500' : 'text-gray-400'
+                                    }`}>{res}</td>
+                                  );
+                                })}
+                                <td className="text-center px-3 py-2 font-bold">{wins[pid] || 0}</td>
+                                <td className={`text-center px-3 py-2 font-bold ${allDone ? (ri < 2 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+                                  {allDone ? (ri === 0 ? '1er' : `${ri + 1}eme`) : '-'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {sortedElimRounds.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Phase d'elimination</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto pb-4">
+                  <div className="flex min-w-max items-start">
+                    {sortedElimRounds.map((roundName, roundIdx) => {
+                      const spacingMultiplier = Math.pow(2, roundIdx);
+                      const matchHeight = 52;
+                      const baseGap = 8;
+                      return (
+                        <div key={roundName} className="flex flex-col" style={{ minWidth: 210 }}>
+                          <h4 className="text-center font-bold text-xs bg-gray-800 text-white py-1.5 rounded mx-1 mb-2">
+                            {roundName}
+                          </h4>
+                          <div className="flex flex-col" style={{ gap: 0 }}>
+                            {elimRounds[roundName].map((match, matchIdx) => {
+                              const topPad = roundIdx === 0 ? 0 : (spacingMultiplier - 1) * (matchHeight + baseGap) / 2;
+                              return (
+                                <motion.div
+                                  key={match.id}
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: matchIdx * 0.05 }}
+                                  className="flex items-center"
+                                  style={{ paddingTop: matchIdx === 0 ? topPad : (spacingMultiplier - 1) * (matchHeight + baseGap), paddingBottom: 0 }}
+                                >
+                                  {roundIdx > 0 && (
+                                    <div style={{ width: 16 }}><div className="border-t-2 border-gray-400 w-full" /></div>
+                                  )}
+                                  <div className={`flex-1 border rounded overflow-hidden ${
+                                    match.status === 'finished' ? 'border-green-500' :
+                                    match.status === 'in_progress' ? 'border-red-500 ring-1 ring-red-200' : 'border-gray-300'
+                                  }`} style={{ minHeight: matchHeight }}>
+                                    <div className={`px-2 py-1 flex justify-between items-center border-b text-xs ${
+                                      match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : 'bg-white'
+                                    }`}>
+                                      <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
+                                      {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
+                                    </div>
+                                    <div className={`px-2 py-1 flex justify-between items-center text-xs ${
+                                      match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : 'bg-white'
+                                    }`}>
+                                      <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
+                                      {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
+                                    </div>
+                                    {match.status !== 'waiting' && (
+                                      <div className={`px-1 py-0.5 text-[9px] text-center ${
+                                        match.status === 'in_progress' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+                                      }`}>
+                                        {match.status === 'in_progress' ? `En cours${match.table_number ? ` T${match.table_number}` : ''}` : 'Termine'}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {roundIdx < sortedElimRounds.length - 1 && (
+                                    <div className="flex flex-col items-center" style={{ width: 16 }}>
+                                      <div className="border-t-2 border-gray-400 w-full" />
+                                      {matchIdx % 2 === 0 && (
+                                        <div className="border-r-2 border-gray-400" style={{ minHeight: spacingMultiplier * (matchHeight + baseGap) / 2 }} />
+                                      )}
+                                    </div>
+                                  )}
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

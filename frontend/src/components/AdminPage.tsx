@@ -15,7 +15,7 @@ import { api } from "@/lib/api";
 import { 
   Settings, Lock, Trophy, Users, LayoutGrid, 
   Coffee, Plus, Trash2, Loader2, AlertCircle,
-  CheckCircle, Play, Square, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal, Printer
+  CheckCircle, Play, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal, Printer
 } from "lucide-react";
 
 interface Tournament {
@@ -782,7 +782,7 @@ export default function AdminPage() {
       )}
 
       <Tabs value={adminTab} onValueChange={setAdminTab}>
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="tournaments" className="flex items-center gap-1">
             <Trophy className="h-4 w-4" />
             <span className="hidden md:inline">Tournois</span>
@@ -791,9 +791,9 @@ export default function AdminPage() {
             <LayoutGrid className="h-4 w-4" />
             <span className="hidden md:inline">Salles</span>
           </TabsTrigger>
-          <TabsTrigger value="matches" className="flex items-center gap-1">
-            <Users className="h-4 w-4" />
-            <span className="hidden md:inline">Matchs</span>
+          <TabsTrigger value="bracket-tree" className="flex items-center gap-1">
+            <GitBranch className="h-4 w-4" />
+            <span className="hidden md:inline">Arbre Tournoi</span>
           </TabsTrigger>
           <TabsTrigger value="players" className="flex items-center gap-1">
             <Users className="h-4 w-4" />
@@ -806,10 +806,6 @@ export default function AdminPage() {
           <TabsTrigger value="qrcode" className="flex items-center gap-1">
             <QrCode className="h-4 w-4" />
             <span className="hidden md:inline">QRCode</span>
-          </TabsTrigger>
-          <TabsTrigger value="bracket-tree" className="flex items-center gap-1">
-            <GitBranch className="h-4 w-4" />
-            <span className="hidden md:inline">Arbre Tournoi</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1189,124 +1185,6 @@ export default function AdminPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="matches" className="mt-6 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Creer un match</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label>Tableau</Label>
-                  <Select value={newMatch.bracket} onValueChange={(v) => setNewMatch({ bracket: v, player1: "", player2: "" })}>
-                    <SelectTrigger><SelectValue placeholder="Selectionnez" /></SelectTrigger>
-                    <SelectContent>
-                      {sortedBrackets.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Joueur 1</Label>
-                  <Select 
-                    value={newMatch.player1} 
-                    onValueChange={(v) => setNewMatch({ ...newMatch, player1: v })}
-                    disabled={!newMatch.bracket}
-                  >
-                    <SelectTrigger><SelectValue placeholder={newMatch.bracket ? "Selectionnez" : "Choisissez d'abord un tableau"} /></SelectTrigger>
-                    <SelectContent>
-                      {getPlayersForBracket(newMatch.bracket).map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.last_name} {p.first_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Joueur 2</Label>
-                  <Select 
-                    value={newMatch.player2} 
-                    onValueChange={(v) => setNewMatch({ ...newMatch, player2: v })}
-                    disabled={!newMatch.bracket}
-                  >
-                    <SelectTrigger><SelectValue placeholder={newMatch.bracket ? "Selectionnez" : "Choisissez d'abord un tableau"} /></SelectTrigger>
-                    <SelectContent>
-                      {getPlayersForBracket(newMatch.bracket)
-                        .filter(p => p.id !== newMatch.player1)
-                        .map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.last_name} {p.first_name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {newMatch.bracket && getPlayersForBracket(newMatch.bracket).length === 0 && (
-                <p className="text-sm text-orange-600">Aucun joueur inscrit dans ce tableau</p>
-              )}
-              <Button onClick={createMatch} disabled={!newMatch.bracket || !newMatch.player1 || !newMatch.player2}>
-                <Plus className="h-4 w-4 mr-2" />
-                Creer le match
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Gestion des matchs</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {matches.length === 0 ? (
-                <p className="text-muted-foreground">Aucun match</p>
-              ) : (
-                <div className="space-y-3">
-                  {matches.map((match) => (
-                    <div key={match.id} className="flex justify-between items-center p-3 border rounded">
-                      <div className="flex-1">
-                        <p className="font-medium">
-                          {match.player1_name} vs {match.player2_name}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {match.bracket_name} - 
-                          {match.table_number ? ` Table ${match.table_number}` : " Pas de table"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={
-                          match.status === "finished" ? "success" :
-                          match.status === "in_progress" ? "destructive" : "secondary"
-                        }>
-                          {match.status === "finished" ? `${match.sets_player1}-${match.sets_player2}` : match.status}
-                        </Badge>
-                        
-                        {match.status === "waiting" && (
-                          <Button size="sm" onClick={() => setSelectedMatch(match)}>
-                            <Play className="h-4 w-4 mr-1" />
-                            Assigner
-                          </Button>
-                        )}
-                        
-                        {match.status === "in_progress" && (
-                          <Button size="sm" variant="outline" onClick={() => {
-                            setSelectedMatch(match);
-                            setFinishScore({ sets_player1: "", sets_player2: "" });
-                          }}>
-                            <Square className="h-4 w-4 mr-1" />
-                            Terminer
-                          </Button>
-                        )}
-                        
-                        <Button variant="destructive" size="sm" onClick={() => deleteItem("match", match.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="menu" className="mt-6 space-y-6">
           <Card>
             <CardHeader>
@@ -1514,6 +1392,13 @@ export default function AdminPage() {
                     <Button onClick={() => setQrGenerated(true)} disabled={!qrUrl}>
                       <QrCode className="h-4 w-4 mr-2" />
                       Generer
+                    </Button>
+                    <Button variant="outline" onClick={() => {
+                      const lanUrl = `http://${window.location.hostname}:3000`;
+                      setQrUrl(lanUrl);
+                      setQrGenerated(true);
+                    }}>
+                      Detecter IP LAN
                     </Button>
                     <Button variant="outline" onClick={printQrCode} disabled={!qrGenerated || !qrUrl}>
                       <Printer className="h-4 w-4 mr-2" />
@@ -1975,62 +1860,84 @@ export default function AdminPage() {
                       {sortedElimRounds.length > 0 && (
                         <div>
                           <h3 className="text-lg font-bold mb-4">Phase d'elimination</h3>
-                          <div className="overflow-x-auto">
-                            <div className="flex min-w-max">
-                              {sortedElimRounds.map((roundName, roundIdx) => (
-                                <div key={roundName} className="flex flex-col min-w-[250px]" style={{ paddingRight: roundIdx < sortedElimRounds.length - 1 ? '0' : undefined }}>
-                                  <h4 className="text-center font-bold text-sm bg-gray-800 text-white py-2 rounded-t mx-1">
-                                    {roundName}
-                                  </h4>
-                                  <div className="flex flex-col justify-around flex-1 py-2">
-                                    {elimRounds[roundName].map((match: any, matchIdx: number) => (
-                                      <div key={match.id} className="flex items-center px-1" style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-                                        <div
-                                          className={`border-2 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md flex-1 ${
-                                            match.status === 'finished' ? 'border-green-400' :
-                                            match.status === 'in_progress' ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300 hover:border-blue-400'
-                                          }`}
-                                          onClick={() => {
-                                            if (match.status === 'waiting' && match.player1_name && match.player2_name) {
-                                              setSelectedMatch(match); setSelectedTable("");
-                                            } else if (match.status === 'in_progress') {
-                                              setSelectedMatch(match);
-                                            }
-                                          }}
-                                        >
-                                          <div className={`px-3 py-1.5 flex justify-between items-center border-b text-sm ${
-                                            match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : 'bg-white'
-                                          }`}>
-                                            <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
-                                            {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 ml-1" />}
+                          <div className="overflow-x-auto pb-4">
+                            <div className="flex min-w-max items-start">
+                              {sortedElimRounds.map((roundName, roundIdx) => {
+                                const matchCount = elimRounds[roundName].length;
+                                const spacingMultiplier = Math.pow(2, roundIdx);
+                                return (
+                                  <div key={roundName} className="flex flex-col" style={{ minWidth: 220 }}>
+                                    <h4 className="text-center font-bold text-xs bg-gray-800 text-white py-1.5 rounded mx-1 mb-2">
+                                      {roundName}
+                                    </h4>
+                                    <div className="flex flex-col" style={{ gap: 0 }}>
+                                      {elimRounds[roundName].map((match: any, matchIdx: number) => {
+                                        const matchHeight = 56;
+                                        const baseGap = 8;
+                                        const topPad = roundIdx === 0 ? 0 : (spacingMultiplier - 1) * (matchHeight + baseGap) / 2;
+
+                                        return (
+                                          <div key={match.id} className="flex items-center" style={{ paddingTop: matchIdx === 0 ? topPad : (spacingMultiplier - 1) * (matchHeight + baseGap), paddingBottom: 0 }}>
+                                            {roundIdx > 0 && (
+                                              <div className="flex flex-col items-center justify-center" style={{ width: 20 }}>
+                                                <div className="border-t-2 border-gray-400 w-full" />
+                                              </div>
+                                            )}
+                                            <div
+                                              className={`flex-1 border rounded overflow-hidden cursor-pointer transition-all hover:shadow-lg ${
+                                                match.status === 'finished' ? 'border-green-500 bg-white' :
+                                                match.status === 'in_progress' ? 'border-red-500 ring-1 ring-red-200 bg-white' :
+                                                'border-gray-300 bg-white hover:border-blue-400'
+                                              }`}
+                                              style={{ minHeight: matchHeight }}
+                                              onClick={() => {
+                                                if (match.status === 'waiting' && match.player1_name && match.player2_name) {
+                                                  setSelectedMatch(match); setSelectedTable("");
+                                                } else if (match.status === 'in_progress') {
+                                                  setSelectedMatch(match);
+                                                }
+                                              }}
+                                            >
+                                              <div className={`px-2 py-1 flex justify-between items-center border-b text-xs ${
+                                                match.winner && match.winner === match.player1 ? 'bg-green-50 font-bold' : ''
+                                              }`}>
+                                                <span className="truncate flex-1">{match.player1_name || 'TBD'}</span>
+                                                {match.winner === match.player1 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
+                                              </div>
+                                              <div className={`px-2 py-1 flex justify-between items-center text-xs ${
+                                                match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : ''
+                                              }`}>
+                                                <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
+                                                {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 shrink-0" />}
+                                              </div>
+                                              {(match.status !== 'waiting' || match.table_number) && (
+                                                <div className={`px-1 py-0.5 text-[9px] text-center ${
+                                                  match.status === 'in_progress' ? 'bg-red-50 text-red-700' :
+                                                  match.status === 'finished' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-600'
+                                                }`}>
+                                                  {match.status === 'in_progress' && `En cours${match.table_number ? ` T${match.table_number}` : ''}`}
+                                                  {match.status === 'finished' && 'Termine'}
+                                                  {match.status === 'waiting' && match.table_number && `T${match.table_number}`}
+                                                </div>
+                                              )}
+                                            </div>
+                                            {roundIdx < sortedElimRounds.length - 1 && (
+                                              <div className="flex flex-col items-center" style={{ width: 20 }}>
+                                                <div className="border-t-2 border-gray-400 w-full" />
+                                                {matchIdx % 2 === 0 ? (
+                                                  <div className="border-r-2 border-gray-400 h-full" style={{ minHeight: (matchHeight + baseGap) * spacingMultiplier / 2 }} />
+                                                ) : (
+                                                  <div className="border-r-2 border-gray-400" style={{ minHeight: 0 }} />
+                                                )}
+                                              </div>
+                                            )}
                                           </div>
-                                          <div className={`px-3 py-1.5 flex justify-between items-center text-sm ${
-                                            match.winner && match.winner === match.player2 ? 'bg-green-50 font-bold' : 'bg-white'
-                                          }`}>
-                                            <span className="truncate flex-1">{match.player2_name || 'TBD'}</span>
-                                            {match.winner === match.player2 && <Trophy className="h-3 w-3 text-green-600 ml-1" />}
-                                          </div>
-                                          <div className={`px-2 py-0.5 text-[10px] text-center flex items-center justify-center gap-1 ${
-                                            match.status === 'in_progress' ? 'bg-red-50 text-red-700' :
-                                            match.status === 'finished' ? 'bg-green-50 text-green-700' :
-                                            match.table_number ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-500'
-                                          }`}>
-                                            {match.status === 'in_progress' && <>En cours{match.table_number ? ` - T${match.table_number}` : ''}</>}
-                                            {match.status === 'finished' && <>Termine</>}
-                                            {match.status === 'waiting' && match.player1_name && match.player2_name && <>Assigner table</>}
-                                            {match.status === 'waiting' && (!match.player1_name || !match.player2_name) && <>En attente</>}
-                                          </div>
-                                        </div>
-                                        {roundIdx < sortedElimRounds.length - 1 && (
-                                          <div className="w-8 flex items-center">
-                                            <div className="w-full border-t-2 border-gray-300" />
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))}
+                                        );
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
