@@ -288,15 +288,26 @@ class BracketViewSet(viewsets.ModelViewSet):
         created_matches = []
 
         if pool_size >= 2:
-            num_byes = n % pool_size
-            bye_players = player_ids[:num_byes]
-            pool_players = player_ids[num_byes:]
+            num_full_pools = n // pool_size
+            remainder = n % pool_size
+
+            if remainder == 0:
+                pool_sizes = [pool_size] * num_full_pools
+            elif remainder == 1 and pool_size >= 3 and num_full_pools >= 1:
+                pool_sizes = [pool_size] * (num_full_pools - 1) + [pool_size - 1, 2]
+            else:
+                if remainder >= 2:
+                    pool_sizes = [pool_size] * num_full_pools + [remainder]
+                else:
+                    pool_sizes = [pool_size] * (num_full_pools - 1) + [pool_size + remainder]
 
             pools = []
-            for i in range(0, len(pool_players), pool_size):
-                pool = pool_players[i:i + pool_size]
+            idx = 0
+            for ps in pool_sizes:
+                pool = player_ids[idx:idx + ps]
                 if len(pool) >= 2:
                     pools.append(pool)
+                idx += ps
 
             for pool_idx, pool in enumerate(pools):
                 pool_name = f"Pool {chr(65 + pool_idx)}"
@@ -320,9 +331,10 @@ class BracketViewSet(viewsets.ModelViewSet):
                         })
 
             bracket.pool_qualifiers = qualifiers_per_pool
-            bracket.bye_players = ','.join(bye_players) if bye_players else ''
+            bracket.bye_players = ''
             bracket.save(update_fields=['pool_qualifiers', 'bye_players'])
 
+            pool_sizes_info = ', '.join([f'{len(p)}j' for p in pools])
             return Response({
                 'success': True,
                 'matches_created': len(created_matches),
@@ -331,13 +343,12 @@ class BracketViewSet(viewsets.ModelViewSet):
                 'elimination_type': elimination_type,
                 'pool_size': pool_size,
                 'pools_count': len(pools),
-                'byes_count': num_byes,
-                'bye_players': bye_players,
+                'byes_count': 0,
+                'bye_players': [],
                 'qualifiers_per_pool': qualifiers_per_pool,
-                'info': f'{len(pools)} poules de {pool_size} generees (ordre FFTT I.301). '
+                'info': f'{len(pools)} poules generees ({pool_sizes_info}) (ordre FFTT I.301). '
                         f'Classement FFTT I.303 (V=2pts, D=1pt). '
-                        f'{qualifiers_per_pool} qualifie(s)/poule. '
-                        + (f'{num_byes} exempte(s).' if num_byes > 0 else ''),
+                        f'{qualifiers_per_pool} qualifie(s)/poule.',
             })
 
         label_map = {1: 'Finale', 2: '1/2', 3: '1/4', 4: '1/8', 5: '1/16', 6: '1/32', 7: '1/64'}
@@ -1088,6 +1099,8 @@ def live_tables(request):
             },
             'status': table.status,
             'orientation': table.orientation,
+            'position_row': table.position_row,
+            'position_col': table.position_col,
             'player1': {
                 'id': str(table.player1.id),
                 'name': f"{table.player1.last_name} {table.player1.first_name}",
@@ -1155,6 +1168,10 @@ def fftt_lookup(request, license_number):
                 player_data = data if isinstance(data, dict) else (data[0] if isinstance(data, list) and len(data) > 0 else None)
                 if player_data:
                     points_value = player_data.get('point', player_data.get('points', 0))
+                    try:
+                        points_int = int(float(str(points_value))) if points_value else 0
+                    except (ValueError, TypeError):
+                        points_int = 0
                     return Response({
                         'success': True,
                         'data': {
@@ -1163,7 +1180,7 @@ def fftt_lookup(request, license_number):
                             'prenom': player_data.get('prenom', ''),
                             'club': player_data.get('nomclub', player_data.get('club', '')),
                             'nclub': player_data.get('numclub', player_data.get('nclub', '')),
-                            'points': str(int(points_value)) if points_value else '0',
+                            'points': str(points_int),
                             'cat': player_data.get('cat', ''),
                         }
                     })

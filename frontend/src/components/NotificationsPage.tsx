@@ -353,8 +353,7 @@ export default function NotificationsPage() {
                 <ul className="text-sm text-blue-700 space-y-1">
                   <li>- Vous serez notifie quand une table vous est assignee</li>
                   <li>- Vous recevrez un rappel quand c'est votre tour de jouer</li>
-                  <li>- Les emails sont envoyes instantanement</li>
-                  <li>- Les SMS necessitent une configuration serveur</li>
+                  <li>- Les emails et SMS sont envoyes instantanement</li>
                 </ul>
               </div>
             </CardContent>

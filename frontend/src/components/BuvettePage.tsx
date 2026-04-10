@@ -86,7 +86,7 @@ export default function BuvettePage() {
                   <h3 className="text-xl font-semibold mb-4 pb-2 border-b">
                     {section.name}
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-3">
                     {section.items?.map((item, itemIndex) => (
                       <motion.div
                         key={item.id}

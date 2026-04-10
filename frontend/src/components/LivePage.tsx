@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
-import { Users, Clock, Loader2 } from "lucide-react";
+import { Radio, Clock, Loader2 } from "lucide-react";
 
 interface TableData {
   id: string;
@@ -23,12 +23,19 @@ interface Room {
   name: string;
   rows: number;
   tables_per_row: number;
+  entrance_markers?: {side: string; pct: number}[];
+  buvette_markers?: {side: string; pct: number}[];
+  wc_markers?: {side: string; pct: number}[];
+  arrow_markers?: {side: string; pct: number; angle: number}[];
+  rotation?: number;
 }
 
 export default function LivePage() {
   const [tables, setTables] = useState<TableData[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentRoomIdx, setCurrentRoomIdx] = useState(0);
+  const [autoScroll, setAutoScroll] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
@@ -52,6 +59,18 @@ export default function LivePage() {
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  const roomNames = Object.keys(
+    tables.reduce((acc, t) => { acc[t.room?.name || "Sans salle"] = true; return acc; }, {} as Record<string, boolean>)
+  );
+
+  useEffect(() => {
+    if (!autoScroll || roomNames.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentRoomIdx((prev) => (prev + 1) % roomNames.length);
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [autoScroll, roomNames.length]);
 
   const formatDuration = (startTime: string | null) => {
     if (!startTime) return null;
@@ -105,13 +124,12 @@ export default function LivePage() {
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: index * 0.05 }}
-        className={`relative ${isVertical ? 'row-span-2' : ''}`}
       >
         <div 
           className={`relative rounded-lg border-4 ${
             isOccupied ? 'border-red-600 bg-red-700' : 'border-green-600 bg-green-700'
-          } shadow-lg overflow-hidden ${isVertical ? 'aspect-[1/2]' : 'aspect-[2/1]'}`}
-          style={{ minWidth: isVertical ? '100px' : '200px', minHeight: isVertical ? '200px' : '100px' }}
+          } shadow-lg overflow-hidden`}
+          style={{ width: isVertical ? '140px' : '200px', height: isVertical ? '200px' : '140px' }}
         >
           <div className="absolute inset-2 border-2 border-white/50 rounded">
             {isVertical ? (
@@ -125,14 +143,6 @@ export default function LivePage() {
                 <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/70 transform -translate-x-1/2"></div>
               </>
             )}
-          </div>
-          
-          <div className={`absolute ${isVertical ? 'left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 h-full' : 'top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full'}`}>
-            <div className={`${isVertical ? 'w-4 h-full' : 'h-4 w-full'} bg-white/20 flex items-center justify-center`}>
-              <div className={`${isVertical ? 'w-3 h-1' : 'h-3 w-1'} bg-white/60 mx-0.5`} />
-              <div className={`${isVertical ? 'w-3 h-1' : 'h-3 w-1'} bg-white/60 mx-0.5`} />
-              <div className={`${isVertical ? 'w-3 h-1' : 'h-3 w-1'} bg-white/60 mx-0.5`} />
-            </div>
           </div>
 
           <div className="absolute top-1 left-1/2 transform -translate-x-1/2">
@@ -152,17 +162,17 @@ export default function LivePage() {
         </div>
 
         {isOccupied && table.player1 && table.player2 && (
-          <div className="mt-2 p-2 bg-white rounded-lg border shadow-sm">
+          <div className="mt-2 p-2 bg-white rounded-lg border shadow-sm" style={{ width: isVertical ? '140px' : '200px' }}>
             <div className="flex items-center justify-between text-xs">
               <div className="flex-1 text-center min-w-0">
-                <p className="font-semibold truncate" title={table.player1.name}>{formatShortName(table.player1.name)}</p>
+                <p className="font-semibold whitespace-nowrap text-[11px]" title={table.player1.name}>{formatShortName(table.player1.name)}</p>
                 <p className="text-muted-foreground text-[10px]">
                   {table.player1.ranking} pts
                 </p>
               </div>
               <div className="px-1 font-bold text-gray-400 shrink-0">VS</div>
               <div className="flex-1 text-center min-w-0">
-                <p className="font-semibold truncate" title={table.player2.name}>{formatShortName(table.player2.name)}</p>
+                <p className="font-semibold whitespace-nowrap text-[11px]" title={table.player2.name}>{formatShortName(table.player2.name)}</p>
                 <p className="text-muted-foreground text-[10px]">
                   {table.player2.ranking} pts
                 </p>
@@ -185,8 +195,24 @@ export default function LivePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
+            <Radio className="h-5 w-5 text-red-500" />
             Tables en temps reel
+            {roomNames.length > 1 && (
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  className={`text-xs px-2 py-1 rounded ${autoScroll ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
+                >
+                  {autoScroll ? 'Defilement auto ON' : 'Defilement auto OFF'}
+                </button>
+                <div className="flex gap-1">
+                  {roomNames.map((name, i) => (
+                    <button key={name} onClick={() => { setCurrentRoomIdx(i); setAutoScroll(false); }}
+                      className={`w-2 h-2 rounded-full ${i === currentRoomIdx ? 'bg-blue-600' : 'bg-gray-300'}`} />
+                  ))}
+                </div>
+              </div>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -206,13 +232,28 @@ export default function LivePage() {
               Aucune table configuree. Configurez les salles et tables dans l'onglet Admin.
             </p>
           ) : (
-            Object.entries(groupedTables).map(([roomName, roomTables]) => {
+            Object.entries(groupedTables)
+              .filter((_, i) => roomNames.length <= 1 || i === currentRoomIdx)
+              .map(([roomName, roomTables]) => {
               const room = rooms.find(r => r.name === roomName);
-              const rows = room?.rows || Math.ceil(roomTables.length / 4);
-              const tablesPerRow = room?.tables_per_row || Math.min(4, roomTables.length);
+              const gridRows = room?.rows || Math.ceil(roomTables.length / 4);
+              const gridCols = room?.tables_per_row || Math.min(4, roomTables.length);
               
+              const allMarkers = [
+                ...(room?.entrance_markers || []).map((m: any) => ({ ...m, _type: 'entrance' })),
+                ...(room?.buvette_markers || []).map((m: any) => ({ ...m, _type: 'buvette' })),
+                ...(room?.wc_markers || []).map((m: any) => ({ ...m, _type: 'wc' })),
+                ...(room?.arrow_markers || []).map((m: any) => ({ ...m, _type: 'arrow' })),
+              ];
+
               return (
-                <div key={roomName} className="mb-8 last:mb-0">
+                <motion.div
+                  key={roomName}
+                  initial={{ opacity: 0, x: 50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -50 }}
+                  className="mb-8 last:mb-0"
+                >
                   <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
                     <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
                       {roomName}
@@ -221,17 +262,59 @@ export default function LivePage() {
                       ({roomTables.length} tables)
                     </span>
                   </h3>
-                  <div 
-                    className="grid gap-6 p-4 bg-gray-100 rounded-lg"
-                    style={{ 
-                      gridTemplateColumns: `repeat(${tablesPerRow}, minmax(200px, 1fr))` 
-                    }}
-                  >
-                    {roomTables.map((table, index) => (
-                      <PingPongTable key={table.id} table={table} index={index} />
-                    ))}
+
+                  <div className="inline-block" style={{ transform: `rotate(${room?.rotation || 0}deg)`, transition: 'transform 0.3s', transformOrigin: 'center' }}>
+                  <div className="relative border-4 border-gray-800 rounded-md bg-gray-100" style={{ padding: '24px' }}>
+                    {allMarkers.map((mk: any, k: number) => {
+                      const ps: any = { position: 'absolute' as const, zIndex: 10 };
+                      if (mk.side === 'top') { ps.top = '-14px'; ps.left = `${mk.pct}%`; ps.transform = 'translateX(-50%)'; }
+                      else if (mk.side === 'bottom') { ps.bottom = '-14px'; ps.left = `${mk.pct}%`; ps.transform = 'translateX(-50%)'; }
+                      else if (mk.side === 'left') { ps.left = '-14px'; ps.top = `${mk.pct}%`; ps.transform = 'translateY(-50%)'; }
+                      else { ps.right = '-14px'; ps.top = `${mk.pct}%`; ps.transform = 'translateY(-50%)'; }
+                      const cls: any = {
+                        entrance: 'bg-yellow-300 border-yellow-600 text-yellow-900',
+                        buvette: 'bg-orange-300 border-orange-600 text-orange-900',
+                        wc: 'bg-purple-300 border-purple-600 text-purple-900',
+                        arrow: 'bg-gray-900 text-white border-gray-700',
+                      };
+                      const lbl: any = { entrance: 'ENTREE', buvette: 'BUVETTE', wc: 'WC', arrow: '\u2191' };
+                      const extra = mk._type === 'arrow' ? ` rotate(${mk.angle || 0}deg)` : '';
+                      return (
+                        <div key={`live-mk-${k}`}
+                          style={{ ...ps, transform: (ps.transform || '') + extra }}
+                          className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${cls[mk._type]}`}>
+                          {lbl[mk._type]}
+                        </div>
+                      );
+                    })}
+
+                    <div className="grid gap-3"
+                      style={{
+                        gridTemplateColumns: `repeat(${gridCols}, minmax(200px, 1fr))`,
+                        gridTemplateRows: `repeat(${gridRows}, 1fr)`,
+                      }}
+                    >
+                      {Array.from({ length: gridRows * gridCols }).map((_, idx) => {
+                        const ir = Math.floor(idx / gridCols);
+                        const ic = idx % gridCols;
+                        const table = roomTables.find(t => {
+                          const tRow = (t as any).position_row;
+                          const tCol = (t as any).position_col;
+                          return tRow !== undefined ? tRow === ir && tCol === ic : false;
+                        }) || roomTables[ir * gridCols + ic];
+
+                        if (!table) return <div key={`live-${roomName}-${ir}-${ic}`} />;
+
+                        return (
+                          <div key={`live-${roomName}-${ir}-${ic}`} className="flex justify-center">
+                            <PingPongTable table={table} index={idx} />
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                  </div>
+                </motion.div>
               );
             })
           )}

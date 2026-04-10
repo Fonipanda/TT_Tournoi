@@ -46,6 +46,11 @@ interface Room {
   description: string;
   rows: number;
   tables_per_row: number;
+  entrance_markers?: {row: number; col: number}[];
+  buvette_markers?: {row: number; col: number}[];
+  wc_markers?: {row: number; col: number}[];
+  arrow_markers?: {row: number; col: number; angle: number}[];
+  rotation?: number;
 }
 
 interface Table {
@@ -118,7 +123,8 @@ export default function AdminPage() {
   const [newBracket, setNewBracket] = useState({ 
     tournament: "", name: "", category: "", 
     min_points: "", max_points: "", max_players: "16", entry_fee: "5",
-    day: "", checkin_end: "", start_time: ""
+    day: "", checkin_end: "", start_time: "",
+    dotation_quarter: "", dotation_semi: "", dotation_finalist: "", dotation_winner: ""
   });
   const [newRoom, setNewRoom] = useState({ name: "", rows: "2", tables_per_row: "4" });
   const [newTable, setNewTable] = useState({ room: "" });
@@ -154,6 +160,7 @@ export default function AdminPage() {
   const [editingLabels, setEditingLabels] = useState(false);
   const [tempLabels, setTempLabels] = useState<string[]>([]);
   const [poolSize, setPoolSize] = useState<number>(0);
+  const [qualifiersPerPool, setQualifiersPerPool] = useState<number>(2);
   const [tournamentCoef, setTournamentCoef] = useState<number>(0.5);
   const [poolOptions, setPoolOptions] = useState<{size: number; pools: number; remainder: number}[]>([]);
   const [editMatchDialog, setEditMatchDialog] = useState<any | null>(null);
@@ -266,8 +273,12 @@ export default function AdminPage() {
         day: newBracket.day || null,
         checkin_end: newBracket.checkin_end || null,
         start_time: newBracket.start_time || null,
+        dotation_quarter: parseFloat(newBracket.dotation_quarter) || 0,
+        dotation_semi: parseFloat(newBracket.dotation_semi) || 0,
+        dotation_finalist: parseFloat(newBracket.dotation_finalist) || 0,
+        dotation_winner: parseFloat(newBracket.dotation_winner) || 0,
       });
-      setNewBracket({ tournament: "", name: "", category: "", min_points: "", max_points: "", max_players: "16", entry_fee: "5", day: "", checkin_end: "", start_time: "" });
+      setNewBracket({ tournament: "", name: "", category: "", min_points: "", max_points: "", max_players: "16", entry_fee: "5", day: "", checkin_end: "", start_time: "", dotation_quarter: "", dotation_semi: "", dotation_finalist: "", dotation_winner: "" });
       fetchAllData();
       showSuccess("Tableau cree");
     } catch (err: any) {
@@ -310,6 +321,20 @@ export default function AdminPage() {
   const updateTablePosition = async (tableId: string, data: { position_row?: number; position_col?: number; orientation?: string }) => {
     try {
       await api.tables.update(tableId, data);
+      fetchAllData();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const createTableAtPosition = async (roomId: string, row: number, col: number) => {
+    const existing = tables.find(t => t.position_row === row && t.position_col === col && t.room === roomId);
+    if (existing) return;
+    const usedNumbers = tables.map(t => t.table_number);
+    let tableNum = 1;
+    while (usedNumbers.includes(tableNum)) tableNum++;
+    try {
+      await api.tables.create({ room: roomId, table_number: tableNum, position_row: row, position_col: col, status: 'free', orientation: 'horizontal' });
       fetchAllData();
     } catch (err: any) {
       setError(err.message);
@@ -691,9 +716,11 @@ export default function AdminPage() {
       const opts: {size: number; pools: number; remainder: number}[] = [];
       for (const s of [2, 3, 4, 5]) {
         if (n >= s) {
-          const pools = Math.floor(n / s);
           const remainder = n % s;
-          opts.push({ size: s, pools, remainder });
+          const pools = remainder === 0 ? n / s : Math.floor(n / s) - remainder + remainder;
+          const bigPools = remainder;
+          const smallPools = remainder === 0 ? n / s : Math.floor(n / s) - remainder;
+          opts.push({ size: s, pools: Math.floor(n / s), remainder });
         }
       }
       setPoolOptions(opts);
@@ -728,17 +755,14 @@ export default function AdminPage() {
         has_third_place: hasThirdPlace,
         seeded_players: treeSeeds.map(p => p.id),
         pool_size: poolSize,
-        qualifiers_per_pool: 2,
+        qualifiers_per_pool: qualifiersPerPool,
         round_labels: roundLabels,
       });
       if (result.success) {
         const matchesData = await api.matches.list({ bracket_id: treeBracketId });
         setTreeMatches(matchesData);
         setTreeGenerated(true);
-        const msg = result.byes_count > 0
-          ? `${result.matches_created} matchs generes pour ${result.total_players} joueurs (${result.byes_count} exempte(s))`
-          : `${result.matches_created} matchs generes pour ${result.total_players} joueurs`;
-        showSuccess(msg);
+        showSuccess(`${result.matches_created} matchs generes pour ${result.total_players} joueurs`);
         fetchAllData();
       }
     } catch (err: any) {
@@ -982,6 +1006,47 @@ export default function AdminPage() {
                   />
                 </div>
               </div>
+              <div className="border-t pt-4 mt-4">
+                <Label className="text-base font-semibold mb-3 block">Dotation (en &euro;)</Label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <Label className="text-xs">1/4 Finalistes</Label>
+                    <Input
+                      type="number"
+                      value={newBracket.dotation_quarter || ""}
+                      onChange={(e) => setNewBracket({ ...newBracket, dotation_quarter: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">1/2 Finalistes</Label>
+                    <Input
+                      type="number"
+                      value={newBracket.dotation_semi || ""}
+                      onChange={(e) => setNewBracket({ ...newBracket, dotation_semi: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Finaliste</Label>
+                    <Input
+                      type="number"
+                      value={newBracket.dotation_finalist || ""}
+                      onChange={(e) => setNewBracket({ ...newBracket, dotation_finalist: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Vainqueur</Label>
+                    <Input
+                      type="number"
+                      value={newBracket.dotation_winner || ""}
+                      onChange={(e) => setNewBracket({ ...newBracket, dotation_winner: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
               <Button onClick={createBracket} disabled={!newBracket.tournament || !newBracket.name}>
                 <Plus className="h-4 w-4 mr-2" />
                 Creer le tableau
@@ -1076,31 +1141,6 @@ export default function AdminPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Ajouter une table</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-4 items-end">
-                <div className="flex-1">
-                  <Label>Salle</Label>
-                  <Select value={newTable.room} onValueChange={(v) => setNewTable({ room: v })}>
-                    <SelectTrigger><SelectValue placeholder="Selectionnez une salle" /></SelectTrigger>
-                    <SelectContent>
-                      {rooms.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={createTable} disabled={!newTable.room}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Ajouter (Table #{tables.length > 0 ? Math.max(...tables.map(t => t.table_number)) + 1 : 1})
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
               <CardTitle>Salles et Tables</CardTitle>
             </CardHeader>
             <CardContent>
@@ -1119,10 +1159,16 @@ export default function AdminPage() {
                           <div>
                             <h4 className="font-medium text-lg">{room.name}</h4>
                             <p className="text-sm text-muted-foreground">
-                              Grille: {gridRows} rangees x {gridCols} tables/rangee
+                              {gridRows} rangees x {gridCols} tables/rangee | Rotation: {room.rotation || 0}&deg;
                             </p>
                           </div>
                           <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={async () => {
+                              await api.rooms.update(room.id, { rotation: ((room.rotation || 0) + 90) % 360 });
+                              fetchAllData();
+                            }} title="Pivoter la salle">
+                              <RotateCw className="h-4 w-4" />
+                            </Button>
                             <Button variant="outline" size="sm" onClick={() => setEditRoom(room)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -1131,70 +1177,161 @@ export default function AdminPage() {
                             </Button>
                           </div>
                         </div>
-                        
-                        <div 
-                          className="grid gap-3 p-4 bg-gray-50 rounded-lg"
-                          style={{ 
-                            gridTemplateColumns: `repeat(${gridCols}, minmax(80px, 1fr))`,
-                            gridTemplateRows: `repeat(${gridRows}, 60px)`
+
+                        <div className="inline-block" style={{ transform: `rotate(${room.rotation || 0}deg)`, transition: 'transform 0.3s', transformOrigin: 'center' }}>
+                        <div
+                          className="relative border-4 border-gray-800 rounded-md bg-gray-50"
+                          style={{ padding: '24px' }}
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
+                          onDrop={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const type = e.dataTransfer.getData('marker-type');
+                            if (!type || type === '') return;
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const x = e.clientX - rect.left;
+                            const y = e.clientY - rect.top;
+                            const w = rect.width;
+                            const h = rect.height;
+                            const m = 28;
+                            let side = '';
+                            if (y < m) side = 'top';
+                            else if (y > h - m) side = 'bottom';
+                            else if (x < m) side = 'left';
+                            else if (x > w - m) side = 'right';
+                            if (!side) return;
+                            const pct = (side === 'top' || side === 'bottom')
+                              ? Math.round((x / w) * 100)
+                              : Math.round((y / h) * 100);
+                            const mk: any = { side, pct };
+                            if (type === 'arrow') mk.angle = 0;
+                            try {
+                              const field = type === 'arrow' ? 'arrow_markers' : `${type}_markers`;
+                              const existing = (room as any)[field] || [];
+                              await api.rooms.update(room.id, { [field]: [...existing, mk] });
+                              fetchAllData();
+                            } catch {}
                           }}
                         >
-                          {Array.from({ length: gridRows * gridCols }).map((_, idx) => {
-                            const row = Math.floor(idx / gridCols);
-                            const col = idx % gridCols;
-                            const tableAtPosition = roomTables.find(
-                              t => t.position_row === row && t.position_col === col
-                            ) || roomTables[idx];
-                            
+                          {[
+                            ...(room.entrance_markers || []).map((mk: any, i: number) => ({ ...mk, _type: 'entrance', _idx: i })),
+                            ...(room.buvette_markers || []).map((mk: any, i: number) => ({ ...mk, _type: 'buvette', _idx: i })),
+                            ...(room.wc_markers || []).map((mk: any, i: number) => ({ ...mk, _type: 'wc', _idx: i })),
+                            ...(room.arrow_markers || []).map((mk: any, i: number) => ({ ...mk, _type: 'arrow', _idx: i })),
+                          ].map((mk: any, k: number) => {
+                            const ps: any = { position: 'absolute' as const, zIndex: 10 };
+                            if (mk.side === 'top') { ps.top = '-12px'; ps.left = `${mk.pct}%`; ps.transform = 'translateX(-50%)'; }
+                            else if (mk.side === 'bottom') { ps.bottom = '-12px'; ps.left = `${mk.pct}%`; ps.transform = 'translateX(-50%)'; }
+                            else if (mk.side === 'left') { ps.left = '-12px'; ps.top = `${mk.pct}%`; ps.transform = 'translateY(-50%)'; }
+                            else { ps.right = '-12px'; ps.top = `${mk.pct}%`; ps.transform = 'translateY(-50%)'; }
+                            const cls: any = {
+                              entrance: 'bg-yellow-300 border-yellow-600 text-yellow-900',
+                              buvette: 'bg-orange-300 border-orange-600 text-orange-900',
+                              wc: 'bg-purple-300 border-purple-600 text-purple-900',
+                              arrow: 'bg-gray-900 text-white border-gray-700',
+                            };
+                            const lbl: any = { entrance: 'E', buvette: 'B', wc: 'WC', arrow: '\u2191' };
+                            const extraTr = mk._type === 'arrow' ? ` rotate(${mk.angle || 0}deg)` : '';
                             return (
                               <div
-                                key={`${room.id}-${row}-${col}`}
-                                className={`relative flex items-center justify-center rounded border-2 transition-colors
-                                  ${tableAtPosition
-                                    ? tableAtPosition.status === "free"
-                                      ? "bg-green-100 border-green-500 cursor-move"
-                                      : "bg-red-100 border-red-500 cursor-move"
-                                    : "bg-gray-200 border-dashed border-gray-300"
-                                  } ${draggedTable && !tableAtPosition ? "hover:bg-blue-100 hover:border-blue-400" : ""}`}
-                                draggable={!!tableAtPosition}
-                                onDragStart={(e) => tableAtPosition && handleDragStart(e, tableAtPosition)}
-                                onDragOver={handleDragOver}
-                                onDrop={(e) => handleDrop(e, row, col, room.id)}
+                                key={`mk-${room.id}-${k}`}
+                                style={{ ...ps, transform: (ps.transform || '') + extraTr }}
+                                className={`px-1 py-0.5 text-[9px] font-bold rounded border cursor-pointer select-none ${cls[mk._type]}`}
+                                title={mk._type === 'arrow' ? 'Clic: pivoter, Clic droit: supprimer' : `Clic: supprimer`}
+                                onClick={async (ev) => {
+                                  ev.stopPropagation();
+                                  if (mk._type === 'arrow') {
+                                    const arr = [...(room.arrow_markers || [])];
+                                    arr[mk._idx] = { ...arr[mk._idx], angle: ((arr[mk._idx].angle || 0) + 45) % 360 };
+                                    await api.rooms.update(room.id, { arrow_markers: arr });
+                                  } else {
+                                    const f = `${mk._type}_markers`;
+                                    const arr = [...((room as any)[f] || [])];
+                                    arr.splice(mk._idx, 1);
+                                    await api.rooms.update(room.id, { [f]: arr });
+                                  }
+                                  fetchAllData();
+                                }}
+                                onContextMenu={async (ev) => {
+                                  ev.preventDefault(); ev.stopPropagation();
+                                  const f = `${mk._type}_markers`;
+                                  const arr = [...((room as any)[f] || [])];
+                                  arr.splice(mk._idx, 1);
+                                  await api.rooms.update(room.id, { [f]: arr });
+                                  fetchAllData();
+                                }}
                               >
-                                {tableAtPosition ? (
-                                  <>
-                                    <span className={`text-sm font-bold ${tableAtPosition.orientation === 'vertical' ? 'writing-mode-vertical' : ''}`}>
-                                      T{tableAtPosition.table_number}
-                                    </span>
-                                    <div className="absolute -top-2 -right-2 flex gap-1">
-                                      <Button 
-                                        variant="outline" 
-                                        size="icon" 
-                                        className="h-5 w-5 bg-white"
-                                        onClick={(e) => { e.stopPropagation(); toggleTableOrientation(tableAtPosition); }}
-                                      >
-                                        <RotateCw className="h-3 w-3" />
-                                      </Button>
-                                      <Button 
-                                        variant="destructive" 
-                                        size="icon" 
-                                        className="h-5 w-5"
-                                        onClick={(e) => { e.stopPropagation(); deleteItem("table", tableAtPosition.id); }}
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <span className="text-xs text-gray-400">Vide</span>
-                                )}
+                                {lbl[mk._type]}
                               </div>
                             );
                           })}
+
+                          <div
+                            className="grid gap-2"
+                            style={{
+                              gridTemplateColumns: `repeat(${gridCols}, minmax(80px, 1fr))`,
+                              gridTemplateRows: `repeat(${gridRows}, 60px)`,
+                            }}
+                          >
+                            {Array.from({ length: gridRows * gridCols }).map((_, idx) => {
+                              const ir = Math.floor(idx / gridCols);
+                              const ic = idx % gridCols;
+                              const tp = roomTables.find(t => t.position_row === ir && t.position_col === ic);
+                              return (
+                                <div
+                                  key={`${room.id}-${ir}-${ic}`}
+                                  className={`relative flex items-center justify-center rounded border-2 transition-colors
+                                    ${tp ? tp.status === "free" ? "bg-green-100 border-green-500 cursor-move" : "bg-red-100 border-red-500 cursor-move"
+                                      : "bg-white border-dashed border-gray-300 hover:bg-blue-50"
+                                    } ${draggedTable && !tp ? "hover:bg-blue-100 hover:border-blue-400" : ""}`}
+                                  style={tp?.orientation === 'vertical' ? { minHeight: '70px' } : {}}
+                                  draggable={!!tp}
+                                  onDragStart={(e) => { if (tp) { e.stopPropagation(); handleDragStart(e, tp); } }}
+                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                  onDrop={(e) => { e.stopPropagation(); handleDrop(e, ir, ic, room.id); }}
+                                  onClick={() => { if (!tp && !draggedTable) createTableAtPosition(room.id, ir, ic); }}
+                                >
+                                  {tp ? (
+                                    <>
+                                      <div className={`flex items-center justify-center w-full h-full ${tp.orientation === 'vertical' ? 'flex-col' : ''}`}>
+                                        <span className="text-sm font-bold">T{tp.table_number}</span>
+                                      </div>
+                                      <div className="absolute -top-2 -right-2 flex gap-1">
+                                        <Button variant="outline" size="icon" className="h-5 w-5 bg-white"
+                                          onClick={(e) => { e.stopPropagation(); toggleTableOrientation(tp); }}>
+                                          <RotateCw className="h-3 w-3" />
+                                        </Button>
+                                        <Button variant="destructive" size="icon" className="h-5 w-5"
+                                          onClick={(e) => { e.stopPropagation(); deleteItem("table", tp.id); }}>
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-gray-400 cursor-pointer hover:text-blue-500">+ Table</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 mt-3 items-center">
+                          {[
+                            { t: 'entrance', l: 'ENTREE', c: 'bg-yellow-100 border-yellow-400 text-yellow-800' },
+                            { t: 'wc', l: 'WC', c: 'bg-purple-100 border-purple-400 text-purple-800' },
+                            { t: 'buvette', l: 'BUVETTE', c: 'bg-orange-100 border-orange-400 text-orange-800' },
+                            { t: 'arrow', l: '\u2191 FLECHE', c: 'bg-gray-800 border-gray-900 text-white' },
+                          ].map((tag) => (
+                            <div key={tag.t} draggable onDragStart={(e) => e.dataTransfer.setData('marker-type', tag.t)}
+                              className={`px-3 py-1.5 border-2 rounded cursor-grab text-xs font-bold ${tag.c}`}>{tag.l}</div>
+                          ))}
+                          <span className="text-xs text-muted-foreground ml-2">Glissez sur les murs. Clic = supprimer (fleche: clic = pivoter)</span>
                         </div>
                         
                         <p className="text-xs text-muted-foreground mt-2">
-                          {roomTables.length} table(s) dans cette salle - Glissez-deposez pour reorganiser, cliquez sur rotation pour changer l'orientation
+                          {roomTables.length} table(s) - Glissez les tables, cliquez cellule vide pour ajouter
                         </p>
                       </div>
                     );
@@ -1350,6 +1487,7 @@ export default function AdminPage() {
                         <th className="text-left py-2">Tableau(x)</th>
                         <th className="text-left py-2">Email</th>
                         <th className="text-left py-2">Tel</th>
+                        <th className="text-left py-2">Pointage</th>
                         <th className="text-right py-2">Actions</th>
                       </tr>
                     </thead>
@@ -1374,6 +1512,48 @@ export default function AdminPage() {
                             <td className="py-2 whitespace-nowrap">{playerBrackets || "-"}</td>
                             <td className="py-2 whitespace-nowrap">{player.email}</td>
                             <td className="py-2 whitespace-nowrap">{player.phone || "-"}</td>
+                            <td className="py-2 whitespace-nowrap">
+                              {(() => {
+                                const playerRegs = registrations.filter(r => r.player === player.id);
+                                const status = playerRegs[0]?.checkin_status || "";
+                                const updateCheckin = async (val: string) => {
+                                  for (const reg of playerRegs) {
+                                    try {
+                                      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api'}/player-bracket-registrations/${reg.id}/`, {
+                                        method: 'PATCH',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ checkin_status: val })
+                                      });
+                                    } catch {}
+                                  }
+                                  fetchAllData();
+                                };
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); updateCheckin(status === 'P' ? '' : 'P'); }}
+                                      className={`w-7 h-7 rounded flex items-center justify-center font-bold text-sm transition-all ${
+                                        status === 'P' ? 'bg-green-500 text-white shadow-md' : 'bg-gray-200 text-gray-400 hover:bg-green-200'
+                                      }`}
+                                      title="Present"
+                                    >
+                                      {'\u2713'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); updateCheckin(status === 'A' ? '' : 'A'); }}
+                                      className={`w-7 h-7 rounded flex items-center justify-center font-bold text-sm transition-all ${
+                                        status === 'A' ? 'bg-red-500 text-white shadow-md' : 'bg-gray-200 text-gray-400 hover:bg-red-200'
+                                      }`}
+                                      title="Absent"
+                                    >
+                                      {'\u2717'}
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+                            </td>
                             <td className="py-2 text-right whitespace-nowrap">
                               <div className="flex justify-end gap-1">
                                 <Button variant="outline" size="sm" onClick={() => setEditPlayer({...player})}>
@@ -1585,13 +1765,34 @@ export default function AdminPage() {
                 <CardHeader>
                   <CardTitle>Configuration des poules</CardTitle>
                   <CardDescription>
-                    {treeSeeds.length} joueurs inscrits - Choisissez le nombre de joueurs par poule
+                    {treeSeeds.length} joueurs inscrits - Choisissez le nombre de joueurs par poule et le nombre de qualifies
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  <div className="mb-4">
+                    <Label className="text-sm font-medium mb-2 block">Nombre de qualifies par poule</Label>
+                    <div className="flex gap-2">
+                      {[1, 2, 3].map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => setQualifiersPerPool(q)}
+                          className={`px-4 py-2 rounded-lg border-2 text-sm font-bold transition-all ${
+                            qualifiersPerPool === q ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 hover:border-gray-400'
+                          }`}
+                        >
+                          {q} qualifie{q > 1 ? 's' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {poolOptions.map((opt) => {
                       const isSelected = poolSize === opt.size;
+                      const smallPools = opt.remainder === 0 ? opt.pools : opt.pools - opt.remainder;
+                      const bigPools = opt.remainder;
+                      const totalMatchesPerPool = (s: number) => s === 2 ? 1 : s === 3 ? 3 : s === 4 ? 6 : s === 5 ? 10 : 15;
+                      const totalMatches = smallPools * totalMatchesPerPool(opt.size) + bigPools * totalMatchesPerPool(opt.size + 1);
+                      const totalQualified = (smallPools + bigPools) * qualifiersPerPool;
                       return (
                         <button
                           key={opt.size}
@@ -1602,14 +1803,13 @@ export default function AdminPage() {
                         >
                           <p className="text-lg font-bold">{opt.size} joueurs / poule</p>
                           <p className="text-sm text-muted-foreground">
-                            {opt.pools} poule{opt.pools > 1 ? 's' : ''}
-                            {opt.remainder > 0 && ` + ${opt.remainder} exempte(s)`}
+                            {opt.remainder === 0
+                              ? `${opt.pools} poule${opt.pools > 1 ? 's' : ''}`
+                              : `${smallPools} poule${smallPools > 1 ? 's' : ''} de ${opt.size} + ${bigPools} poule${bigPools > 1 ? 's' : ''} de ${opt.size + 1}`
+                            }
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {opt.size === 2 ? `${opt.pools} matchs de pool` :
-                             opt.size === 3 ? `${opt.pools * 3} matchs de pool` :
-                             opt.size === 4 ? `${opt.pools * 6} matchs de pool` :
-                             `${opt.pools * 10} matchs de pool`}
+                            {totalMatches} matchs de pool - {totalQualified} qualifies
                           </p>
                           {opt.remainder === 0 && (
                             <Badge className="mt-2 bg-green-100 text-green-800 text-xs">Repartition parfaite</Badge>
@@ -1622,12 +1822,12 @@ export default function AdminPage() {
                     <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm">
                       <p className="font-medium text-blue-800">Reglement FFTT (Articles I.301 a I.305) :</p>
                       <ol className="mt-1 list-decimal list-inside text-blue-700 space-y-1">
-                        <li>Ordre des matchs en poule conforme a l&apos;article I.301 ({poolSize} joueurs/poule)</li>
+                        <li>Ordre des matchs en poule conforme a l&apos;article I.301 ({poolSize} joueurs/poule, {qualifiersPerPool} qualifie{qualifiersPerPool > 1 ? 's' : ''})</li>
                         <li>Classement FFTT I.303 : V=2pts, D=1pt, forfait=0pt. Departage : confrontation directe, puis quotient manches</li>
-                        <li>Les 2 premiers de chaque poule sont qualifies (I.305), le 3eme est elimine</li>
+                        <li>Les {qualifiersPerPool} premier{qualifiersPerPool > 1 ? 's' : ''} de chaque poule sont qualifie{qualifiersPerPool > 1 ? 's' : ''} (I.305)</li>
                         {treeSeeds.length % poolSize > 0 && (
                           <li className="text-orange-700 font-medium">
-                            {treeSeeds.length % poolSize} joueur(s) avec le plus de points sont exempte(s) de poule (bye)
+                            {treeSeeds.length % poolSize} joueur(s) repartis dans des poules de {poolSize + 1} (pas de joueurs exempts)
                           </li>
                         )}
                         <li>Placement des qualifies : 1ers de poule places comme tetes de serie (I.304.2), 2emes dans le demi-tableau oppose (I.305)</li>
@@ -1685,7 +1885,7 @@ export default function AdminPage() {
                       ) : (
                         <GitBranch className="h-4 w-4 mr-2" />
                       )}
-                      Generer {poolSize > 0 ? `les poules de ${poolSize}` : `l'arbre`} ({treeSeeds.length} joueurs)
+                      Generer {poolSize > 0 ? `les poules de ${poolSize} (${qualifiersPerPool} qual.)` : `l'arbre`} ({treeSeeds.length} joueurs)
                     </Button>
                     <Button
                       variant="outline"
@@ -1732,7 +1932,7 @@ export default function AdminPage() {
                     <CardTitle>Arbre du tournoi</CardTitle>
                     <CardDescription>
                       {treeMatches.length} matchs - {eliminationType === 'single' ? 'Elimination simple' : 'Double elimination'}
-                      {poolSize > 0 && ` - Poules de ${poolSize} (2 qualifies)`}
+                      {poolSize > 0 && ` - Poules de ${poolSize} (${qualifiersPerPool} qualifie${qualifiersPerPool > 1 ? 's' : ''})`}
                     </CardDescription>
                   </div>
                   <div className="flex gap-2">
@@ -2568,6 +2768,40 @@ export default function AdminPage() {
                 value={editPlayer?.email || ""}
                 onChange={(e) => setEditPlayer(editPlayer ? { ...editPlayer, email: e.target.value } : null)}
               />
+            </div>
+            <div>
+              <Label>Tableau(x)</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {brackets.map((b) => {
+                  const playerRegs = registrations.filter(r => r.player === editPlayer?.id);
+                  const isRegistered = playerRegs.some(r => r.bracket === b.id);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      className={`px-3 py-1 rounded text-sm border transition-colors ${
+                        isRegistered
+                          ? 'bg-blue-100 border-blue-500 text-blue-800'
+                          : 'bg-gray-50 border-gray-300 text-gray-500 hover:border-gray-400'
+                      }`}
+                      onClick={async () => {
+                        if (!editPlayer) return;
+                        try {
+                          if (isRegistered) {
+                            const reg = playerRegs.find(r => r.bracket === b.id);
+                            if (reg) await api.registrations.delete(reg.id);
+                          } else {
+                            await api.registrations.create({ player: editPlayer.id, bracket: b.id });
+                          }
+                          fetchAllData();
+                        } catch {}
+                      }}
+                    >
+                      {b.name?.replace(/^Tableau\s+/i, '') || b.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
           <DialogFooter>

@@ -220,23 +220,6 @@ export default function ProgressionPage() {
             <div className="overflow-x-auto pb-4">
               <div className="inline-flex items-start">
 
-                {sortedPoolNames.length > 0 && (
-                  <PoolColumn
-                    poolGroups={poolGroups}
-                    sortedPoolNames={sortedPoolNames}
-                    totalH={totalH}
-                  />
-                )}
-
-                {sortedPoolNames.length > 0 && sortedMainElim.length > 0 && (
-                  <PoolToElimConnector
-                    poolNames={sortedPoolNames}
-                    poolGroups={poolGroups}
-                    firstElimPositions={bracketPositions[sortedMainElim[0]] || []}
-                    totalH={totalH}
-                  />
-                )}
-
                 {sortedMainElim.map((roundName, rIdx) => {
                   const roundMatches = mainElimRounds[roundName];
                   const positions = bracketPositions[roundName] || [];

@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import Image from "next/image";
+import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
-  Users, Bell, Coffee, LayoutGrid, 
+  Users, Bell, Coffee, Radio, 
   UserPlus, Settings, Trophy, Home as HomeIcon,
   TrendingUp, FileText, LogIn, LogOut, User
 } from "lucide-react";
@@ -25,6 +26,27 @@ import ReglementPage from "@/components/ReglementPage";
 import AdminPage from "@/components/AdminPage";
 
 type UserRole = 'visitor' | 'player' | 'admin';
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: string },
+  { hasError: boolean; error: string }
+> {
+  constructor(props: any) { super(props); this.state = { hasError: false, error: '' }; }
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error: error.message }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-center">
+          <p className="text-red-600 font-semibold">Erreur de chargement</p>
+          <p className="text-sm text-gray-500 mt-2">{this.state.error}</p>
+          <button className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            onClick={() => this.setState({ hasError: false, error: '' })}>Recharger</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface AuthState {
   role: UserRole;
@@ -55,7 +77,7 @@ export default function Home() {
     { id: "accueil", label: "Accueil", icon: HomeIcon, roles: ['visitor', 'player', 'admin'] as UserRole[] },
     { id: "inscription", label: "Inscription", icon: UserPlus, roles: ['visitor', 'player', 'admin'] as UserRole[] },
     { id: "notifications", label: "Notifications", icon: Bell, roles: ['player', 'admin'] as UserRole[] },
-    { id: "live", label: "Live", icon: LayoutGrid, roles: ['visitor', 'player', 'admin'] as UserRole[] },
+    { id: "live", label: "Live", icon: Radio, roles: ['visitor', 'player', 'admin'] as UserRole[] },
     { id: "joueurs", label: "Joueurs", icon: Users, roles: ['player', 'admin'] as UserRole[] },
     { id: "progression", label: "Progression", icon: TrendingUp, roles: ['player', 'admin'] as UserRole[] },
     { id: "buvette", label: "Buvette", icon: Coffee, roles: ['visitor', 'player', 'admin'] as UserRole[] },
@@ -87,6 +109,11 @@ export default function Home() {
 
   const handleRegister = async () => {
     setRegisterError('');
+    const pw = registerForm.password;
+    if (pw.length < 8 || !/[A-Z]/.test(pw) || !/[a-z]/.test(pw) || !/[0-9]/.test(pw) || !/[^A-Za-z0-9]/.test(pw)) {
+      setRegisterError('Le mot de passe doit contenir au moins 8 caracteres, 1 majuscule, 1 minuscule, 1 chiffre et 1 caractere special');
+      return;
+    }
     if (registerForm.password !== registerForm.confirmPassword) {
       setRegisterError('Les mots de passe ne correspondent pas');
       return;
@@ -123,13 +150,13 @@ export default function Home() {
     setActiveTab(tab);
   };
 
-  const colsClass = visibleTabs.length <= 6
-    ? `grid-cols-${visibleTabs.length}`
-    : visibleTabs.length <= 7
-    ? 'grid-cols-4 md:grid-cols-7'
-    : visibleTabs.length <= 8
-    ? 'grid-cols-4 md:grid-cols-8'
-    : 'grid-cols-5 md:grid-cols-9';
+  const gridMap: Record<number, string> = {
+    1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3',
+    4: 'grid-cols-4', 5: 'grid-cols-5', 6: 'grid-cols-6',
+    7: 'grid-cols-4 md:grid-cols-7', 8: 'grid-cols-4 md:grid-cols-8',
+    9: 'grid-cols-5 md:grid-cols-9',
+  };
+  const colsClass = gridMap[visibleTabs.length] || 'grid-cols-5 md:grid-cols-9';
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -180,63 +207,55 @@ export default function Home() {
             ))}
           </TabsList>
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.2 }}
-            >
-              <TabsContent value="accueil" className="mt-0">
-                <AccueilPage onNavigate={setActiveTab} userRole={auth.role} />
-              </TabsContent>
-              <TabsContent value="live" className="mt-0">
-                <LivePage />
-              </TabsContent>
-              <TabsContent value="inscription" className="mt-0">
-                <InscriptionPage />
-              </TabsContent>
-              {auth.role !== 'visitor' && (
-                <TabsContent value="notifications" className="mt-0">
-                  <NotificationsPage />
-                </TabsContent>
-              )}
-              <TabsContent value="buvette" className="mt-0">
-                <BuvettePage />
-              </TabsContent>
-              {auth.role !== 'visitor' && (
-                <TabsContent value="joueurs" className="mt-0">
-                  <JoueursLivePage />
-                </TabsContent>
-              )}
-              {auth.role !== 'visitor' && (
-                <TabsContent value="progression" className="mt-0">
-                  <ProgressionPage />
-                </TabsContent>
-              )}
-              <TabsContent value="reglement" className="mt-0">
-                <ReglementPage />
-              </TabsContent>
-              <TabsContent value="connexion" className="mt-0">
-                {auth.role === 'admin' ? (
-                  <AdminPage />
-                ) : auth.role === 'player' ? (
-                  <div className="bg-white rounded-lg shadow p-8 text-center max-w-md mx-auto">
-                    <User className="h-16 w-16 mx-auto text-blue-600 mb-4" />
-                    <h2 className="text-xl font-bold mb-2">Connecte en tant que Joueur</h2>
-                    <p className="text-gray-600 mb-4">Bienvenue, {auth.username} !</p>
-                    <p className="text-sm text-gray-500 mb-6">
-                      Vous avez acces aux pages Notifications, Joueurs et Progression.
-                    </p>
-                    <Button variant="outline" onClick={handleLogout}>
-                      <LogOut className="h-4 w-4 mr-2" /> Se deconnecter
-                    </Button>
-                  </div>
-                ) : null}
-              </TabsContent>
-            </motion.div>
-          </AnimatePresence>
+          <TabsContent value="accueil" className="mt-0">
+            <ErrorBoundary><AccueilPage onNavigate={setActiveTab} userRole={auth.role} /></ErrorBoundary>
+          </TabsContent>
+          <TabsContent value="live" className="mt-0">
+            <ErrorBoundary><LivePage /></ErrorBoundary>
+          </TabsContent>
+          <TabsContent value="inscription" className="mt-0">
+            <ErrorBoundary><InscriptionPage /></ErrorBoundary>
+          </TabsContent>
+          {auth.role !== 'visitor' && (
+            <TabsContent value="notifications" className="mt-0">
+              <ErrorBoundary><NotificationsPage /></ErrorBoundary>
+            </TabsContent>
+          )}
+          <TabsContent value="buvette" className="mt-0">
+            <ErrorBoundary><BuvettePage /></ErrorBoundary>
+          </TabsContent>
+          {auth.role !== 'visitor' && (
+            <TabsContent value="joueurs" className="mt-0">
+              <ErrorBoundary><JoueursLivePage /></ErrorBoundary>
+            </TabsContent>
+          )}
+          {auth.role !== 'visitor' && (
+            <TabsContent value="progression" className="mt-0">
+              <ErrorBoundary><ProgressionPage /></ErrorBoundary>
+            </TabsContent>
+          )}
+          <TabsContent value="reglement" className="mt-0">
+            <ErrorBoundary><ReglementPage /></ErrorBoundary>
+          </TabsContent>
+          <TabsContent value="connexion" className="mt-0">
+            <ErrorBoundary>
+              {auth.role === 'admin' ? (
+                <AdminPage />
+              ) : auth.role === 'player' ? (
+                <div className="bg-white rounded-lg shadow p-8 text-center max-w-md mx-auto">
+                  <User className="h-16 w-16 mx-auto text-blue-600 mb-4" />
+                  <h2 className="text-xl font-bold mb-2">Connecte en tant que Joueur</h2>
+                  <p className="text-gray-600 mb-4">Bienvenue, {auth.username} !</p>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Vous avez acces aux pages Notifications, Joueurs et Progression.
+                  </p>
+                  <Button variant="outline" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" /> Se deconnecter
+                  </Button>
+                </div>
+              ) : null}
+            </ErrorBoundary>
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -267,12 +286,23 @@ export default function Home() {
             </div>
             {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
             <Button onClick={handleLogin} className="w-full">Se connecter</Button>
-            <div className="text-center">
+            <div className="text-center space-y-2">
+              <button
+                className="text-sm text-gray-500 hover:underline block w-full"
+                onClick={() => {
+                  const email = prompt("Entrez votre adresse email pour reinitialiser votre mot de passe :");
+                  if (email) {
+                    alert("Si un compte est associe a cette adresse, un email de reinitialisation sera envoye.");
+                  }
+                }}
+              >
+                Mot de passe oublie ?
+              </button>
               <button
                 className="text-sm text-blue-600 hover:underline"
                 onClick={() => { setShowLoginDialog(false); setShowRegisterDialog(true); }}
               >
-                Pas encore de compte ? Creer un compte joueur
+                Pas encore de compte ? Creer un compte
               </button>
             </div>
           </div>
@@ -282,7 +312,7 @@ export default function Home() {
       <Dialog open={showRegisterDialog} onOpenChange={(open) => { if (!open) { setShowRegisterDialog(false); setRegisterError(''); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Creer un compte joueur</DialogTitle>
+            <DialogTitle>Creer un compte</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -299,7 +329,7 @@ export default function Home() {
                 type="password"
                 value={registerForm.password}
                 onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
-                placeholder="Minimum 4 caracteres"
+                placeholder="Min. 8 car., 1 majuscule, 1 minuscule, 1 chiffre, 1 special"
               />
             </div>
             <div>

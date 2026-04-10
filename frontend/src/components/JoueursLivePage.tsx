@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { Users, Loader2, Clock } from "lucide-react";
+import { Users, Loader2, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
 interface LiveMatch {
   id: string;
@@ -23,6 +25,57 @@ export default function JoueursLivePage() {
   const [matches, setMatches] = useState<LiveMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [sortCol, setSortCol] = useState<string>("");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (col: string) => {
+    if (sortCol === col) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortCol !== col) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === "asc" ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
+  };
+
+  const filterAndSort = (list: LiveMatch[]) => {
+    let filtered = list;
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      filtered = list.filter(m =>
+        m.player1.name.toLowerCase().includes(q) ||
+        m.player2.name.toLowerCase().includes(q) ||
+        m.player1.club.toLowerCase().includes(q) ||
+        m.player2.club.toLowerCase().includes(q) ||
+        m.bracket.name.toLowerCase().includes(q) ||
+        (m.table?.number?.toString() || "").includes(q)
+      );
+    }
+    if (sortCol) {
+      filtered = [...filtered].sort((a, b) => {
+        let va: any, vb: any;
+        switch (sortCol) {
+          case "table": va = a.table?.number || 999; vb = b.table?.number || 999; break;
+          case "j1": va = a.player1.name; vb = b.player1.name; break;
+          case "c1": va = a.player1.club; vb = b.player1.club; break;
+          case "j2": va = a.player2.name; vb = b.player2.name; break;
+          case "c2": va = a.player2.club; vb = b.player2.club; break;
+          case "tableau": va = a.bracket.name; vb = b.bracket.name; break;
+          case "r1": va = Number(a.player1.ranking) || 0; vb = Number(b.player1.ranking) || 0; break;
+          case "r2": va = Number(a.player2.ranking) || 0; vb = Number(b.player2.ranking) || 0; break;
+          default: return 0;
+        }
+        if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb, 'fr') : vb.localeCompare(va, 'fr');
+        return sortDir === "asc" ? va - vb : vb - va;
+      });
+    }
+    return filtered;
+  };
 
   const fetchMatches = async () => {
     try {
@@ -70,18 +123,30 @@ export default function JoueursLivePage() {
 
   const inProgressMatches = matches.filter(m => m.status === "in_progress");
   const waitingMatches = matches.filter(m => m.status === "waiting");
+  const filteredInProgress = filterAndSort(inProgressMatches);
+  const filteredWaiting = filterAndSort(waitingMatches);
 
   return (
     <div className="space-y-6">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          className="pl-9"
+          placeholder="Rechercher un joueur, club, tableau..."
+          value={searchFilter}
+          onChange={(e) => setSearchFilter(e.target.value)}
+        />
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Match en cours ({inProgressMatches.length})
+            Match en cours ({filteredInProgress.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {inProgressMatches.length === 0 ? (
+          {filteredInProgress.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
               Aucun match en cours
             </p>
@@ -90,17 +155,29 @@ export default function JoueursLivePage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-2">Table</th>
-                    <th className="text-left py-3 px-2">Joueur 1</th>
-                    <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-left py-3 px-2">Joueur 2</th>
-                    <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-left py-3 px-2">Tableau</th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("table")}>
+                      <span className="flex items-center">Table<SortIcon col="table" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("j1")}>
+                      <span className="flex items-center">Joueur 1<SortIcon col="j1" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("c1")}>
+                      <span className="flex items-center">Club<SortIcon col="c1" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("j2")}>
+                      <span className="flex items-center">Joueur 2<SortIcon col="j2" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("c2")}>
+                      <span className="flex items-center">Club<SortIcon col="c2" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("tableau")}>
+                      <span className="flex items-center">Tableau<SortIcon col="tableau" /></span>
+                    </th>
                     <th className="text-left py-3 px-2">Duree</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {inProgressMatches.map((match, index) => (
+                  {filteredInProgress.map((match, index) => (
                     <motion.tr
                       key={match.id}
                       initial={{ opacity: 0, y: 10 }}
@@ -153,11 +230,11 @@ export default function JoueursLivePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-yellow-600" />
-            Match en Attente ({waitingMatches.length})
+            Match en Attente ({filteredWaiting.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {waitingMatches.length === 0 ? (
+          {filteredWaiting.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
               Aucun match en attente
             </p>
@@ -166,16 +243,26 @@ export default function JoueursLivePage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-2">Joueur 1</th>
-                    <th className="text-left py-3 px-2">Club</th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("j1")}>
+                      <span className="flex items-center">Joueur 1<SortIcon col="j1" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("c1")}>
+                      <span className="flex items-center">Club<SortIcon col="c1" /></span>
+                    </th>
                     <th className="text-center py-3 px-2">VS</th>
-                    <th className="text-left py-3 px-2">Joueur 2</th>
-                    <th className="text-left py-3 px-2">Club</th>
-                    <th className="text-left py-3 px-2">Tableau</th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("j2")}>
+                      <span className="flex items-center">Joueur 2<SortIcon col="j2" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("c2")}>
+                      <span className="flex items-center">Club<SortIcon col="c2" /></span>
+                    </th>
+                    <th className="text-left py-3 px-2 cursor-pointer select-none" onClick={() => toggleSort("tableau")}>
+                      <span className="flex items-center">Tableau<SortIcon col="tableau" /></span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {waitingMatches.map((match, index) => (
+                  {filteredWaiting.map((match, index) => (
                     <motion.tr
                       key={match.id}
                       initial={{ opacity: 0, y: 10 }}

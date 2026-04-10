@@ -56,6 +56,51 @@ export default function InscriptionPage() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const [showCreateAccount, setShowCreateAccount] = useState(true);
+  const [showLoginForm, setShowLoginForm] = useState(false);
+  const [accountUsername, setAccountUsername] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [accountPasswordConfirm, setAccountPasswordConfirm] = useState("");
+  const [accountLicense, setAccountLicense] = useState("");
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [accountCreated, setAccountCreated] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
+  const validatePassword = (pwd: string): string | null => {
+    if (pwd.length < 8) return "Le mot de passe doit contenir au moins 8 caracteres";
+    if (!/[A-Z]/.test(pwd)) return "Le mot de passe doit contenir au moins une majuscule";
+    if (!/[a-z]/.test(pwd)) return "Le mot de passe doit contenir au moins une minuscule";
+    if (!/[0-9]/.test(pwd)) return "Le mot de passe doit contenir au moins un chiffre";
+    if (!/[^A-Za-z0-9]/.test(pwd)) return "Le mot de passe doit contenir au moins un caractere special";
+    return null;
+  };
+
+  const handleCreateAccount = () => {
+    setAccountError(null);
+    if (!accountUsername.trim()) { setAccountError("Le nom d'utilisateur est requis"); return; }
+    const pwdError = validatePassword(accountPassword);
+    if (pwdError) { setAccountError(pwdError); return; }
+    if (accountPassword !== accountPasswordConfirm) { setAccountError("Les mots de passe ne correspondent pas"); return; }
+    setAccountCreated(true);
+    setShowCreateAccount(false);
+    setShowLoginForm(false);
+    if (accountLicense.trim()) {
+      setLicenseNumber(accountLicense.trim());
+    }
+  };
+
+  const handleLogin = () => {
+    setAccountError(null);
+    if (!loginUsername.trim() || !loginPassword.trim()) {
+      setAccountError("Veuillez remplir tous les champs");
+      return;
+    }
+    setAccountCreated(true);
+    setShowCreateAccount(false);
+    setShowLoginForm(false);
+  };
+
   const [consultEmail, setConsultEmail] = useState("");
   const [consultPlayer, setConsultPlayer] = useState<Player | null>(null);
   const [consultBrackets, setConsultBrackets] = useState<any[]>([]);
@@ -311,6 +356,138 @@ export default function InscriptionPage() {
 
         <TabsContent value="register" className="mt-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {showCreateAccount && !accountCreated && (
+              <Card className="lg:col-span-2 border-blue-200 bg-blue-50/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <UserPlus className="h-5 w-5 text-blue-600" />
+                    Creer un compte
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Nom d'utilisateur</Label>
+                      <Input
+                        placeholder="Choisissez un identifiant"
+                        value={accountUsername}
+                        onChange={(e) => setAccountUsername(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Numero de licence FFTT (optionnel)</Label>
+                      <Input
+                        placeholder="Ex: 7732605"
+                        value={accountLicense}
+                        onChange={(e) => setAccountLicense(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Permet de lier votre compte a votre profil joueur
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Mot de passe</Label>
+                      <Input
+                        type="password"
+                        placeholder="Minimum 8 caracteres, 1 majuscule, 1 minuscule, 1 chiffre, 1 special"
+                        value={accountPassword}
+                        onChange={(e) => setAccountPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Confirmer le mot de passe</Label>
+                      <Input
+                        type="password"
+                        placeholder="Retapez le mot de passe"
+                        value={accountPasswordConfirm}
+                        onChange={(e) => setAccountPasswordConfirm(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  {accountError && (
+                    <div className="flex items-center gap-2 text-red-600 text-sm">
+                      <AlertCircle className="h-4 w-4" />
+                      {accountError}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <Button onClick={handleCreateAccount} className="bg-blue-600 hover:bg-blue-700">
+                      Creer le compte
+                    </Button>
+                    <button
+                      className="text-sm text-blue-600 hover:underline"
+                      onClick={() => { setShowCreateAccount(false); setShowLoginForm(true); setAccountError(null); }}
+                    >
+                      Deja un compte ? Se connecter
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {showLoginForm && !accountCreated && (
+              <Card className="lg:col-span-2 border-green-200 bg-green-50/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Search className="h-5 w-5 text-green-600" />
+                    Se connecter
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Nom d'utilisateur</Label>
+                      <Input
+                        placeholder="Votre identifiant"
+                        value={loginUsername}
+                        onChange={(e) => setLoginUsername(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Mot de passe</Label>
+                      <Input
+                        type="password"
+                        placeholder="Votre mot de passe"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                      />
+                    </div>
+                  </div>
+                  {accountError && (
+                    <div className="flex items-center gap-2 text-red-600 text-sm">
+                      <AlertCircle className="h-4 w-4" />
+                      {accountError}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <Button onClick={handleLogin} className="bg-green-600 hover:bg-green-700">
+                      Se connecter
+                    </Button>
+                    <button
+                      className="text-sm text-green-600 hover:underline"
+                      onClick={() => { setShowLoginForm(false); setShowCreateAccount(true); setAccountError(null); }}
+                    >
+                      Pas de compte ? Creer un compte
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {!accountCreated && !showCreateAccount && !showLoginForm && (
+              <Card className="lg:col-span-2">
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  <p className="text-lg mb-4">Veuillez creer un compte ou vous connecter pour vous inscrire.</p>
+                  <div className="flex gap-4 justify-center">
+                    <Button onClick={() => setShowCreateAccount(true)} variant="outline">Creer un compte</Button>
+                    <Button onClick={() => setShowLoginForm(true)} className="bg-green-600 hover:bg-green-700">Se connecter</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {accountCreated && (<>
             <Card>
               <CardHeader>
                 <CardTitle>Informations du joueur</CardTitle>
@@ -454,24 +631,28 @@ export default function InscriptionPage() {
                       const bracketDay = bracket.day || "default";
                       const dayCount = getSelectionsForDay(bracketDay);
                       const isDayFull = !isSelected && dayCount >= 2;
-                      const canSelect = !isExisting && !isFull && !isDayFull;
+                      const hasPlayerData = !!playerData.points;
+                      const isNotRecommended = hasPlayerData && !isRecommended;
+                      const canSelect = !isExisting && !isFull && !isDayFull && !isNotRecommended;
 
                       return (
                         <motion.div
                           key={bracket.id}
                           whileHover={{ scale: canSelect ? 1.01 : 1 }}
-                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                          className={`p-4 rounded-lg border-2 transition-all ${
                             isExisting
                               ? "border-blue-400 bg-blue-50 cursor-not-allowed"
                               : isSelected
-                              ? "border-green-500 bg-green-50"
+                              ? "border-green-500 bg-green-50 cursor-pointer"
+                              : isNotRecommended
+                              ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-50"
                               : isFull
                               ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-60"
                               : isDayFull
                               ? "border-orange-200 bg-orange-50 cursor-not-allowed opacity-80"
                               : isRecommended
-                              ? "border-green-200 hover:border-green-400"
-                              : "border-gray-200 hover:border-gray-400"
+                              ? "border-green-200 hover:border-green-400 cursor-pointer"
+                              : "border-gray-200 hover:border-gray-400 cursor-pointer"
                           }`}
                           onClick={() => canSelect && toggleBracketSelection(bracket.id)}
                         >
@@ -481,6 +662,9 @@ export default function InscriptionPage() {
                                 {bracket.name}
                                 {isRecommended && !isExisting && !isDayFull && (
                                   <Badge variant="success" className="text-xs">Recommande</Badge>
+                                )}
+                                {isNotRecommended && (
+                                  <Badge variant="secondary" className="text-xs">Non recommande</Badge>
                                 )}
                                 {isExisting && (
                                   <Badge variant="secondary" className="text-xs">Deja inscrit</Badge>
@@ -577,6 +761,7 @@ export default function InscriptionPage() {
                 )}
               </CardContent>
             </Card>
+            </>)}
           </div>
         </TabsContent>
 

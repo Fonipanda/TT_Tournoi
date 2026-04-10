@@ -32,6 +32,10 @@ class Bracket(models.Model):
     start_time = models.CharField(max_length=20, blank=True, null=True)
     pool_qualifiers = models.IntegerField(default=2)
     bye_players = models.TextField(blank=True, default='')
+    dotation_quarter = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    dotation_semi = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    dotation_finalist = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    dotation_winner = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -75,6 +79,7 @@ class PlayerBracketRegistration(models.Model):
     bracket = models.ForeignKey(Bracket, on_delete=models.CASCADE, related_name='registrations')
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
     amount_paid = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    checkin_status = models.CharField(max_length=1, choices=[('P', 'Present'), ('A', 'Absent')], blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -89,6 +94,11 @@ class Room(models.Model):
     description = models.TextField(blank=True, null=True)
     rows = models.IntegerField(default=2)
     tables_per_row = models.IntegerField(default=4)
+    entrance_markers = models.JSONField(default=list, blank=True)
+    buvette_markers = models.JSONField(default=list, blank=True)
+    wc_markers = models.JSONField(default=list, blank=True)
+    arrow_markers = models.JSONField(default=list, blank=True)
+    rotation = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

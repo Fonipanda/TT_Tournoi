@@ -158,7 +158,7 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
         <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
           <CardContent className="pt-6">
             <div className="text-center space-y-4">
-              <p className="text-muted-foreground max-w-2xl mx-auto">
+              <p className="text-muted-foreground text-lg leading-relaxed px-4">
                 Bienvenue sur la plateforme officielle de gestion de tournoi du club Chelles Tennis de Table.
                 <br />
                 Suivez les matchs en direct, consultez les tableaux et restez informes !
@@ -170,7 +170,7 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
                   onClick={() => onNavigate?.("inscription")}
                 >
                   <UserPlus className="h-5 w-5 mr-2" />
-                  S'inscrire au tournoi
+                  Inscription
                 </Button>
                 <Button 
                   size="lg" 
@@ -265,49 +265,90 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
         </Card>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <Card 
-            className="h-full bg-gradient-to-br from-blue-50 to-white hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => setShowProgramme(true)}
-          >
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-blue-700">
-                <Trophy className="h-5 w-5" />
-                Tableaux
+          <Card className="h-full bg-gradient-to-br from-blue-50 to-white">
+            <CardHeader 
+              className="cursor-pointer hover:bg-blue-50/50 transition-colors rounded-t-lg"
+              onClick={() => setShowProgramme(!showProgramme)}
+            >
+              <CardTitle className="flex items-center justify-between text-blue-700">
+                <span className="flex items-center gap-2">
+                  <Trophy className="h-5 w-5" />
+                  Programme du tournoi
+                </span>
+                <span className="text-sm font-normal text-blue-500">
+                  {showProgramme ? "Masquer" : "Voir le programme"}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-4xl font-bold text-blue-600">{brackets.length}</p>
-              <p className="text-muted-foreground">tableaux disponibles</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
-          <Card 
-            className="h-full bg-gradient-to-br from-green-50 to-white hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => setShowInscrits(true)}
-          >
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-green-700">
-                <Users className="h-5 w-5" />
-                Inscriptions
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-4xl font-bold text-green-600">
-                {new Set(registrations.map(r => String(r.player))).size}
-              </p>
-              <p className="text-muted-foreground">joueurs inscrits</p>
+              <div className="flex gap-6 mb-4">
+                <div>
+                  <p className="text-3xl font-bold text-blue-600">{brackets.length}</p>
+                  <p className="text-xs text-muted-foreground">tableaux</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-purple-600">
+                    {brackets.reduce((sum, b) => sum + Math.max(0, b.max_players - (b.registered_count || 0)), 0)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">places disponibles</p>
+                </div>
+              </div>
+              {showProgramme && (
+                <>
+              {sortedDays.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4 text-sm">
+                  Aucun tableau programme pour le moment
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto">
+                  {sortedDays.map((day) => (
+                    <div key={day} className="border rounded-lg p-3">
+                      <h3 className="text-sm font-semibold mb-2 flex items-center gap-1 text-blue-700">
+                        <Calendar className="h-3 w-3" />
+                        {day}
+                      </h3>
+                      <div className="space-y-2">
+                        {sortBracketsAlphabetically(groupedBrackets[day]).map((bracket) => {
+                          const remaining = bracket.max_players - (bracket.registered_count || 0);
+                          return (
+                            <div key={bracket.id} className="p-2 bg-gray-50 rounded text-xs">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <span className="font-medium">{bracket.name}</span>
+                                  <span className="text-muted-foreground ml-1">({bracket.category})</span>
+                                </div>
+                                <Badge variant={remaining <= 0 ? "destructive" : remaining <= 3 ? "warning" : "success"} className="text-[10px] px-1">
+                                  {remaining <= 0 ? "Complet" : `${remaining} pl.`}
+                                </Badge>
+                              </div>
+                              <div className="mt-1 flex gap-3 text-[10px] text-muted-foreground">
+                                {bracket.checkin_end && <span>Pointage: {bracket.checkin_end}</span>}
+                                {bracket.start_time && <span>Debut: {bracket.start_time}</span>}
+                                <span className="font-medium ml-auto text-gray-700">{(Number(bracket.entry_fee) || 0).toFixed(2)} &euro;</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button 
+                className="w-full mt-4 bg-blue-600 hover:bg-blue-700"
+                onClick={() => onNavigate?.("inscription")}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Inscription
+              </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </motion.div>
@@ -315,23 +356,28 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.5 }}
+          transition={{ delay: 0.4 }}
         >
           <Card 
-            className="h-full bg-gradient-to-br from-purple-50 to-white hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => setShowPlaces(true)}
+            className="h-full bg-gradient-to-br from-green-50 to-white hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => setShowInscrits(true)}
           >
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-purple-700">
-                <TrendingUp className="h-5 w-5" />
-                Places
+              <CardTitle className="flex items-center justify-between text-green-700">
+                <span className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Inscriptions
+                </span>
+                <span className="text-sm font-normal text-green-500">
+                  Voir les joueurs inscrits
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-4xl font-bold text-purple-600">
-                {brackets.reduce((sum, b) => sum + Math.max(0, b.max_players - (b.registered_count || 0)), 0)}
+              <p className="text-4xl font-bold text-green-600">
+                {new Set(registrations.map(r => String(r.player))).size}
               </p>
-              <p className="text-muted-foreground">places disponibles</p>
+              <p className="text-muted-foreground">joueurs inscrits</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -411,9 +457,8 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
                 <div className="space-y-1">
                   <h4 className="font-medium flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-blue-600" />
-                    Date et lieu
+                    Date(s) : A definir
                   </h4>
-                  <p className="text-sm text-muted-foreground pl-6">Dates : A definir</p>
                 </div>
 
                 <div className="space-y-1">
