@@ -2,7 +2,8 @@ from rest_framework import serializers
 from .models import (
     Tournament, Bracket, Player, PlayerBracketRegistration,
     Room, Table, Match, MenuSection, MenuItem,
-    PlayerNotificationSubscription, Notification, UserAccount
+    PlayerNotificationSubscription, Notification, UserAccount,
+    SmsAdapterConfig, SmsTemplate, SmsLog
 )
 
 
@@ -35,6 +36,8 @@ class PlayerBracketRegistrationSerializer(serializers.ModelSerializer):
     bracket_name = serializers.CharField(source='bracket.name', read_only=True)
     bracket_category = serializers.CharField(source='bracket.category', read_only=True)
     entry_fee = serializers.DecimalField(source='bracket.entry_fee', max_digits=6, decimal_places=2, read_only=True)
+    qr_token = serializers.CharField(read_only=True)
+    dossard_number = serializers.IntegerField(read_only=True)
     
     class Meta:
         model = PlayerBracketRegistration
@@ -129,15 +132,24 @@ class MenuSectionSerializer(serializers.ModelSerializer):
     
     def get_items(self, obj):
         items = obj.items.filter(is_available=True)
-        return MenuItemSerializer(items, many=True).data
+        return MenuItemSerializer(items, many=True, context=self.context).data
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
     section_name = serializers.CharField(source='section.name', read_only=True)
+    image_display_url = serializers.SerializerMethodField()
     
     class Meta:
         model = MenuItem
         fields = '__all__'
+
+    def get_image_display_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return obj.image_url or None
 
 
 class PlayerNotificationSubscriptionSerializer(serializers.ModelSerializer):
@@ -165,6 +177,43 @@ class UserAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserAccount
         fields = ['id', 'username', 'role', 'player', 'player_name', 'created_at']
+
+    def get_player_name(self, obj):
+        if obj.player:
+            return f"{obj.player.last_name} {obj.player.first_name}"
+        return None
+
+
+class SmsAdapterConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SmsAdapterConfig
+        fields = '__all__'
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('config') and isinstance(data['config'], dict):
+            masked = {}
+            for key, value in data['config'].items():
+                if any(s in key.lower() for s in ['secret', 'token', 'pass', 'password', 'key']) and value:
+                    masked[key] = '***'
+                else:
+                    masked[key] = value
+            data['config'] = masked
+        return data
+
+
+class SmsTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SmsTemplate
+        fields = '__all__'
+
+
+class SmsLogSerializer(serializers.ModelSerializer):
+    player_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SmsLog
+        fields = '__all__'
 
     def get_player_name(self, obj):
         if obj.player:

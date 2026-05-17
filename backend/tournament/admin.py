@@ -2,7 +2,8 @@ from django.contrib import admin
 from .models import (
     Tournament, Bracket, Player, PlayerBracketRegistration,
     Room, Table, Match, MenuSection, MenuItem,
-    PlayerNotificationSubscription, Notification
+    PlayerNotificationSubscription, Notification, UserAccount,
+    SmsAdapterConfig, SmsTemplate, SmsLog
 )
 
 @admin.register(Tournament)
@@ -63,3 +64,23 @@ class PlayerNotificationSubscriptionAdmin(admin.ModelAdmin):
 class NotificationAdmin(admin.ModelAdmin):
     list_display = ['player', 'type', 'title', 'is_read', 'is_sent_email', 'is_sent_sms', 'created_at']
     list_filter = ['type', 'is_read', 'is_sent_email', 'is_sent_sms']
+
+@admin.register(UserAccount)
+class UserAccountAdmin(admin.ModelAdmin):
+    list_display = ['username', 'role', 'player', 'created_at']
+    list_filter = ['role']
+    search_fields = ['username']
+
+@admin.register(SmsAdapterConfig)
+class SmsAdapterConfigAdmin(admin.ModelAdmin):
+    list_display = ['name', 'adapter_type', 'is_active', 'created_at']
+    list_filter = ['adapter_type', 'is_active']
+
+@admin.register(SmsTemplate)
+class SmsTemplateAdmin(admin.ModelAdmin):
+    list_display = ['name', 'is_active', 'created_at']
+
+@admin.register(SmsLog)
+class SmsLogAdmin(admin.ModelAdmin):
+    list_display = ['recipient_phone', 'player', 'status', 'adapter_name', 'created_at']
+    list_filter = ['status', 'adapter_name']

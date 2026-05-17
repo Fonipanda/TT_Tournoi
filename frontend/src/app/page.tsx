@@ -6,13 +6,14 @@ import Image from "next/image";
 import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
   Users, Bell, Coffee, Radio, 
   UserPlus, Settings, Trophy, Home as HomeIcon,
-  TrendingUp, FileText, LogIn, LogOut, User
+  TrendingUp, FileText, LogIn, LogOut, User, ClipboardCheck
 } from "lucide-react";
 import { api } from "@/lib/api";
 import AccueilPage from "@/components/AccueilPage";
@@ -24,8 +25,9 @@ import JoueursLivePage from "@/components/JoueursLivePage";
 import ProgressionPage from "@/components/ProgressionPage";
 import ReglementPage from "@/components/ReglementPage";
 import AdminPage from "@/components/AdminPage";
+import JugeArbitrePage from "@/components/JugeArbitrePage";
 
-type UserRole = 'visitor' | 'player' | 'admin';
+type UserRole = 'visitor' | 'player' | 'admin' | 'juge_arbitre';
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback?: string },
@@ -63,6 +65,8 @@ export default function Home() {
   const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '', licenseNumber: '' });
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
+  const [tournaments, setTournaments] = useState<any[]>([]);
+  const [activeTournamentId, setActiveTournamentId] = useState<string>('');
 
   useEffect(() => {
     const saved = localStorage.getItem('tt_auth');
@@ -71,18 +75,48 @@ export default function Home() {
         setAuth(JSON.parse(saved));
       } catch {}
     }
+    const savedTournament = localStorage.getItem('tt_active_tournament');
+    if (savedTournament) setActiveTournamentId(savedTournament);
+    fetchTournaments();
   }, []);
 
+  const fetchTournaments = async () => {
+    try {
+      const data = await api.tournaments.list();
+      setTournaments(data);
+      const savedTournament = localStorage.getItem('tt_active_tournament');
+      if (data.length > 0 && !savedTournament) {
+        setActiveTournamentId(data[0].id);
+        localStorage.setItem('tt_active_tournament', data[0].id);
+      }
+    } catch {}
+  };
+
+  const handleTournamentChange = (id: string) => {
+    setActiveTournamentId(id);
+    localStorage.setItem('tt_active_tournament', id);
+  };
+
+  const roleLabel = (role: UserRole) => {
+    switch (role) {
+      case 'admin': return 'Admin';
+      case 'juge_arbitre': return 'Juge-Arbitre';
+      case 'player': return 'Joueur';
+      default: return '';
+    }
+  };
+
   const allTabs = [
-    { id: "accueil", label: "Accueil", icon: HomeIcon, roles: ['visitor', 'player', 'admin'] as UserRole[] },
+    { id: "accueil", label: "Accueil", icon: HomeIcon, roles: ['visitor', 'player', 'admin', 'juge_arbitre'] as UserRole[] },
     { id: "inscription", label: "Inscription", icon: UserPlus, roles: ['visitor', 'player', 'admin'] as UserRole[] },
     { id: "notifications", label: "Notifications", icon: Bell, roles: ['player', 'admin'] as UserRole[] },
-    { id: "live", label: "Live", icon: Radio, roles: ['visitor', 'player', 'admin'] as UserRole[] },
+    { id: "live", label: "Live", icon: Radio, roles: ['visitor', 'player', 'admin', 'juge_arbitre'] as UserRole[] },
+    { id: "juge-arbitre", label: "Juge-Arbitre", icon: ClipboardCheck, roles: ['juge_arbitre', 'admin'] as UserRole[] },
     { id: "joueurs", label: "Joueurs", icon: Users, roles: ['player', 'admin'] as UserRole[] },
     { id: "progression", label: "Progression", icon: TrendingUp, roles: ['player', 'admin'] as UserRole[] },
-    { id: "buvette", label: "Buvette", icon: Coffee, roles: ['visitor', 'player', 'admin'] as UserRole[] },
-    { id: "reglement", label: "Reglement", icon: FileText, roles: ['visitor', 'player', 'admin'] as UserRole[] },
-    { id: "connexion", label: auth.role === 'admin' ? "Administration" : "Connexion", icon: auth.role === 'visitor' ? LogIn : Settings, roles: ['visitor', 'player', 'admin'] as UserRole[] },
+    { id: "buvette", label: "Buvette", icon: Coffee, roles: ['visitor', 'player', 'admin', 'juge_arbitre'] as UserRole[] },
+    { id: "reglement", label: "Reglement", icon: FileText, roles: ['visitor', 'player', 'admin', 'juge_arbitre'] as UserRole[] },
+    { id: "connexion", label: auth.role === 'admin' ? "Administration" : "Connexion", icon: auth.role === 'visitor' ? LogIn : Settings, roles: ['visitor', 'player', 'admin', 'juge_arbitre'] as UserRole[] },
   ];
 
   const visibleTabs = allTabs.filter(t => t.roles.includes(auth.role));
@@ -154,9 +188,10 @@ export default function Home() {
     1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3',
     4: 'grid-cols-4', 5: 'grid-cols-5', 6: 'grid-cols-6',
     7: 'grid-cols-4 md:grid-cols-7', 8: 'grid-cols-4 md:grid-cols-8',
-    9: 'grid-cols-5 md:grid-cols-9',
+    9: 'grid-cols-5 md:grid-cols-9', 10: 'grid-cols-5 md:grid-cols-10',
+    11: 'grid-cols-6 md:grid-cols-11',
   };
-  const colsClass = gridMap[visibleTabs.length] || 'grid-cols-5 md:grid-cols-9';
+  const colsClass = gridMap[visibleTabs.length] || 'grid-cols-5 md:grid-cols-10';
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -178,17 +213,32 @@ export default function Home() {
               Chelles TT - Tournoi
             </h1>
           </motion.div>
-          {auth.role !== 'visitor' && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600 flex items-center gap-1">
-                <User className="h-4 w-4" />
-                {auth.username} ({auth.role === 'admin' ? 'Admin' : 'Joueur'})
-              </span>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-1" /> Deconnexion
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {tournaments.length > 1 && (
+              <Select value={activeTournamentId} onValueChange={handleTournamentChange}>
+                <SelectTrigger className="w-[200px] h-9">
+                  <Trophy className="h-4 w-4 mr-1 text-blue-600" />
+                  <SelectValue placeholder="Tournoi" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tournaments.map((t: any) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {auth.role !== 'visitor' && (
+              <>
+                <span className="text-sm text-gray-600 flex items-center gap-1">
+                  <User className="h-4 w-4" />
+                  {auth.username} ({roleLabel(auth.role)})
+                </span>
+                <Button variant="outline" size="sm" onClick={handleLogout}>
+                  <LogOut className="h-4 w-4 mr-1" /> Deconnexion
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -208,28 +258,33 @@ export default function Home() {
           </TabsList>
 
           <TabsContent value="accueil" className="mt-0">
-            <ErrorBoundary><AccueilPage onNavigate={setActiveTab} userRole={auth.role} /></ErrorBoundary>
+            <ErrorBoundary><AccueilPage onNavigate={setActiveTab} userRole={auth.role} tournamentId={activeTournamentId} /></ErrorBoundary>
           </TabsContent>
           <TabsContent value="live" className="mt-0">
-            <ErrorBoundary><LivePage /></ErrorBoundary>
+            <ErrorBoundary><LivePage tournamentId={activeTournamentId} /></ErrorBoundary>
           </TabsContent>
           <TabsContent value="inscription" className="mt-0">
-            <ErrorBoundary><InscriptionPage /></ErrorBoundary>
+            <ErrorBoundary><InscriptionPage tournamentId={activeTournamentId} /></ErrorBoundary>
           </TabsContent>
-          {auth.role !== 'visitor' && (
+          {(auth.role === 'player' || auth.role === 'admin') && (
             <TabsContent value="notifications" className="mt-0">
               <ErrorBoundary><NotificationsPage /></ErrorBoundary>
+            </TabsContent>
+          )}
+          {(auth.role === 'juge_arbitre' || auth.role === 'admin') && (
+            <TabsContent value="juge-arbitre" className="mt-0">
+              <ErrorBoundary><JugeArbitrePage tournamentId={activeTournamentId} /></ErrorBoundary>
             </TabsContent>
           )}
           <TabsContent value="buvette" className="mt-0">
             <ErrorBoundary><BuvettePage /></ErrorBoundary>
           </TabsContent>
-          {auth.role !== 'visitor' && (
+          {(auth.role === 'player' || auth.role === 'admin') && (
             <TabsContent value="joueurs" className="mt-0">
               <ErrorBoundary><JoueursLivePage /></ErrorBoundary>
             </TabsContent>
           )}
-          {auth.role !== 'visitor' && (
+          {(auth.role === 'player' || auth.role === 'admin') && (
             <TabsContent value="progression" className="mt-0">
               <ErrorBoundary><ProgressionPage /></ErrorBoundary>
             </TabsContent>
@@ -240,15 +295,12 @@ export default function Home() {
           <TabsContent value="connexion" className="mt-0">
             <ErrorBoundary>
               {auth.role === 'admin' ? (
-                <AdminPage />
-              ) : auth.role === 'player' ? (
+                <AdminPage tournamentId={activeTournamentId} />
+              ) : (auth.role === 'player' || auth.role === 'juge_arbitre') ? (
                 <div className="bg-white rounded-lg shadow p-8 text-center max-w-md mx-auto">
                   <User className="h-16 w-16 mx-auto text-blue-600 mb-4" />
-                  <h2 className="text-xl font-bold mb-2">Connecte en tant que Joueur</h2>
+                  <h2 className="text-xl font-bold mb-2">Connecte en tant que {roleLabel(auth.role)}</h2>
                   <p className="text-gray-600 mb-4">Bienvenue, {auth.username} !</p>
-                  <p className="text-sm text-gray-500 mb-6">
-                    Vous avez acces aux pages Notifications, Joueurs et Progression.
-                  </p>
                   <Button variant="outline" onClick={handleLogout}>
                     <LogOut className="h-4 w-4 mr-2" /> Se deconnecter
                   </Button>

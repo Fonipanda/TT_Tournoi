@@ -50,9 +50,10 @@ interface Registration {
 interface AccueilPageProps {
   onNavigate?: (tab: string) => void;
   userRole?: string;
+  tournamentId?: string;
 }
 
-export default function AccueilPage({ onNavigate, userRole = 'visitor' }: AccueilPageProps) {
+export default function AccueilPage({ onNavigate, userRole = 'visitor', tournamentId }: AccueilPageProps) {
   const [loading, setLoading] = useState(true);
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
@@ -65,15 +66,22 @@ export default function AccueilPage({ onNavigate, userRole = 'visitor' }: Accuei
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [tournamentId]);
 
   const fetchData = async () => {
     try {
-      const tournaments = await api.tournaments.list();
-      if (tournaments.length > 0) {
-        setTournament(tournaments[0]);
-        const bracketsData = await api.brackets.list(tournaments[0].id);
+      if (tournamentId) {
+        const t = await api.tournaments.get(tournamentId);
+        setTournament(t);
+        const bracketsData = await api.brackets.list(tournamentId);
         setBrackets(bracketsData);
+      } else {
+        const tournaments = await api.tournaments.list();
+        if (tournaments.length > 0) {
+          setTournament(tournaments[0]);
+          const bracketsData = await api.brackets.list(tournaments[0].id);
+          setBrackets(bracketsData);
+        }
       }
       const playersData = await api.players.list();
       setPlayers(playersData);

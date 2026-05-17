@@ -13,6 +13,9 @@ interface MenuItem {
   description: string | null;
   price: number;
   is_available: boolean;
+  image: string | null;
+  image_url: string | null;
+  image_display_url: string | null;
 }
 
 interface MenuSection {
@@ -96,7 +99,15 @@ export default function BuvettePage() {
                       >
                         <Card className={`h-full ${!item.is_available ? 'opacity-50' : ''}`}>
                           <CardContent className="pt-4">
-                            <div className="flex justify-between items-start">
+                            <div className="flex justify-between items-start gap-3">
+                              {(item.image_display_url || item.image_url) && (
+                                <img
+                                  src={item.image_display_url || item.image_url || ''}
+                                  alt={item.name}
+                                  className="w-20 h-20 object-cover rounded-lg shrink-0"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                              )}
                               <div className="flex-1">
                                 <h4 className="font-semibold">{item.name}</h4>
                                 {item.description && (

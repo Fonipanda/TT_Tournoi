@@ -1,4 +1,5 @@
 import uuid
+import secrets
 from django.db import models
 
 class Tournament(models.Model):
@@ -80,6 +81,10 @@ class PlayerBracketRegistration(models.Model):
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
     amount_paid = models.DecimalField(max_digits=6, decimal_places=2, default=0)
     checkin_status = models.CharField(max_length=1, choices=[('P', 'Present'), ('A', 'Absent')], blank=True, default='')
+    qr_token = models.CharField(max_length=64, unique=True, blank=True)
+    dossard_number = models.IntegerField(null=True, blank=True)
+    stripe_session_id = models.CharField(max_length=200, blank=True, default='')
+    stripe_payment_intent = models.CharField(max_length=200, blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -87,9 +92,15 @@ class PlayerBracketRegistration(models.Model):
         unique_together = ['player', 'bracket']
         ordering = ['-created_at']
 
+    def save(self, *args, **kwargs):
+        if not self.qr_token:
+            self.qr_token = secrets.token_urlsafe(32)
+        super().save(*args, **kwargs)
+
 
 class Room(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tournament = models.ForeignKey(Tournament, on_delete=models.CASCADE, related_name='rooms', null=True, blank=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     rows = models.IntegerField(default=2)
@@ -188,6 +199,7 @@ class MenuItem(models.Model):
     description = models.TextField(blank=True, null=True)
     price = models.DecimalField(max_digits=6, decimal_places=2)
     image_url = models.URLField(blank=True, null=True)
+    image = models.ImageField(upload_to='menu_items/', blank=True, null=True)
     is_available = models.BooleanField(default=True)
     order = models.IntegerField(default=0)
 
@@ -203,10 +215,13 @@ class PlayerNotificationSubscription(models.Model):
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='notification_subscriptions')
     email_enabled = models.BooleanField(default=True)
     sms_enabled = models.BooleanField(default=False)
+    subscriber_name = models.CharField(max_length=100, blank=True, default='')
+    subscriber_phone = models.CharField(max_length=20, blank=True, default='')
+    subscriber_email = models.EmailField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ['player']
+        ordering = ['-created_at']
 
 
 class Notification(models.Model):
@@ -216,6 +231,7 @@ class Notification(models.Model):
         ('table_assigned', 'Table assignée'),
         ('match_blocked', 'Match bloqué'),
         ('match_unblocked', 'Match débloqué'),
+        ('sms_admin', 'SMS Admin'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -236,6 +252,7 @@ class UserAccount(models.Model):
     ROLE_CHOICES = [
         ('player', 'Joueur'),
         ('admin', 'Administrateur'),
+        ('juge_arbitre', 'Juge-Arbitre'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -250,3 +267,71 @@ class UserAccount(models.Model):
 
     def __str__(self):
         return f"{self.username} ({self.role})"
+
+
+class SmsAdapterConfig(models.Model):
+    ADAPTER_CHOICES = [
+        ('test', 'Test (Console)'),
+        ('ovh', 'OVH SMS'),
+        ('twilio', 'Twilio'),
+        ('free_mobile', 'Free Mobile'),
+        ('smpp', 'SMPP (SMPPSim)'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    adapter_type = models.CharField(max_length=50, choices=ADAPTER_CHOICES)
+    config = models.JSONField(default=dict, blank=True)
+    default_sender = models.CharField(max_length=50, blank=True, default='')
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def save(self, *args, **kwargs):
+        if self.is_active:
+            SmsAdapterConfig.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({self.adapter_type})"
+
+
+class SmsTemplate(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    content = models.TextField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class SmsLog(models.Model):
+    STATUS_CHOICES = [
+        ('sent', 'Envoye'),
+        ('failed', 'Echoue'),
+        ('pending', 'En attente'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='sms_logs')
+    recipient_phone = models.CharField(max_length=20)
+    recipient_name = models.CharField(max_length=100, blank=True, default='')
+    message = models.TextField()
+    sender = models.CharField(max_length=50, blank=True, default='')
+    adapter_name = models.CharField(max_length=50, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    error_message = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"SMS vers {self.recipient_phone} - {self.status}"

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { Radio, Clock, Loader2 } from "lucide-react";
+import { Radio, Clock, Loader2, Maximize, Minimize } from "lucide-react";
 
 interface TableData {
   id: string;
@@ -30,19 +31,21 @@ interface Room {
   rotation?: number;
 }
 
-export default function LivePage() {
+export default function LivePage({ tournamentId }: { tournamentId?: string }) {
   const [tables, setTables] = useState<TableData[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentRoomIdx, setCurrentRoomIdx] = useState(0);
   const [autoScroll, setAutoScroll] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreenRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
     try {
       const [tablesData, roomsData] = await Promise.all([
-        api.live.tables(),
-        api.rooms.list()
+        api.live.tables(tournamentId),
+        api.rooms.list(tournamentId)
       ]);
       setTables(tablesData);
       setRooms(roomsData);
@@ -58,6 +61,21 @@ export default function LivePage() {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
+  }, [tournamentId]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!fullscreenRef.current) return;
+    if (!document.fullscreenElement) {
+      fullscreenRef.current.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
   const roomNames = Object.keys(
@@ -191,28 +209,35 @@ export default function LivePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
+    <div className="space-y-6" ref={fullscreenRef} style={isFullscreen ? { background: '#111827', padding: '24px', overflow: 'auto' } : {}}>
+      <Card className={isFullscreen ? 'bg-gray-900 border-gray-700' : ''}>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className={`flex items-center gap-2 ${isFullscreen ? 'text-white' : ''}`}>
             <Radio className="h-5 w-5 text-red-500" />
             Tables en temps reel
-            {roomNames.length > 1 && (
-              <div className="ml-auto flex items-center gap-2">
-                <button
-                  onClick={() => setAutoScroll(!autoScroll)}
-                  className={`text-xs px-2 py-1 rounded ${autoScroll ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
-                >
-                  {autoScroll ? 'Defilement auto ON' : 'Defilement auto OFF'}
-                </button>
-                <div className="flex gap-1">
-                  {roomNames.map((name, i) => (
-                    <button key={name} onClick={() => { setCurrentRoomIdx(i); setAutoScroll(false); }}
-                      className={`w-2 h-2 rounded-full ${i === currentRoomIdx ? 'bg-blue-600' : 'bg-gray-300'}`} />
-                  ))}
-                </div>
-              </div>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={toggleFullscreen}
+                className={isFullscreen ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : ''}>
+                {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                <span className="ml-1 hidden md:inline">{isFullscreen ? 'Quitter' : 'Plein ecran'}</span>
+              </Button>
+              {roomNames.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setAutoScroll(!autoScroll)}
+                    className={`text-xs px-2 py-1 rounded ${autoScroll ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
+                  >
+                    {autoScroll ? 'Defilement auto ON' : 'Defilement auto OFF'}
+                  </button>
+                  <div className="flex gap-1">
+                    {roomNames.map((name, i) => (
+                      <button key={name} onClick={() => { setCurrentRoomIdx(i); setAutoScroll(false); }}
+                        className={`w-2 h-2 rounded-full ${i === currentRoomIdx ? 'bg-blue-600' : 'bg-gray-300'}`} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>

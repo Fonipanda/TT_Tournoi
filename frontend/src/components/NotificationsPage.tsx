@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { 
   Bell, Search, Loader2, Mail, Phone, 
-  CheckCircle, AlertCircle, Trash2, Settings
+  CheckCircle, AlertCircle, Trash2, Settings, Plus, UserPlus
 } from "lucide-react";
 
 interface Player {
@@ -31,6 +31,9 @@ interface Subscription {
   player_phone: string;
   email_enabled: boolean;
   sms_enabled: boolean;
+  subscriber_name: string;
+  subscriber_phone: string;
+  subscriber_email: string;
 }
 
 interface Notification {
@@ -50,7 +53,7 @@ export default function NotificationsPage() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [foundPlayers, setFoundPlayers] = useState<Player[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -58,6 +61,11 @@ export default function NotificationsPage() {
   const [smsEnabled, setSmsEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const [showAddSubscriber, setShowAddSubscriber] = useState(false);
+  const [newSubName, setNewSubName] = useState("");
+  const [newSubPhone, setNewSubPhone] = useState("");
+  const [newSubEmail, setNewSubEmail] = useState("");
 
   const searchPlayer = async () => {
     if (!searchName.trim()) {
@@ -69,7 +77,7 @@ export default function NotificationsPage() {
     setSearchError(null);
     setFoundPlayers([]);
     setSelectedPlayer(null);
-    setSubscription(null);
+    setSubscriptions([]);
     setNotifications([]);
 
     try {
@@ -96,8 +104,8 @@ export default function NotificationsPage() {
 
     try {
       const subs = await api.notificationSubscriptions.list(player.id);
+      setSubscriptions(subs || []);
       if (subs && subs.length > 0) {
-        setSubscription(subs[0]);
         setEmailEnabled(subs[0].email_enabled);
         setSmsEnabled(subs[0].sms_enabled);
       }
@@ -116,8 +124,9 @@ export default function NotificationsPage() {
     setSaveSuccess(false);
 
     try {
-      if (subscription) {
-        await api.notificationSubscriptions.update(subscription.id, {
+      if (subscriptions.length > 0) {
+        // Update the first (main) subscription
+        await api.notificationSubscriptions.update(subscriptions[0].id, {
           email_enabled: emailEnabled,
           sms_enabled: smsEnabled,
         });
@@ -127,7 +136,7 @@ export default function NotificationsPage() {
           email_enabled: emailEnabled,
           sms_enabled: smsEnabled,
         });
-        setSubscription(newSub);
+        setSubscriptions([newSub]);
       }
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -138,16 +147,37 @@ export default function NotificationsPage() {
     }
   };
 
-  const deleteSubscription = async () => {
-    if (!subscription) return;
-
+  const deleteSubscription = async (subId: string) => {
     try {
-      await api.notificationSubscriptions.delete(subscription.id);
-      setSubscription(null);
-      setEmailEnabled(true);
-      setSmsEnabled(false);
+      await api.notificationSubscriptions.delete(subId);
+      setSubscriptions(subscriptions.filter(s => s.id !== subId));
+      if (subscriptions.length <= 1) {
+        setEmailEnabled(true);
+        setSmsEnabled(false);
+      }
     } catch (err: any) {
       setSearchError(err.message || "Erreur lors de la suppression");
+    }
+  };
+
+  const addSubscriber = async () => {
+    if (!selectedPlayer) return;
+    try {
+      const newSub = await api.notificationSubscriptions.create({
+        player: selectedPlayer.id,
+        email_enabled: !!newSubEmail,
+        sms_enabled: !!newSubPhone,
+        subscriber_name: newSubName,
+        subscriber_phone: newSubPhone,
+        subscriber_email: newSubEmail,
+      });
+      setSubscriptions([...subscriptions, newSub]);
+      setShowAddSubscriber(false);
+      setNewSubName("");
+      setNewSubPhone("");
+      setNewSubEmail("");
+    } catch (err: any) {
+      setSearchError(err.message || "Erreur lors de l'ajout");
     }
   };
 
@@ -324,13 +354,13 @@ export default function NotificationsPage() {
                   ) : saveSuccess ? (
                     <CheckCircle className="h-4 w-4 mr-2" />
                   ) : null}
-                  {subscription ? "Mettre a jour" : "Activer les notifications"}
+                  {subscriptions.length > 0 ? "Mettre a jour" : "Activer les notifications"}
                 </Button>
                 
-                {subscription && (
+                {subscriptions.length > 0 && (
                   <Button 
                     variant="destructive"
-                    onClick={deleteSubscription}
+                    onClick={() => deleteSubscription(subscriptions[0].id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -347,6 +377,67 @@ export default function NotificationsPage() {
                   Preferences sauvegardees !
                 </motion.p>
               )}
+
+              {/* Abonnes supplementaires */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <UserPlus className="h-4 w-4" />
+                    Abonnes aux notifications ({subscriptions.filter(s => s.subscriber_name).length})
+                  </h4>
+                  <Button variant="outline" size="sm" onClick={() => setShowAddSubscriber(!showAddSubscriber)}>
+                    <Plus className="h-4 w-4 mr-1" />Ajouter
+                  </Button>
+                </div>
+
+                {showAddSubscriber && (
+                  <div className="p-3 bg-gray-50 rounded-lg mb-3 space-y-2">
+                    <div>
+                      <Label>Nom de l'abonne</Label>
+                      <Input value={newSubName} onChange={e => setNewSubName(e.target.value)} placeholder="Papa, Maman, Coach..." />
+                    </div>
+                    <div>
+                      <Label>Telephone</Label>
+                      <Input value={newSubPhone} onChange={e => setNewSubPhone(e.target.value)} placeholder="+33612345678" />
+                    </div>
+                    <div>
+                      <Label>Email (optionnel)</Label>
+                      <Input value={newSubEmail} onChange={e => setNewSubEmail(e.target.value)} placeholder="email@exemple.com" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={addSubscriber} disabled={!newSubName || (!newSubPhone && !newSubEmail)}>
+                        Ajouter
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setShowAddSubscriber(false)}>
+                        Annuler
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {subscriptions.filter(s => s.subscriber_name).length > 0 && (
+                  <div className="space-y-2">
+                    {subscriptions.filter(s => s.subscriber_name).map(sub => (
+                      <div key={sub.id} className="flex items-center justify-between p-2 border rounded">
+                        <div>
+                          <p className="font-medium text-sm">{sub.subscriber_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {sub.subscriber_phone && <span className="mr-2">{sub.subscriber_phone}</span>}
+                            {sub.subscriber_email && <span>{sub.subscriber_email}</span>}
+                          </p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => deleteSubscription(sub.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground mt-2">
+                  Les abonnes recevront aussi les notifications SMS/Email quand le joueur est assigne a une table.
+                </p>
+              </div>
 
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <h4 className="font-medium text-blue-800 mb-2">Comment ca marche ?</h4>

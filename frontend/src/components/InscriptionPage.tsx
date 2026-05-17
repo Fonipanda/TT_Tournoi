@@ -40,7 +40,7 @@ interface Player {
   phone: string;
 }
 
-export default function InscriptionPage() {
+export default function InscriptionPage({ tournamentId }: { tournamentId?: string }) {
   const [subTab, setSubTab] = useState("register");
   const [licenseNumber, setLicenseNumber] = useState("");
   const [searchingLicense, setSearchingLicense] = useState(false);
@@ -109,11 +109,11 @@ export default function InscriptionPage() {
 
   useEffect(() => {
     fetchBrackets();
-  }, []);
+  }, [tournamentId]);
 
   const fetchBrackets = async () => {
     try {
-      const data = await api.brackets.list();
+      const data = await api.brackets.list(tournamentId);
       const bracketsWithStats = await Promise.all(
         data.map(async (bracket: any) => {
           const stats = await api.brackets.stats(bracket.id);
@@ -272,27 +272,38 @@ export default function InscriptionPage() {
         playerId = newPlayer.id;
       }
 
+      const createdRegIds: string[] = [];
       for (const bracketId of newSelections) {
-        await api.registrations.create({
+        const reg = await api.registrations.create({
           player: playerId,
           bracket: bracketId,
           payment_status: "pending",
         });
+        createdRegIds.push(reg.id);
       }
 
       setSubmitSuccess(true);
+      fetchBrackets();
+
+      if (totalFee > 0) {
+        try {
+          const payRes = await api.payments.createCheckoutSession(createdRegIds);
+          if (payRes.success && payRes.checkout_url) {
+            setTimeout(() => {
+              window.location.href = payRes.checkout_url;
+            }, 1000);
+          }
+        } catch (payErr: any) {
+          const pName = encodeURIComponent(`${playerData.last_name} ${playerData.first_name}`.trim());
+          window.open(`/paiement?player=${pName}&amount=${totalFee.toFixed(2)}`, '_blank');
+        }
+      }
+
       setPlayerData({});
       setSelectedBrackets([]);
       setExistingPlayer(null);
       setExistingRegistrations([]);
       setLicenseNumber("");
-      fetchBrackets();
-      
-      setTimeout(() => {
-        setSubmitSuccess(false);
-        const pName = encodeURIComponent(`${playerData.last_name} ${playerData.first_name}`.trim());
-        window.open(`/paiement?player=${pName}&amount=${totalFee.toFixed(2)}`, '_blank');
-      }, 1500);
     } catch (err: any) {
       setSubmitError(err.message || "Erreur lors de l'inscription");
     } finally {

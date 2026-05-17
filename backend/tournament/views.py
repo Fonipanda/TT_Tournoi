@@ -2,25 +2,31 @@ import requests
 import random
 import math
 import hashlib
+import xml.etree.ElementTree as ET
 from itertools import combinations
 from django.utils import timezone
+from django.http import HttpResponse
 from django.db.models import Count, Q, Max
 from django.core.mail import send_mail
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from .models import (
     Tournament, Bracket, Player, PlayerBracketRegistration,
     Room, Table, Match, MenuSection, MenuItem,
-    PlayerNotificationSubscription, Notification, UserAccount
+    PlayerNotificationSubscription, Notification, UserAccount,
+    SmsAdapterConfig, SmsTemplate, SmsLog
 )
 from .serializers import (
     TournamentSerializer, BracketSerializer, PlayerSerializer,
     PlayerBracketRegistrationSerializer, RoomSerializer, TableSerializer,
     MatchSerializer, MenuSectionSerializer, MenuItemSerializer,
     PlayerNotificationSubscriptionSerializer, NotificationSerializer,
-    UserAccountSerializer
+    UserAccountSerializer,
+    SmsAdapterConfigSerializer, SmsTemplateSerializer, SmsLogSerializer
 )
 
 
@@ -213,6 +219,54 @@ class TournamentViewSet(viewsets.ModelViewSet):
     queryset = Tournament.objects.filter(is_active=True)
     serializer_class = TournamentSerializer
 
+    @action(detail=True, methods=['get'])
+    def export_spid(self, request, pk=None):
+        tournament = self.get_object()
+        root = ET.Element('SPID')
+        root.set('version', '1.0')
+
+        t_el = ET.SubElement(root, 'Tournoi')
+        ET.SubElement(t_el, 'Nom').text = tournament.name
+        ET.SubElement(t_el, 'Description').text = tournament.description or ''
+        ET.SubElement(t_el, 'DateDebut').text = tournament.start_date.isoformat() if tournament.start_date else ''
+        ET.SubElement(t_el, 'DateFin').text = tournament.end_date.isoformat() if tournament.end_date else ''
+
+        epreuves = ET.SubElement(root, 'Epreuves')
+        for bracket in tournament.brackets.filter(is_active=True):
+            ep = ET.SubElement(epreuves, 'Epreuve')
+            ET.SubElement(ep, 'Nom').text = bracket.name
+            ET.SubElement(ep, 'Categorie').text = bracket.category
+            ET.SubElement(ep, 'PointsMin').text = str(bracket.min_points or '')
+            ET.SubElement(ep, 'PointsMax').text = str(bracket.max_points or '')
+
+            parties = ET.SubElement(ep, 'Parties')
+            for match in bracket.matches.filter(status='finished').select_related('player1', 'player2', 'winner'):
+                partie = ET.SubElement(parties, 'Partie')
+                if match.player1:
+                    j1 = ET.SubElement(partie, 'Joueur1')
+                    ET.SubElement(j1, 'Licence').text = match.player1.license_number or ''
+                    ET.SubElement(j1, 'Nom').text = match.player1.last_name
+                    ET.SubElement(j1, 'Prenom').text = match.player1.first_name
+                    ET.SubElement(j1, 'Club').text = match.player1.club or ''
+                    ET.SubElement(j1, 'Points').text = str(match.player1.points or 0)
+                if match.player2:
+                    j2 = ET.SubElement(partie, 'Joueur2')
+                    ET.SubElement(j2, 'Licence').text = match.player2.license_number or ''
+                    ET.SubElement(j2, 'Nom').text = match.player2.last_name
+                    ET.SubElement(j2, 'Prenom').text = match.player2.first_name
+                    ET.SubElement(j2, 'Club').text = match.player2.club or ''
+                    ET.SubElement(j2, 'Points').text = str(match.player2.points or 0)
+                ET.SubElement(partie, 'ScoreJ1').text = str(match.sets_player1)
+                ET.SubElement(partie, 'ScoreJ2').text = str(match.sets_player2)
+                ET.SubElement(partie, 'Vainqueur').text = match.winner.license_number if match.winner and match.winner.license_number else ''
+                ET.SubElement(partie, 'Forfait').text = '1' if match.is_forfeit else '0'
+                ET.SubElement(partie, 'Tour').text = match.round_name or ''
+
+        xml_str = ET.tostring(root, encoding='unicode', xml_declaration=True)
+        response = HttpResponse(xml_str, content_type='application/xml')
+        response['Content-Disposition'] = f'attachment; filename="spid_{tournament.name}.xml"'
+        return response
+
 
 class BracketViewSet(viewsets.ModelViewSet):
     queryset = Bracket.objects.filter(is_active=True)
@@ -396,6 +450,76 @@ class BracketViewSet(viewsets.ModelViewSet):
             'info': 'Premier tour genere. Les tours suivants seront crees automatiquement apres saisie des resultats.',
         })
 
+    @action(detail=True, methods=['get'])
+    def checkin_list(self, request, pk=None):
+        bracket = self.get_object()
+        regs = bracket.registrations.filter(is_active=True).select_related('player')
+        data = []
+        for reg in regs:
+            p = reg.player
+            data.append({
+                'registration_id': str(reg.id),
+                'player_id': str(p.id),
+                'name': f"{p.last_name} {p.first_name}",
+                'club': p.club or '',
+                'points': p.points or 0,
+                'license_number': p.license_number or '',
+                'checkin_status': reg.checkin_status,
+                'dossard_number': reg.dossard_number,
+                'qr_token': reg.qr_token,
+                'payment_status': reg.payment_status,
+            })
+        data.sort(key=lambda x: x['name'])
+        return Response(data)
+
+    @action(detail=True, methods=['post'])
+    def assign_dossards(self, request, pk=None):
+        bracket = self.get_object()
+        tournament = bracket.tournament
+        regs = bracket.registrations.filter(is_active=True, checkin_status='P').select_related('player')
+
+        existing_max = PlayerBracketRegistration.objects.filter(
+            bracket__tournament=tournament,
+            dossard_number__isnull=False,
+        ).aggregate(Max('dossard_number'))['dossard_number__max'] or 0
+
+        player_dossards = {}
+        existing = PlayerBracketRegistration.objects.filter(
+            bracket__tournament=tournament,
+            dossard_number__isnull=False,
+        ).values_list('player_id', 'dossard_number')
+        for pid, dnum in existing:
+            player_dossards[str(pid)] = dnum
+
+        next_num = existing_max + 1
+        assigned = 0
+        for reg in regs:
+            pid = str(reg.player_id)
+            if pid in player_dossards:
+                if reg.dossard_number != player_dossards[pid]:
+                    reg.dossard_number = player_dossards[pid]
+                    reg.save(update_fields=['dossard_number'])
+                    assigned += 1
+            else:
+                reg.dossard_number = next_num
+                reg.save(update_fields=['dossard_number'])
+                player_dossards[pid] = next_num
+                next_num += 1
+                assigned += 1
+
+                other_regs = PlayerBracketRegistration.objects.filter(
+                    player_id=reg.player_id,
+                    bracket__tournament=tournament,
+                    is_active=True,
+                ).exclude(id=reg.id)
+                other_regs.update(dossard_number=player_dossards[pid])
+
+        return Response({
+            'success': True,
+            'assigned': assigned,
+            'message': f'{assigned} dossard(s) attribue(s)',
+        })
+
 
 class PlayerViewSet(viewsets.ModelViewSet):
     queryset = Player.objects.filter(is_active=True)
@@ -523,6 +647,13 @@ class PlayerBracketRegistrationViewSet(viewsets.ModelViewSet):
 class RoomViewSet(viewsets.ModelViewSet):
     queryset = Room.objects.filter(is_active=True)
     serializer_class = RoomSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        tournament_id = self.request.query_params.get('tournament_id')
+        if tournament_id:
+            queryset = queryset.filter(Q(tournament_id=tournament_id) | Q(tournament__isnull=True))
+        return queryset
 
     def perform_create(self, serializer):
         room = serializer.save()
@@ -1045,6 +1176,7 @@ class MenuSectionViewSet(viewsets.ModelViewSet):
 class MenuItemViewSet(viewsets.ModelViewSet):
     queryset = MenuItem.objects.all()
     serializer_class = MenuItemSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -1052,6 +1184,11 @@ class MenuItemViewSet(viewsets.ModelViewSet):
         if section_id:
             queryset = queryset.filter(section_id=section_id)
         return queryset
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['request'] = self.request
+        return ctx
 
 
 class PlayerNotificationSubscriptionViewSet(viewsets.ModelViewSet):
@@ -1087,7 +1224,10 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
 @api_view(['GET'])
 def live_tables(request):
-    tables = Table.objects.select_related('room', 'player1', 'player2', 'current_match').all()
+    tables = Table.objects.select_related('room', 'room__tournament', 'player1', 'player2', 'current_match').all()
+    tournament_id = request.query_params.get('tournament_id')
+    if tournament_id:
+        tables = tables.filter(Q(room__tournament_id=tournament_id) | Q(room__tournament__isnull=True))
     data = []
     for table in tables:
         data.append({
@@ -1122,7 +1262,10 @@ def live_tables(request):
 def live_matches(request):
     matches = Match.objects.filter(
         status__in=['in_progress', 'waiting']
-    ).select_related('player1', 'player2', 'table', 'bracket')
+    ).select_related('player1', 'player2', 'table', 'bracket', 'bracket__tournament')
+    tournament_id = request.query_params.get('tournament_id')
+    if tournament_id:
+        matches = matches.filter(bracket__tournament_id=tournament_id)
     
     data = []
     for match in matches:
@@ -1282,21 +1425,46 @@ def player_register(request):
 
 
 def send_match_notification(match, notification_type):
+    from .sms.engine import send_notification_sms
+
     for player in [match.player1, match.player2]:
-        try:
-            subscription = PlayerNotificationSubscription.objects.get(player=player)
-        except PlayerNotificationSubscription.DoesNotExist:
+        if not player:
             continue
-        
+
         title = ""
         message = ""
         
         if notification_type == 'table_assigned':
             title = "Table assignée"
-            message = f"Votre match est prêt ! Rendez-vous à la table {match.table.table_number}."
+            opponent = match.player2 if player == match.player1 else match.player1
+            opponent_name = f"{opponent.last_name} {opponent.first_name}" if opponent else "?"
+            table_num = match.table.table_number if match.table else "?"
+            room_name = match.table.room.name if match.table and match.table.room else ""
+            bracket_name = match.bracket.name if match.bracket else ""
+            message = f"Votre match est prêt ! Rendez-vous à la table {table_num}."
+
+            sms_context = {
+                'joueur': f"{player.last_name} {player.first_name}",
+                'table': str(table_num),
+                'salle': room_name,
+                'tableau': bracket_name,
+                'adversaire': opponent_name,
+                'heure': timezone.now().strftime('%H:%M'),
+            }
         elif notification_type == 'match_started':
             title = "Match commencé"
-            message = f"Votre match contre {match.player2.last_name if player == match.player1 else match.player1.last_name} a commencé."
+            opponent = match.player2 if player == match.player1 else match.player1
+            message = f"Votre match contre {opponent.last_name if opponent else '?'} a commencé."
+            sms_context = {
+                'joueur': f"{player.last_name} {player.first_name}",
+                'adversaire': f"{opponent.last_name} {opponent.first_name}" if opponent else "?",
+                'heure': timezone.now().strftime('%H:%M'),
+            }
+        else:
+            sms_context = {
+                'joueur': f"{player.last_name} {player.first_name}",
+                'heure': timezone.now().strftime('%H:%M'),
+            }
         
         notification = Notification.objects.create(
             player=player,
@@ -1304,34 +1472,348 @@ def send_match_notification(match, notification_type):
             title=title,
             message=message
         )
+
+        subscriptions = PlayerNotificationSubscription.objects.filter(player=player)
         
-        if subscription.email_enabled and player.email:
-            try:
-                send_mail(
-                    subject=title,
-                    message=message,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[player.email],
-                    fail_silently=True
-                )
-                notification.is_sent_email = True
-                notification.save()
-            except Exception:
-                pass
-        
-        if subscription.sms_enabled and player.phone and settings.SMS_API_KEY:
-            try:
-                sms_response = requests.post(
-                    settings.SMS_API_URL,
-                    json={
-                        'api_key': settings.SMS_API_KEY,
-                        'to': player.phone,
-                        'message': f"{title}: {message}"
-                    },
-                    timeout=10
-                )
-                if sms_response.status_code == 200:
+        for sub in subscriptions:
+            if sub.email_enabled:
+                email_addr = sub.subscriber_email or player.email
+                if email_addr:
+                    try:
+                        send_mail(
+                            subject=title,
+                            message=message,
+                            from_email=settings.DEFAULT_FROM_EMAIL,
+                            recipient_list=[email_addr],
+                            fail_silently=True
+                        )
+                        notification.is_sent_email = True
+                        notification.save()
+                    except Exception:
+                        pass
+            
+            if sub.sms_enabled:
+                phone = sub.subscriber_phone or player.phone
+                if phone:
+                    # Chercher un template "Assignation table" pour les notifications auto
+                    sms_message = f"{title}: {message}"
+                    if notification_type == 'table_assigned':
+                        from .sms.engine import render_template
+                        try:
+                            tpl = SmsTemplate.objects.filter(name='Assignation table', is_active=True).first()
+                            if tpl:
+                                sms_message = render_template(tpl.content, sms_context)
+                        except Exception:
+                            pass
+
+                    send_notification_sms(player, sms_message, notification)
                     notification.is_sent_sms = True
                     notification.save()
-            except Exception:
-                pass
+
+
+# ============================================================
+# QR Code Scan Check-in
+# ============================================================
+
+@api_view(['POST'])
+def checkin_scan(request):
+    qr_token = request.data.get('qr_token', '').strip()
+    if not qr_token:
+        return Response({'success': False, 'error': 'Token QR requis'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        reg = PlayerBracketRegistration.objects.select_related('player', 'bracket').get(qr_token=qr_token, is_active=True)
+    except PlayerBracketRegistration.DoesNotExist:
+        return Response({'success': False, 'error': 'QR Code invalide ou inscription non trouvee'}, status=status.HTTP_404_NOT_FOUND)
+
+    was_already = reg.checkin_status == 'P'
+    reg.checkin_status = 'P'
+    reg.save(update_fields=['checkin_status'])
+
+    return Response({
+        'success': True,
+        'already_checked_in': was_already,
+        'player_name': f"{reg.player.last_name} {reg.player.first_name}",
+        'bracket_name': reg.bracket.name,
+        'dossard_number': reg.dossard_number,
+        'checkin_status': 'P',
+    })
+
+
+# ============================================================
+# Stripe Payment
+# ============================================================
+
+@api_view(['POST'])
+def create_checkout_session(request):
+    import stripe
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    if not stripe.api_key:
+        return Response({'success': False, 'error': 'Stripe non configure'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    registration_ids = request.data.get('registration_ids', [])
+    if not registration_ids:
+        return Response({'success': False, 'error': 'Aucune inscription fournie'}, status=status.HTTP_400_BAD_REQUEST)
+
+    regs = PlayerBracketRegistration.objects.filter(
+        id__in=registration_ids, is_active=True
+    ).select_related('bracket', 'player')
+
+    if not regs.exists():
+        return Response({'success': False, 'error': 'Inscriptions non trouvees'}, status=status.HTTP_404_NOT_FOUND)
+
+    line_items = []
+    for reg in regs:
+        line_items.append({
+            'price_data': {
+                'currency': 'eur',
+                'product_data': {
+                    'name': f"{reg.bracket.name} - {reg.player.last_name} {reg.player.first_name}",
+                },
+                'unit_amount': int(reg.bracket.entry_fee * 100),
+            },
+            'quantity': 1,
+        })
+
+    origin = request.META.get('HTTP_ORIGIN', 'http://localhost:3000')
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=line_items,
+            mode='payment',
+            success_url=f"{origin}/paiement?status=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{origin}/paiement?status=cancel",
+            metadata={
+                'registration_ids': ','.join([str(r.id) for r in regs]),
+            },
+        )
+
+        for reg in regs:
+            reg.stripe_session_id = session.id
+            reg.save(update_fields=['stripe_session_id'])
+
+        return Response({
+            'success': True,
+            'checkout_url': session.url,
+            'session_id': session.id,
+        })
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def payment_session_status(request, session_id):
+    import stripe
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    if not stripe.api_key:
+        return Response({'success': False, 'error': 'Stripe non configure'})
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        regs = PlayerBracketRegistration.objects.filter(stripe_session_id=session_id)
+        return Response({
+            'success': True,
+            'payment_status': session.payment_status,
+            'status': session.status,
+            'amount_total': session.amount_total,
+            'registrations_count': regs.count(),
+        })
+    except Exception as e:
+        return Response({'success': False, 'error': str(e)})
+
+
+@csrf_exempt
+@api_view(['POST'])
+def stripe_webhook(request):
+    import stripe
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    payload = request.body
+    sig_header = request.META.get('HTTP_STRIPE_SIGNATURE', '')
+
+    if settings.STRIPE_WEBHOOK_SECRET:
+        try:
+            event = stripe.Webhook.construct_event(payload, sig_header, settings.STRIPE_WEBHOOK_SECRET)
+        except (ValueError, stripe.error.SignatureVerificationError):
+            return Response({'error': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        import json
+        event = json.loads(payload)
+
+    if event.get('type') == 'checkout.session.completed':
+        session = event['data']['object']
+        session_id = session.get('id')
+        payment_intent = session.get('payment_intent', '')
+
+        regs = PlayerBracketRegistration.objects.filter(stripe_session_id=session_id)
+        for reg in regs:
+            reg.payment_status = 'paid'
+            reg.stripe_payment_intent = payment_intent or ''
+            reg.amount_paid = reg.bracket.entry_fee
+            reg.save(update_fields=['payment_status', 'stripe_payment_intent', 'amount_paid'])
+
+    return Response({'status': 'ok'})
+
+
+# ============================================================
+# SMS Management
+# ============================================================
+
+class SmsAdapterConfigViewSet(viewsets.ModelViewSet):
+    queryset = SmsAdapterConfig.objects.all()
+    serializer_class = SmsAdapterConfigSerializer
+
+
+class SmsTemplateViewSet(viewsets.ModelViewSet):
+    queryset = SmsTemplate.objects.all()
+    serializer_class = SmsTemplateSerializer
+
+
+class SmsLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = SmsLog.objects.all()
+    serializer_class = SmsLogSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        player_id = self.request.query_params.get('player_id')
+        status_filter = self.request.query_params.get('status')
+        if player_id:
+            queryset = queryset.filter(player_id=player_id)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset
+
+
+@api_view(['GET'])
+def sms_adapter_fields(request, adapter_type):
+    from .sms.adapters import ADAPTER_REGISTRY
+    adapter_class = ADAPTER_REGISTRY.get(adapter_type)
+    if not adapter_class:
+        return Response({'error': f'Adaptateur inconnu: {adapter_type}'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(adapter_class.get_required_config_fields())
+
+
+@api_view(['GET'])
+def sms_template_variables(request):
+    from .sms.engine import TEMPLATE_VARIABLES
+    return Response(TEMPLATE_VARIABLES)
+
+
+@api_view(['POST'])
+def sms_send(request):
+    from .sms.engine import send_sms, send_bulk_sms, render_template
+
+    target_type = request.data.get('target_type', '')  # player, bracket, all
+    target_id = request.data.get('target_id', '')
+    message = request.data.get('message', '')
+    template_id = request.data.get('template_id', '')
+    sender = request.data.get('sender', '')
+    variables = request.data.get('variables', {})
+
+    # Resolve message from template if needed
+    if template_id and not message:
+        try:
+            tpl = SmsTemplate.objects.get(id=template_id, is_active=True)
+            message = render_template(tpl.content, variables)
+        except SmsTemplate.DoesNotExist:
+            return Response({'error': 'Template non trouve'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not message:
+        return Response({'error': 'Message requis'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Resolve recipients
+    recipients = []
+
+    if target_type == 'player':
+        try:
+            player = Player.objects.get(id=target_id)
+            phone = player.phone
+            if phone:
+                recipients.append({'phone': phone, 'name': f"{player.last_name} {player.first_name}", 'player': player})
+            # Also send to subscribers
+            subs = PlayerNotificationSubscription.objects.filter(player=player, sms_enabled=True)
+            for sub in subs:
+                sub_phone = sub.subscriber_phone
+                if sub_phone and sub_phone != phone:
+                    recipients.append({'phone': sub_phone, 'name': sub.subscriber_name or f"{player.last_name} {player.first_name}", 'player': player})
+        except Player.DoesNotExist:
+            return Response({'error': 'Joueur non trouve'}, status=status.HTTP_404_NOT_FOUND)
+
+    elif target_type == 'bracket':
+        try:
+            bracket = Bracket.objects.get(id=target_id)
+            regs = PlayerBracketRegistration.objects.filter(bracket=bracket, is_active=True).select_related('player')
+            seen_phones = set()
+            for reg in regs:
+                player = reg.player
+                if player.phone and player.phone not in seen_phones:
+                    seen_phones.add(player.phone)
+                    # Render template per player if variables contain {joueur}
+                    player_msg = message.replace('{joueur}', f"{player.last_name} {player.first_name}")
+                    player_msg = player_msg.replace('{tableau}', bracket.name)
+                    recipients.append({'phone': player.phone, 'name': f"{player.last_name} {player.first_name}", 'player': player, 'message': player_msg})
+        except Bracket.DoesNotExist:
+            return Response({'error': 'Tableau non trouve'}, status=status.HTTP_404_NOT_FOUND)
+
+    elif target_type == 'all':
+        players = Player.objects.filter(is_active=True, phone__isnull=False).exclude(phone='')
+        seen_phones = set()
+        for player in players:
+            if player.phone not in seen_phones:
+                seen_phones.add(player.phone)
+                player_msg = message.replace('{joueur}', f"{player.last_name} {player.first_name}")
+                recipients.append({'phone': player.phone, 'name': f"{player.last_name} {player.first_name}", 'player': player, 'message': player_msg})
+
+    else:
+        return Response({'error': 'target_type invalide (player, bracket, all)'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not recipients:
+        return Response({'error': 'Aucun destinataire avec un numero de telephone'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # For per-player messages (bracket/all), send individually
+    if target_type in ('bracket', 'all'):
+        results = {'sent': 0, 'failed': 0}
+        for r in recipients:
+            log = send_sms(to=r['phone'], message=r.get('message', message), sender=sender, player=r.get('player'))
+            if log.status == 'sent':
+                results['sent'] += 1
+            else:
+                results['failed'] += 1
+        return Response({'success': True, **results, 'total': len(recipients)})
+    else:
+        results = send_bulk_sms(recipients, message, sender)
+        return Response({'success': True, **results, 'total': len(recipients)})
+
+
+@api_view(['POST'])
+def sms_test(request):
+    from .sms.engine import send_sms
+
+    phone = request.data.get('phone', '')
+    message = request.data.get('message', 'SMS de test depuis TT Tournoi')
+    sender = request.data.get('sender', '')
+
+    if not phone:
+        return Response({'error': 'Numero de telephone requis'}, status=status.HTTP_400_BAD_REQUEST)
+
+    log = send_sms(to=phone, message=message, sender=sender)
+    return Response({
+        'success': log.status == 'sent',
+        'status': log.status,
+        'error': log.error_message,
+    })
+
+
+@api_view(['GET'])
+def sms_stats(request):
+    total = SmsLog.objects.count()
+    sent = SmsLog.objects.filter(status='sent').count()
+    failed = SmsLog.objects.filter(status='failed').count()
+    pending = SmsLog.objects.filter(status='pending').count()
+    return Response({
+        'total': total,
+        'sent': sent,
+        'failed': failed,
+        'pending': pending,
+    })

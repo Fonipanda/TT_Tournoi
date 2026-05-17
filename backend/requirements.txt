@@ -4,3 +4,5 @@ django-cors-headers>=4.3
 python-dotenv>=1.0
 requests>=2.31
 Pillow>=10.0
+stripe>=7.0
+smpplib>=2.2

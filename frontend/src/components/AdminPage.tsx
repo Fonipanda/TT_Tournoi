@@ -11,11 +11,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
+import AdminSmsPage from "@/components/AdminSmsPage";
 import { 
   Settings, Lock, Trophy, Users, LayoutGrid, 
   Coffee, Plus, Trash2, Loader2, AlertCircle,
   CheckCircle, Play, LogOut, Pencil, QrCode, RotateCw, GitBranch, Medal, Printer,
-  ArrowUp, ArrowDown, Edit2
+  ArrowUp, ArrowDown, Edit2, FileDown, ImagePlus, MessageSquare
 } from "lucide-react";
 
 interface Tournament {
@@ -94,7 +95,7 @@ interface MenuItem {
   is_available: boolean;
 }
 
-export default function AdminPage() {
+export default function AdminPage({ tournamentId }: { tournamentId?: string }) {
   const [isAuthenticated, setIsAuthenticated] = useState(true);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [loginUsername, setLoginUsername] = useState("");
@@ -132,6 +133,7 @@ export default function AdminPage() {
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [newSection, setNewSection] = useState({ name: "" });
   const [newItem, setNewItem] = useState({ section: "", name: "", price: "" });
+  const [newItemImage, setNewItemImage] = useState<File | null>(null);
 
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [selectedTable, setSelectedTable] = useState<string>("");
@@ -531,13 +533,24 @@ export default function AdminPage() {
 
   const createMenuItem = async () => {
     try {
-      await api.menuItems.create({
-        section: newItem.section,
-        name: newItem.name,
-        price: parseFloat(newItem.price),
-        is_available: true,
-      });
+      if (newItemImage) {
+        const formData = new FormData();
+        formData.append('section', newItem.section);
+        formData.append('name', newItem.name);
+        formData.append('price', newItem.price);
+        formData.append('is_available', 'true');
+        formData.append('image', newItemImage);
+        await api.menuItems.createWithImage(formData);
+      } else {
+        await api.menuItems.create({
+          section: newItem.section,
+          name: newItem.name,
+          price: parseFloat(newItem.price),
+          is_available: true,
+        });
+      }
       setNewItem({ section: "", name: "", price: "" });
+      setNewItemImage(null);
       fetchAllData();
       showSuccess("Article cree");
     } catch (err: any) {
@@ -826,7 +839,7 @@ export default function AdminPage() {
       )}
 
       <Tabs value={adminTab} onValueChange={setAdminTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="tournaments" className="flex items-center gap-1">
             <Trophy className="h-4 w-4" />
             <span className="hidden md:inline">Tournois</span>
@@ -846,6 +859,10 @@ export default function AdminPage() {
           <TabsTrigger value="menu" className="flex items-center gap-1">
             <Coffee className="h-4 w-4" />
             <span className="hidden md:inline">Menu</span>
+          </TabsTrigger>
+          <TabsTrigger value="sms" className="flex items-center gap-1">
+            <MessageSquare className="h-4 w-4" />
+            <span className="hidden md:inline">SMS</span>
           </TabsTrigger>
           <TabsTrigger value="qrcode" className="flex items-center gap-1">
             <QrCode className="h-4 w-4" />
@@ -900,6 +917,9 @@ export default function AdminPage() {
                         <p className="text-sm text-muted-foreground">{t.description}</p>
                       </div>
                       <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => window.open(api.tournaments.exportSpidUrl(t.id), '_blank')} title="Export SPID">
+                          <FileDown className="h-4 w-4" />
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => setEditTournament(t)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -1399,6 +1419,20 @@ export default function AdminPage() {
                   />
                 </div>
               </div>
+              <div>
+                <Label>Image (optionnel)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setNewItemImage(e.target.files?.[0] || null)}
+                    className="flex-1"
+                  />
+                  {newItemImage && (
+                    <img src={URL.createObjectURL(newItemImage)} alt="Preview" className="w-12 h-12 object-cover rounded" />
+                  )}
+                </div>
+              </div>
               <Button onClick={createMenuItem} disabled={!newItem.section || !newItem.name || !newItem.price}>
                 <Plus className="h-4 w-4 mr-2" />
                 Ajouter
@@ -1573,6 +1607,10 @@ export default function AdminPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="sms" className="mt-6">
+          <AdminSmsPage brackets={sortedBrackets} players={players} />
         </TabsContent>
 
         <TabsContent value="qrcode" className="mt-6">
