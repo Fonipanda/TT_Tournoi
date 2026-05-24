@@ -1,0 +1,33 @@
+# Dockerignore pour build images Docker
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+build
+**/build
+.turbo
+**/.turbo
+coverage
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+.vscode
+.idea
+.DS_Store
+playwright-report
+test-results
+
+# Legacy
+backend/
+frontend/
+legacy/
+
+# Docs
+docs/
+*.md
+!README.md

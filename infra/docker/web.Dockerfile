@@ -1,0 +1,80 @@
+# =============================================================================
+# Dockerfile — apps/web (Next.js 15 standalone)
+# =============================================================================
+# Multi-stage build pour image finale légère (~250 Mo).
+# Utilise pnpm workspaces avec @tt/db, @tt/auth, @tt/sms, @tt/types, @tt/ui.
+#
+# Build : depuis la racine du monorepo
+#   docker build -f infra/docker/web.Dockerfile -t tt-web .
+# Run :
+#   docker run -e DATABASE_URL=... -p 3000:3000 tt-web
+# =============================================================================
+
+# ---- 1) deps : installe les dépendances mono-repo
+FROM node:20-alpine AS deps
+RUN apk add --no-cache libc6-compat python3 make g++
+RUN corepack enable
+WORKDIR /app
+
+# Copie tous les manifests pour permettre à pnpm de résoudre le workspace
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/web/package.json apps/web/
+COPY apps/ws/package.json apps/ws/
+COPY packages/db/package.json packages/db/
+COPY packages/auth/package.json packages/auth/
+COPY packages/sms/package.json packages/sms/
+COPY packages/types/package.json packages/types/
+COPY packages/ui/package.json packages/ui/
+COPY packages/config/package.json packages/config/
+
+RUN pnpm install --frozen-lockfile
+
+# ---- 2) builder : génère client Prisma + build Next.js
+FROM node:20-alpine AS builder
+RUN apk add --no-cache libc6-compat
+RUN corepack enable
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Génère le client Prisma (binaire alpine)
+RUN pnpm --filter @tt/db prisma generate
+
+# Build Next.js standalone
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm --filter @tt/web build
+
+# ---- 3) runner : image finale minimale
+FROM node:20-alpine AS runner
+RUN apk add --no-cache libc6-compat tini
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Utilisateur non-root
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Standalone output Next.js
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+
+# Prisma : on a besoin du moteur + schema pour les migrations runtime
+COPY --from=builder --chown=nextjs:nodejs /app/packages/db/prisma ./packages/db/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/packages/db/src/generated ./packages/db/src/generated
+
+USER nextjs
+EXPOSE 3000
+
+# Healthcheck Coolify : /api/health
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+# tini = init proper qui propage SIGTERM
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "apps/web/server.js"]

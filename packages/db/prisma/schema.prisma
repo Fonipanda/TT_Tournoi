@@ -1,0 +1,439 @@
+// =============================================================================
+// TT Tournoi v2 — Schéma Prisma unifié
+// -----------------------------------------------------------------------------
+// Fusionne les modèles des deux dépôts historiques (Django + FastAPI/Mongo) en
+// un schéma PostgreSQL 16 cohérent. Cf. docs/architecture.md pour les
+// arbitrages de migration.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../src/generated"
+  previewFeatures = []
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum Role {
+  visitor
+  player
+  admin
+  juge_arbitre
+}
+
+enum MatchStatus {
+  waiting
+  in_progress
+  finished
+  blocked
+}
+
+enum TableStatus {
+  free
+  occupied
+  maintenance
+}
+
+enum NotificationType {
+  match_created
+  match_started
+  table_assigned
+  match_blocked
+  match_unblocked
+  sms_admin
+  info
+}
+
+enum SmsStatus {
+  pending
+  sent
+  failed
+}
+
+enum AdapterType {
+  test
+  ovh
+  twilio
+  free_mobile
+  smpp
+}
+
+// Anticipation V2 (Stripe)
+enum PaymentStatus {
+  pending
+  paid
+  cancelled
+}
+
+// -----------------------------------------------------------------------------
+// Tournois & tableaux
+// -----------------------------------------------------------------------------
+
+model Tournament {
+  id                     String    @id @default(uuid()) @db.Uuid
+  name                   String
+  description            String?
+  date                   String    @default("") // affichage libre (ex: "23-24 mars 2026")
+  startDate              DateTime?
+  endDate                DateTime?
+  location               String    @default("")
+  contact                String    @default("")
+  hours                  String    @default("")
+  schedule               Json      @default("[]") // [{title, start, end}, ...]
+  assoConnectUrl         String    @default("")
+  publicUrl              String    @default("")
+  qrVersion              Int       @default(1) // bumpé à chaque PATCH (cache-bust QR)
+  smsAutoOnTableAssigned Boolean   @default(true)
+  smsAutoOnMatchCreated  Boolean   @default(false)
+  smsAutoOnResult        Boolean   @default(false)
+  isActive               Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  brackets     Bracket[]
+  rooms        Room[]
+  menuSections MenuSection[]
+
+  @@index([isActive, startDate])
+}
+
+model Bracket {
+  id               String   @id @default(uuid()) @db.Uuid
+  tournamentId     String   @db.Uuid
+  name             String
+  category         String   @default("")
+  minPoints        Int?
+  maxPoints        Int?
+  maxPlayers       Int      @default(16)
+  entryFee         Decimal  @default(0) @db.Decimal(6, 2)
+  day              String?
+  checkinEnd       String?
+  startTime        String?
+  poolQualifiers   Int      @default(2)
+  byePlayers       String   @default("") // CSV de licences
+  dotationQuarter  Decimal  @default(0) @db.Decimal(8, 2)
+  dotationSemi     Decimal  @default(0) @db.Decimal(8, 2)
+  dotationFinalist Decimal  @default(0) @db.Decimal(8, 2)
+  dotationWinner   Decimal  @default(0) @db.Decimal(8, 2)
+  prize            String   @default("")
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  tournament    Tournament                  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  matches       Match[]
+  registrations PlayerBracketRegistration[]
+
+  @@index([tournamentId, isActive])
+}
+
+// -----------------------------------------------------------------------------
+// Joueurs & comptes
+// -----------------------------------------------------------------------------
+
+model Player {
+  id            String   @id @default(uuid()) @db.Uuid
+  firstName     String
+  lastName      String
+  licenseNumber String?  @unique
+  ranking       String?
+  points        Float    @default(500) // float pour FFTT swap
+  club          String?
+  email         String   @default("")
+  phone         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  account          UserAccount?
+  registrations    PlayerBracketRegistration[]
+  notifications    Notification[]
+  notificationSubs PlayerNotificationSubscription[]
+  matchesAsP1      Match[]                          @relation("MatchPlayer1")
+  matchesAsP2      Match[]                          @relation("MatchPlayer2")
+  wonMatches       Match[]                          @relation("MatchWinner")
+  forfeitMatches   Match[]                          @relation("MatchForfeit")
+  smsLogs          SmsLog[]
+
+  @@index([lastName, firstName])
+}
+
+model PlayerBracketRegistration {
+  id            String        @id @default(uuid()) @db.Uuid
+  playerId      String        @db.Uuid
+  bracketId     String        @db.Uuid
+  paymentStatus PaymentStatus @default(pending)
+  amountPaid    Decimal       @default(0) @db.Decimal(6, 2)
+  checkinStatus String        @default("") // 'P' | 'A' | ''
+  qrToken       String        @unique // préparation V2 (check-in QR)
+  dossardNumber Int?
+  // stripeSessionId / stripePaymentIntent : ajoutés en V2
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+
+  player  Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  bracket Bracket @relation(fields: [bracketId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, bracketId])
+  @@index([bracketId, checkinStatus])
+}
+
+model UserAccount {
+  id                 String   @id @default(uuid()) @db.Uuid
+  username           String   @unique
+  email              String?  @unique
+  passwordHash       String   @default("") // argon2id
+  passwordNeedsReset Boolean  @default(false) // true après migration SHA-256
+  role               Role     @default(player)
+  playerId           String?  @unique @db.Uuid
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  player        Player?        @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  refreshTokens RefreshToken[]
+
+  @@index([role, isActive])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique // hash sha256 du refresh token
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([revokedAt])
+}
+
+// -----------------------------------------------------------------------------
+// Salles & tables
+// -----------------------------------------------------------------------------
+
+model Room {
+  id              String   @id @default(uuid()) @db.Uuid
+  tournamentId    String?  @db.Uuid
+  name            String
+  description     String?
+  width           Int      @default(800)
+  height          Int      @default(500)
+  // marqueurs salle (du dépôt A) en JSONB
+  entranceMarkers Json     @default("[]")
+  buvetteMarkers  Json     @default("[]")
+  wcMarkers       Json     @default("[]")
+  arrowMarkers    Json     @default("[]")
+  rotation        Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  tournament Tournament?  @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  tables     TableModel[]
+
+  @@index([tournamentId, isActive])
+}
+
+model TableModel {
+  id             String      @id @default(uuid()) @db.Uuid
+  roomId         String      @db.Uuid
+  number         Int         @unique
+  // canvas libre (du dépôt B)
+  x              Int         @default(100)
+  y              Int         @default(100)
+  rotation       Int         @default(0)
+  status         TableStatus @default(free)
+  currentMatchId String?     @unique @db.Uuid
+  createdAt      DateTime    @default(now())
+
+  room         Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  currentMatch Match?  @relation("CurrentTable", fields: [currentMatchId], references: [id], onDelete: SetNull)
+  matches      Match[] @relation("TableMatches")
+
+  @@map("tables")
+  @@index([roomId, status])
+}
+
+// -----------------------------------------------------------------------------
+// Matchs & événements
+// -----------------------------------------------------------------------------
+
+model Match {
+  id              String      @id @default(uuid()) @db.Uuid
+  bracketId       String      @db.Uuid
+  player1Id       String?     @db.Uuid
+  player2Id       String?     @db.Uuid
+  tableId         String?     @db.Uuid
+  poolTableId     String?     @db.Uuid // verrou poule (de B)
+  poolNumber      Int?
+  poolMatchOrder  Int?
+  status          MatchStatus @default(waiting)
+  scoreP1         Int         @default(0)
+  scoreP2         Int         @default(0)
+  setsP1          Int         @default(0)
+  setsP2          Int         @default(0)
+  sets            Json        @default("[]") // détail set-par-set
+  winnerId        String?     @db.Uuid
+  isForfeit       Boolean     @default(false)
+  forfeitPlayerId String?     @db.Uuid
+  roundName       String?
+  roundNumber     Int         @default(1)
+  startTime       DateTime?
+  endTime         DateTime?
+  version         Int         @default(0) // optimistic concurrency PWA
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  bracket       Bracket      @relation(fields: [bracketId], references: [id], onDelete: Cascade)
+  player1       Player?      @relation("MatchPlayer1", fields: [player1Id], references: [id], onDelete: SetNull)
+  player2       Player?      @relation("MatchPlayer2", fields: [player2Id], references: [id], onDelete: SetNull)
+  winner        Player?      @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  forfeitPlayer Player?      @relation("MatchForfeit", fields: [forfeitPlayerId], references: [id], onDelete: SetNull)
+  table         TableModel?  @relation("TableMatches", fields: [tableId], references: [id], onDelete: SetNull)
+  currentOf     TableModel?  @relation("CurrentTable")
+  events        MatchEvent[]
+
+  @@index([bracketId, status])
+  @@index([status]) // dashboard live
+  @@index([tableId])
+  @@index([poolTableId])
+}
+
+model MatchEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  matchId   String   @db.Uuid
+  type      String // 'score_update' | 'finish' | 'forfeit' | 'block' | 'unblock' | 'start' | 'assign_table'
+  payload   Json     @default("{}")
+  actorId   String?  @db.Uuid // UserAccount.id
+  clientId  String? // optimisticId pour idempotency PWA
+  createdAt DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, clientId]) // idempotency
+  @@index([matchId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Buvette
+// -----------------------------------------------------------------------------
+
+model MenuSection {
+  id           String @id @default(uuid()) @db.Uuid
+  tournamentId String @db.Uuid // par tournoi (de B)
+  name         String
+  order        Int    @default(0)
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  items      MenuItem[]
+
+  @@index([tournamentId, order])
+}
+
+model MenuItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  sectionId   String  @db.Uuid
+  name        String
+  description String?
+  price       Decimal @db.Decimal(6, 2)
+  imageUrl    String?
+  isAvailable Boolean @default(true)
+  order       Int     @default(0)
+
+  section MenuSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId, order])
+}
+
+// -----------------------------------------------------------------------------
+// Notifications
+// -----------------------------------------------------------------------------
+
+model PlayerNotificationSubscription {
+  id              String   @id @default(uuid()) @db.Uuid
+  playerId        String   @db.Uuid
+  emailEnabled    Boolean  @default(true)
+  smsEnabled      Boolean  @default(false)
+  subscriberName  String   @default("")
+  subscriberPhone String   @default("")
+  subscriberEmail String   @default("")
+  createdAt       DateTime @default(now())
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+}
+
+model Notification {
+  id          String           @id @default(uuid()) @db.Uuid
+  playerId    String           @db.Uuid
+  type        NotificationType
+  title       String
+  message     String
+  isRead      Boolean          @default(false)
+  isSentEmail Boolean          @default(false)
+  isSentSms   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId, isRead, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// SMS — Multi-adaptateur
+// -----------------------------------------------------------------------------
+
+model SmsAdapterConfig {
+  id            String      @id @default(uuid()) @db.Uuid
+  name          String
+  adapterType   AdapterType
+  config        Json        @default("{}") // secrets stockés ici (chiffrés au repos via PG)
+  defaultSender String      @default("")
+  isActive      Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+
+  // Trigger SQL (migration 0002) garantit qu'un seul isActive=true à la fois
+  @@index([isActive])
+}
+
+model SmsTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  content   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model SmsLog {
+  id             String    @id @default(uuid()) @db.Uuid
+  playerId       String?   @db.Uuid
+  recipientPhone String
+  recipientName  String    @default("")
+  message        String
+  sender         String    @default("")
+  adapterName    String    @default("")
+  status         SmsStatus @default(pending)
+  errorMessage   String    @default("")
+  kind           String    @default("manual") // manual | auto
+  trigger        String    @default("") // ex: 'table_assigned'
+  providerId     String? // ID retourné par le provider (Twilio sid, OVH ids[0]...)
+  createdAt      DateTime  @default(now())
+
+  player Player? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([playerId])
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "SHADOW_DATABASE_URL",
+    "REDIS_URL",
+    "JWT_ACCESS_SECRET",
+    "JWT_REFRESH_SECRET",
+    "JWT_ACCESS_TTL",
+    "JWT_REFRESH_TTL",
+    "NEXT_PUBLIC_APP_URL",
+    "NEXT_PUBLIC_WS_URL",
+    "WS_PORT",
+    "WS_INTERNAL_TOKEN",
+    "FFTT_API_BASE",
+    "FFTT_CACHE_TTL",
+    "OVH_SMS_APP_KEY",
+    "OVH_SMS_APP_SECRET",
+    "OVH_SMS_CONSUMER_KEY",
+    "OVH_SMS_SERVICE_NAME",
+    "OVH_SMS_DEFAULT_SENDER",
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_PHONE_NUMBER",
+    "S3_BACKUP_BUCKET",
+    "S3_BACKUP_ENDPOINT",
+    "S3_BACKUP_ACCESS_KEY",
+    "S3_BACKUP_SECRET_KEY"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build", "^db:generate"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^db:generate"]
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "^db:generate"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    },
+    "db:generate": {
+      "cache": false,
+      "outputs": ["src/generated/**"]
+    },
+    "start": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

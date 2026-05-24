@@ -1,0 +1,62 @@
+# =============================================================================
+# Docker Compose — Environnement local de dev
+# -----------------------------------------------------------------------------
+# Lance PostgreSQL 16 + Redis 7 pour le développement local.
+# Les apps web/ws sont lancées en mode `pnpm dev` (pas dans Docker en dev).
+#
+# Usage :
+#   docker compose -f infra/docker/docker-compose.yml up -d
+#   docker compose -f infra/docker/docker-compose.yml down
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tt
+      POSTGRES_PASSWORD: tt
+      POSTGRES_DB: tt_tournoi
+    ports:
+      - "5432:5432"
+    volumes:
+      - tt-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tt -d tt_tournoi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres-shadow:
+    image: postgres:16-alpine
+    container_name: tt-postgres-shadow
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tt
+      POSTGRES_PASSWORD: tt
+      POSTGRES_DB: tt_tournoi_shadow
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tt -d tt_tournoi_shadow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: tt-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  tt-pgdata:
+    name: tt-pgdata

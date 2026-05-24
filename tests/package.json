@@ -1,0 +1,19 @@
+{
+  "name": "@tt/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "lint": "echo 'no lint'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2",
+    "@tt/config": "workspace:*",
+    "@types/node": "^20.17.6",
+    "typescript": "^5.6.3"
+  }
+}
