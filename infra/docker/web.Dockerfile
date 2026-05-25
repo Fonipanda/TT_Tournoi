@@ -67,6 +67,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 # Prisma : on a besoin du moteur + schema pour les migrations runtime
 COPY --from=builder --chown=nextjs:nodejs /app/packages/db/prisma ./packages/db/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/packages/db/src/generated ./packages/db/src/generated
+COPY --from=builder --chown=nextjs:nodejs /app/packages/db/node_modules ./packages/db/node_modules
+
+# Entrypoint qui applique les migrations puis démarre Next.js
+COPY --chown=nextjs:nodejs infra/docker/web-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 USER nextjs
 EXPOSE 3000
@@ -77,4 +82,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 
 # tini = init proper qui propage SIGTERM
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "apps/web/server.js"]
+CMD ["/entrypoint.sh"]

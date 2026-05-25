@@ -218,15 +218,17 @@ sudo nano /etc/ssh/sshd_config
 
 Trouver et modifier (ou ajouter en bas) ces lignes :
 ```
-PermitRootLogin no
+PermitRootLogin prohibit-password
 PasswordAuthentication no
 PubkeyAuthentication yes
 ```
 
+> 🔒 **`prohibit-password`** = root accepté **UNIQUEMENT par clé SSH** (pas par mot de passe). Indispensable pour Coolify qui doit se connecter à lui-même en SSH (cf §5). Tout aussi sécurisé que `PermitRootLogin no` car combiné avec `PasswordAuthentication no`.
+
 **Ctrl+O**, **Enter**, **Ctrl+X** pour sauvegarder.
 
 ```bash
-sudo systemctl restart sshd
+sudo systemctl restart ssh
 ```
 
 ⚠️ **Si tu fermes ta connexion par erreur AVANT de tester** → tu peux te lock-out. Garde une 2ème connexion mRemoteNG ouverte en sécurité jusqu'à validation.
@@ -313,21 +315,48 @@ Open http://YOUR_IP:8000
 
 1. Connexion sur https://www.ovh.com/manager/
 2. Onglet **`Web Cloud`** → **`Domaines`** → cliquer sur `tournoi-chellestt.fr`
-3. Onglet **`Zone DNS`** → **`Ajouter une entrée`**
+3. Onglet **`Zone DNS`**
 
-Créer **3 entrées DNS** :
+#### ⚠️ Étape 6.1.a — Nettoyer la zone DNS d'abord
+
+OVH crée automatiquement des entrées par défaut qui vont **entrer en conflit** avec les nôtres :
+- une entrée `A` racine vers `213.186.33.5` (page de parking OVH)
+- éventuellement un `AAAA` racine
+- des entrées `A`/`AAAA` sur `www`
+
+**Supprime toutes ces entrées par défaut** (clic sur **⋮** → **Supprimer**) :
+
+| À supprimer | Type | Sous-domaine | Cible probable |
+|---|---|---|---|
+| ✂️ | `A` | (vide / `@`) | `213.186.33.5` (page parking OVH) |
+| ✂️ | `AAAA` | (vide / `@`) | IPv6 OVH |
+| ✂️ | `A` | `www` | IP OVH parking |
+| ✂️ | `AAAA` | `www` | IPv6 OVH |
+
+> ✅ **NE PAS supprimer** : `NS` (serveurs de noms OVH), `SOA`, `MX` (si tu veux garder les emails OVH).
+
+> 💡 Si OVH te bloque malgré tout, utilise **`Réinitialiser la zone DNS`** (bas de page) → mode **"Configuration minimale"** → recommencer à zéro.
+
+#### Étape 6.1.b — Créer les 3 entrées nécessaires
+
+Cliquer **`Ajouter une entrée`** pour chacune :
 
 | Type | Sous-domaine | Cible (valeur) | TTL |
 |---|---|---|---|
-| `A` | (laisser vide pour le domaine racine) | `IP_DU_VPS` | 60 |
+| `A` | (laisser **VIDE** ou taper `@`) | `IP_DU_VPS` | 60 |
+| `A` | `www` | `IP_DU_VPS` | 60 |
 | `A` | `coolify` | `IP_DU_VPS` | 60 |
-| `CAA` | (laisser vide) | `0 issue "letsencrypt.org"` | 3600 |
+| `CAA` | (laisser **VIDE** ou taper `@`) | `0 issue "letsencrypt.org"` | 3600 |
+
+> ⚠️ **NE PAS METTRE `www` DANS LE CHAMP DE LA 1ÈRE ENTRÉE** ! `www` est un sous-domaine différent de la racine. Pour le **domaine racine** (`tournoi-chellestt.fr` sans rien devant), il faut **laisser le champ "Sous-domaine" vide** ou taper `@` (notation DNS standard pour la racine).
+
+> 💡 **Pourquoi 4 entrées de type `A` au lieu d'un `CNAME` pour `www` ?** Un `CNAME` ne peut pas coexister avec d'autres types d'enregistrement (règle stricte DNS). Les entrées par défaut d'OVH sur `www` provoqueraient l'erreur `CNAME and other data`. Utiliser des `A` directs partout évite le problème et c'est même légèrement plus rapide à résoudre (1 requête DNS au lieu de 2).
 
 > 💡 Le `CAA` autorise explicitement Let's Encrypt à émettre des certificats pour ton domaine — recommandé sécurité.
 
 > ⚠️ **Ne pas créer de sous-domaine `tournoi`** : le domaine est `tournoi-chellestt.fr` directement (avec un tiret). C'est le **domaine racine** qui pointera vers l'app.
 
-4. Cliquer **`Suivant`** puis **`Confirmer`**
+4. Cliquer **`Suivant`** puis **`Confirmer`** (à chaque entrée ajoutée)
 
 ### 🖥️ [LOCAL] 6.2. Vérifier la propagation DNS
 
@@ -335,26 +364,102 @@ Ouvrir PowerShell sur ton PC :
 ```powershell
 nslookup tournoi-chellestt.fr
 nslookup coolify.tournoi-chellestt.fr
+nslookup www.tournoi-chellestt.fr
 ```
 
-→ Doit retourner ton IP_VPS pour les 2.
+→ Doit retourner ton IP_VPS pour les 3 (le `www` peut afficher "alias" ou "CNAME" puis l'IP en dessous, c'est normal).
 
 ⏱️ Si ça ne marche pas immédiatement, attendre 5-15 minutes (le DNS se propage progressivement).
 
-> 🔍 Tu peux aussi vérifier sur https://www.whatsmydns.net/ en saisissant `tournoi-chellestt.fr` type `A`.
+> 🔍 Tu peux aussi vérifier sur https://www.whatsmydns.net/ en saisissant `tournoi-chellestt.fr` type `A` — tu verras la propagation par pays/serveur DNS dans le monde.
 
 ---
 
 ## 7. Création des ressources Coolify
 
+### ☁️ [VPS] 7.0. (PREREQUIS) Autoriser Coolify à se connecter en SSH local
+
+⚠️ **Étape obligatoire à faire AVANT toute action dans l'interface Coolify**, sinon tu auras l'erreur `ssh: connect to host 127.0.0.1 port 22: Connection refused` au moment de valider le serveur.
+
+**Pourquoi ?** Coolify tourne dans un container Docker et doit se connecter à lui-même en SSH (sur 127.0.0.1) pour gérer le serveur "localhost" : déployer les apps, exécuter Docker, etc. Il utilise sa propre paire de clés SSH générée à l'installation.
+
+#### Solution — Ajouter la clé publique Coolify aux `authorized_keys` de root
+
+Connecté en SSH (mRemoteNG) en tant que `tt` :
+
+```bash
+# 1. Vérifier que la clé Coolify existe
+sudo ls -la /data/coolify/ssh/keys/
+# → Tu dois voir id.root@host.docker.internal et id.root@host.docker.internal.pub
+
+# 2. Préparer le dossier .ssh de root
+sudo mkdir -p /root/.ssh
+sudo chmod 700 /root/.ssh
+sudo touch /root/.ssh/authorized_keys
+sudo chmod 600 /root/.ssh/authorized_keys
+
+# 3. Ajouter la clé publique Coolify aux authorized_keys de root
+sudo cat /data/coolify/ssh/keys/id.root@host.docker.internal.pub | sudo tee -a /root/.ssh/authorized_keys
+
+# 4. Tester que ça marche
+sudo ssh -i /data/coolify/ssh/keys/id.root@host.docker.internal \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  root@127.0.0.1 'echo "✅ Coolify peut se connecter en SSH"'
+```
+
+→ Si la dernière commande affiche `✅ Coolify peut se connecter en SSH`, c'est bon, tu peux passer à §7.1.
+
+❌ Si encore `Connection refused` :
+- Vérifier que sshd écoute bien : `sudo ss -tlnp | grep :22`
+- Vérifier que `PermitRootLogin prohibit-password` est bien dans `/etc/ssh/sshd_config` (cf §4.6)
+- Restart : `sudo systemctl restart ssh`
+
 ### 🎛️ [COOLIFY] 7.1. Sécuriser Coolify avec un sous-domaine + SSL
 
-1. Menu gauche → **`Settings`** → **`General`**
-2. **Instance domain** : `coolify.tournoi-chellestt.fr`
-3. ✅ **Validate DNS** → Coolify vérifie la résolution
-4. **Save**
-5. Menu **`Servers → localhost → Settings`** → activer SSL Let's Encrypt
-6. Attendre ~30s → tu peux maintenant accéder à Coolify via `https://coolify.tournoi-chellestt.fr` (cert auto)
+L'interface Coolify évolue selon les versions. Voici les chemins selon le cas :
+
+#### Plan A — Coolify v4 (le plus courant)
+
+1. Menu gauche → cliquer sur l'icône **`Settings`** (engrenage) tout en **BAS** du menu (pas en haut)
+2. Dans la page Settings → onglet **`General`**
+3. Trouver le champ **`Instance's Fully Qualified Domain Name (FQDN)`** (ou `Instance Domain`)
+4. Saisir : `https://coolify.tournoi-chellestt.fr`
+   - ⚠️ Bien mettre `https://` au début → c'est ce qui déclenche la génération du certificat SSL
+   - ⚠️ Pas de `/` à la fin
+5. Cliquer **`Save`**
+6. Attendre ~30 secondes → SSL Let's Encrypt généré automatiquement par Traefik
+7. Ouvrir `https://coolify.tournoi-chellestt.fr` dans un nouvel onglet → cadenas vert ✅
+
+#### Plan B — Si le menu Settings n'a pas le champ
+
+Selon la version exacte, le FQDN peut être ailleurs :
+- Menu gauche → **`Servers`** → cliquer sur **`localhost`** → onglet **`General`** ou **`Configuration`**
+- Ou utiliser la barre de recherche **`Ctrl+K`** / **`Cmd+K`** → taper `FQDN` ou `domain`
+
+#### Plan C — Via SSH (méthode garantie)
+
+Si l'interface ne te propose pas le champ, édite directement le `.env` de Coolify via mRemoteNG :
+
+```bash
+sudo nano /data/coolify/source/.env
+```
+
+Modifier la ligne (Ctrl+W pour chercher `APP_URL`) :
+```
+APP_URL=https://coolify.tournoi-chellestt.fr
+```
+
+Sauvegarder (Ctrl+O, Enter, Ctrl+X) puis redémarrer Coolify :
+```bash
+cd /data/coolify/source
+sudo docker compose down
+sudo docker compose up -d
+```
+
+⏱️ ~1 minute. Puis ouvre `https://coolify.tournoi-chellestt.fr` → SSL auto.
+
+> 💡 **Important** : avant cette étape, vérifie que `nslookup coolify.tournoi-chellestt.fr` retourne bien ton IP_VPS (cf §6.2). Sans DNS résolu, Let's Encrypt ne pourra pas valider le challenge HTTP-01.
 
 ### 🎛️ [COOLIFY] 7.2. Créer un Project
 
@@ -452,12 +557,13 @@ NODE_ENV = production
 
 > 🔑 **Pour générer les secrets** : ouvre une connexion SSH (mRemoteNG) sur le VPS et exécute `openssl rand -base64 48`. Copie le résultat dans Coolify.
 
-#### 🎛️ [COOLIFY] Custom start command (pour la migration auto au démarrage)
+#### 🎛️ [COOLIFY] Migration Prisma automatique au démarrage
 
-Onglet **`Settings → Advanced → Start Command`** :
-```sh
-sh -c "node packages/db/node_modules/.bin/prisma migrate deploy --schema=./packages/db/prisma/schema.prisma && node apps/web/server.js"
-```
+✅ **Aucune action requise** : le Dockerfile inclut un entrypoint qui exécute automatiquement `prisma migrate deploy` à chaque démarrage du container, **avant** de lancer Next.js.
+
+> 💡 **Contrairement aux versions précédentes du guide** où on utilisait un "Custom Start Command", on a intégré la migration directement dans le Dockerfile (`infra/docker/web-entrypoint.sh`). Ça marche dans toutes les versions de Coolify, ne dépend pas de l'UI, et fonctionne aussi en local avec `docker run`.
+
+> ⚠️ Si la migration échoue (BD inaccessible, conflit de schéma...), le container ne démarre pas (fail-fast). Coolify le verra dans les logs et ne mettra pas le container en "Healthy".
 
 #### 🎛️ [COOLIFY] Premier déploiement
 

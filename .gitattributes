@@ -1,0 +1,58 @@
+# =============================================================================
+# Configuration Git par fichier
+# -----------------------------------------------------------------------------
+# Garantit que les scripts shell utilisent toujours LF (Unix line endings)
+# même quand on travaille sous Windows. Sans ça, les scripts .sh peuvent
+# être checkout en CRLF et échouer dans les containers Alpine.
+# =============================================================================
+
+# Auto-detect text files
+* text=auto
+
+# Force LF (Unix) for shell scripts and Dockerfiles
+*.sh                 text eol=lf
+*.bash               text eol=lf
+Dockerfile           text eol=lf
+*.Dockerfile         text eol=lf
+.dockerignore        text eol=lf
+.env*                text eol=lf
+
+# Force LF for config files used in containers
+*.yml                text eol=lf
+*.yaml               text eol=lf
+*.toml               text eol=lf
+*.conf               text eol=lf
+
+# Source code (LF preferred but auto OK)
+*.ts                 text
+*.tsx                text
+*.js                 text
+*.jsx                text
+*.mjs                text
+*.cjs                text
+*.json               text
+*.md                 text
+*.css                text
+*.html               text
+*.prisma             text
+
+# Force CRLF for Windows-only files
+*.bat                text eol=crlf
+*.cmd                text eol=crlf
+*.ps1                text eol=crlf
+
+# Binary files
+*.png                binary
+*.jpg                binary
+*.jpeg               binary
+*.gif                binary
+*.ico                binary
+*.webp               binary
+*.woff               binary
+*.woff2              binary
+*.ttf                binary
+*.eot                binary
+*.pdf                binary
+*.zip                binary
+*.tar.gz             binary
+*.tgz                binary
