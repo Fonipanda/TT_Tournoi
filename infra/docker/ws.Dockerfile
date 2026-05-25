@@ -11,7 +11,8 @@ RUN apk add --no-cache libc6-compat
 RUN corepack enable
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY pnpm-lock.yaml* ./
 COPY apps/web/package.json apps/web/
 COPY apps/ws/package.json apps/ws/
 COPY packages/db/package.json packages/db/
@@ -21,7 +22,11 @@ COPY packages/types/package.json packages/types/
 COPY packages/ui/package.json packages/ui/
 COPY packages/config/package.json packages/config/
 
-RUN pnpm install --frozen-lockfile
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm install --frozen-lockfile; \
+    else \
+      pnpm install --no-frozen-lockfile; \
+    fi
 
 # ---- 2) builder
 FROM node:20-alpine AS builder

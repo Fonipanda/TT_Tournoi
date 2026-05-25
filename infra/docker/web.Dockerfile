@@ -17,7 +17,9 @@ RUN corepack enable
 WORKDIR /app
 
 # Copie tous les manifests pour permettre à pnpm de résoudre le workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+# pnpm-lock.yaml* avec wildcard : optionnel (sera généré si absent)
+COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY pnpm-lock.yaml* ./
 COPY apps/web/package.json apps/web/
 COPY apps/ws/package.json apps/ws/
 COPY packages/db/package.json packages/db/
@@ -27,7 +29,13 @@ COPY packages/types/package.json packages/types/
 COPY packages/ui/package.json packages/ui/
 COPY packages/config/package.json packages/config/
 
-RUN pnpm install --frozen-lockfile
+# Si pnpm-lock.yaml présent → frozen, sinon → install permissif (1er build)
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm install --frozen-lockfile; \
+    else \
+      echo "[build] pnpm-lock.yaml absent — generation au premier build"; \
+      pnpm install --no-frozen-lockfile; \
+    fi
 
 # ---- 2) builder : génère client Prisma + build Next.js
 FROM node:20-alpine AS builder
