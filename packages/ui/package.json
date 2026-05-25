@@ -8,11 +8,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens": "./src/tokens.ts",
-    "./tailwind-preset": "./tailwind-preset.js"
+    "./tailwind-preset": "./tailwind-preset.cjs"
   },
   "files": [
     "src",
-    "tailwind-preset.js"
+    "tailwind-preset.cjs"
   ],
   "scripts": {
     "build": "echo 'no build (consumed via TypeScript path)'",

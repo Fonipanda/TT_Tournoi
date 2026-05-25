@@ -1,3 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone', // critique pour le Dockerfile multi-stage
@@ -5,7 +10,7 @@ const nextConfig = {
   poweredByHeader: false,
 
   // Permet à Next.js de tracer les fichiers de mono-repo dans le standalone build
-  outputFileTracingRoot: require('node:path').join(__dirname, '../..'),
+  outputFileTracingRoot: path.join(__dirname, '../..'),
 
   // Packages mono-repo qui doivent être transpilés (TypeScript natif sans build)
   transpilePackages: ['@tt/auth', '@tt/db', '@tt/sms', '@tt/types', '@tt/ui'],
@@ -31,4 +36,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;
