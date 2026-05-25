@@ -15,25 +15,22 @@ const nextConfig = {
   // Packages mono-repo qui doivent être transpilés (TypeScript natif sans build)
   transpilePackages: ['@tt/auth', '@tt/db', '@tt/sms', '@tt/types', '@tt/ui'],
 
-  // Packages avec binaires natifs / lourds que webpack ne doit PAS bundler.
-  // Renommé depuis experimental.serverComponentsExternalPackages en Next 15.
-  serverExternalPackages: ['argon2', 'bullmq', 'ioredis', '@prisma/client'],
+  // Packages avec binaires natifs que webpack ne doit PAS bundler.
+  // bullmq/ioredis sont du JS pur → on les laisse être bundlés par Next
+  // (sinon le standalone ne les copie pas → "Cannot find module" au runtime).
+  serverExternalPackages: ['argon2', '@prisma/client'],
 
   // TODO: réactiver après nettoyage des types Prisma JsonValue dans toutes les routes
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
 
-  // Force webpack à NE PAS bundler les binaires natifs même quand importés
-  // depuis des transpilePackages (cas argon2 dans @tt/auth, bullmq dans @tt/sms).
-  // Sans ça, on a "No native build was found for platform=linux arch=x64 abi=115".
+  // Force webpack à ne pas bundler argon2 et @prisma/client (vrais natifs).
   webpack: (config, { isServer }) => {
     if (isServer) {
       const externals = config.externals ?? [];
       config.externals = [
         ...(Array.isArray(externals) ? externals : [externals]),
         'argon2',
-        'bullmq',
-        'ioredis',
         '@prisma/client',
       ];
     }
