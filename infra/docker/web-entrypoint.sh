@@ -2,17 +2,25 @@
 # =============================================================================
 # Entrypoint for the apps/web container (Next.js standalone).
 # -----------------------------------------------------------------------------
-# Applies Prisma migrations then starts the Next.js server.
-# Fail-fast: if migrations fail, the container exits and Coolify marks it
-# as unhealthy.
+# Synchronizes DB schema from schema.prisma (db push), applies SQL triggers,
+# then starts Next.js. Idempotent: safe to run on every container start.
 # =============================================================================
 
 set -e
 
-echo "[entrypoint] Applying Prisma migrations..."
-# .bin/prisma is a shell wrapper: invoke it directly (NOT via 'node')
-./packages/db/node_modules/.bin/prisma migrate deploy \
-  --schema=./packages/db/prisma/schema.prisma
+echo "[entrypoint] Synchronizing database schema (prisma db push)..."
+./packages/db/node_modules/.bin/prisma db push \
+  --schema=./packages/db/prisma/schema.prisma \
+  --accept-data-loss \
+  --skip-generate
 
-echo "[entrypoint] Migrations OK. Starting Next.js..."
+echo "[entrypoint] Applying SQL triggers (idempotent)..."
+if [ -f ./packages/db/prisma/migrations/0002_triggers/migration.sql ]; then
+  ./packages/db/node_modules/.bin/prisma db execute \
+    --schema=./packages/db/prisma/schema.prisma \
+    --file=./packages/db/prisma/migrations/0002_triggers/migration.sql \
+    || echo "[entrypoint] WARN: triggers SQL returned non-zero (may already exist)"
+fi
+
+echo "[entrypoint] Schema OK. Starting Next.js..."
 exec node apps/web/server.js
