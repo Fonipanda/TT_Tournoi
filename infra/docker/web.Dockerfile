@@ -10,26 +10,16 @@
 #   docker run -e DATABASE_URL=... -p 3000:3000 tt-web
 # =============================================================================
 
-# ---- 1) deps : installe les dépendances mono-repo
-FROM node:20-alpine AS deps
+# ---- 1) builder : install + prisma generate + next build
+FROM node:20-alpine AS builder
 RUN apk add --no-cache libc6-compat openssl python3 make g++
 RUN corepack enable
 WORKDIR /app
 
-# Copie tous les manifests pour permettre à pnpm de résoudre le workspace
-# pnpm-lock.yaml* avec wildcard : optionnel (sera généré si absent)
-COPY package.json pnpm-workspace.yaml turbo.json ./
-COPY pnpm-lock.yaml* ./
-COPY apps/web/package.json apps/web/
-COPY apps/ws/package.json apps/ws/
-COPY packages/db/package.json packages/db/
-COPY packages/auth/package.json packages/auth/
-COPY packages/sms/package.json packages/sms/
-COPY packages/types/package.json packages/types/
-COPY packages/ui/package.json packages/ui/
-COPY packages/config/package.json packages/config/
+# Copie tout le contexte du repo
+COPY . .
 
-# Si pnpm-lock.yaml présent → frozen, sinon → install permissif (1er build)
+# pnpm install (avec ou sans lockfile)
 RUN if [ -f pnpm-lock.yaml ]; then \
       pnpm install --frozen-lockfile; \
     else \
@@ -37,25 +27,14 @@ RUN if [ -f pnpm-lock.yaml ]; then \
       pnpm install --no-frozen-lockfile; \
     fi
 
-# ---- 2) builder : génère client Prisma + build Next.js
-FROM node:20-alpine AS builder
-RUN apk add --no-cache libc6-compat openssl
-RUN corepack enable
-WORKDIR /app
-
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-
-# Génère le client Prisma (binaire alpine)
-# Utilise le script `db:generate` défini dans packages/db/package.json
-# (pnpm run garantit l'utilisation du Prisma local — pas npx qui DL la dernière)
+# Génère le client Prisma (binaire local depuis node_modules de packages/db)
 RUN pnpm --filter @tt/db run db:generate
 
 # Build Next.js standalone
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @tt/web run build
 
-# ---- 3) runner : image finale minimale
+# ---- 2) runner : image finale minimale
 FROM node:20-alpine AS runner
 RUN apk add --no-cache libc6-compat openssl tini
 WORKDIR /app
