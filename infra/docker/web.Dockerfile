@@ -58,6 +58,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/packages/db/prisma ./packages/db/
 COPY --from=builder --chown=nextjs:nodejs /app/packages/db/src/generated ./packages/db/src/generated
 COPY --from=builder --chown=nextjs:nodejs /app/packages/db/node_modules ./packages/db/node_modules
 
+# node_modules racine (contient .pnpm/ avec les paquets réels vers lesquels
+# pointent les symlinks de packages/db/node_modules/.bin/prisma)
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+
 # Entrypoint qui applique les migrations puis démarre Next.js
 COPY --chown=nextjs:nodejs infra/docker/web-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
