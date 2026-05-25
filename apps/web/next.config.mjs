@@ -23,6 +23,23 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
 
+  // Force webpack à NE PAS bundler les binaires natifs même quand importés
+  // depuis des transpilePackages (cas argon2 dans @tt/auth, bullmq dans @tt/sms).
+  // Sans ça, on a "No native build was found for platform=linux arch=x64 abi=115".
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      const externals = config.externals ?? [];
+      config.externals = [
+        ...(Array.isArray(externals) ? externals : [externals]),
+        'argon2',
+        'bullmq',
+        'ioredis',
+        '@prisma/client',
+      ];
+    }
+    return config;
+  },
+
   // Headers de sécurité (HSTS désactivé en dev, activé via Nginx/Coolify en prod)
   async headers() {
     return [

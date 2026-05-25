@@ -41,6 +41,8 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD wget --quiet --tries=1 --spider http://localhost:3001/health || exit 1
 
+# WORKDIR dans apps/ws pour que tsx soit trouvable dans node_modules local
+WORKDIR /app/apps/ws
+
 ENTRYPOINT ["/sbin/tini", "--"]
-# Lancement via le script `dev` qui utilise tsx (mais sans le watch)
-CMD ["node", "--import", "tsx/esm", "apps/ws/src/server.ts"]
+CMD ["node", "--import", "tsx/esm", "src/server.ts"]
