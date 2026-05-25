@@ -520,6 +520,8 @@ Onglet **`Environment Variables`** → **`+ Add`** pour chaque ligne ci-dessous.
 
 🛡️ Cocher la case **`Secret`** pour les variables marquées 🔒.
 
+⚠️ **IMPORTANT** : pour TOUTES les variables, **DÉCOCHER la case "Available at Buildtime"** (mode "Runtime only"). Le Dockerfile a déjà ses propres `ENV` au build-time. Si tu laisses `NODE_ENV=production` au build-time, pnpm n'installera PAS les devDependencies (Next.js, TypeScript, Prisma) et le build échouera avec `sh: next: not found`.
+
 ```
 # --- Database (utiliser le host interne de l'étape 7.3) ---
 DATABASE_URL = postgres://tt:PASSWORD@tt-postgres-xxxxx:5432/tt_tournoi?schema=public          🔒

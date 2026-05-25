@@ -47,7 +47,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Génère le client Prisma (binaire alpine)
-RUN pnpm --filter @tt/db prisma generate
+RUN pnpm --filter @tt/db exec prisma generate
 
 # Build Next.js standalone
 ENV NEXT_TELEMETRY_DISABLED=1
