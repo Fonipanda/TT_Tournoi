@@ -15,10 +15,9 @@ const nextConfig = {
   // Packages mono-repo qui doivent être transpilés (TypeScript natif sans build)
   transpilePackages: ['@tt/auth', '@tt/db', '@tt/sms', '@tt/types', '@tt/ui'],
 
-  experimental: {
-    // Permet d'utiliser argon2/bullmq côté Server Components / Route Handlers
-    serverComponentsExternalPackages: ['argon2', 'bullmq', 'ioredis', '@prisma/client'],
-  },
+  // Packages avec binaires natifs / lourds que webpack ne doit PAS bundler.
+  // Renommé depuis experimental.serverComponentsExternalPackages en Next 15.
+  serverExternalPackages: ['argon2', 'bullmq', 'ioredis', '@prisma/client'],
 
   // Headers de sécurité (HSTS désactivé en dev, activé via Nginx/Coolify en prod)
   async headers() {
