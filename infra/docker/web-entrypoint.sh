@@ -10,7 +10,8 @@
 set -e
 
 echo "[entrypoint] Applying Prisma migrations..."
-node packages/db/node_modules/.bin/prisma migrate deploy \
+# .bin/prisma is a shell wrapper: invoke it directly (NOT via 'node')
+./packages/db/node_modules/.bin/prisma migrate deploy \
   --schema=./packages/db/prisma/schema.prisma
 
 echo "[entrypoint] Migrations OK. Starting Next.js..."
