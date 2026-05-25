@@ -69,9 +69,9 @@ RUN chmod +x /entrypoint.sh
 USER nextjs
 EXPOSE 3000
 
-# Healthcheck Coolify : /api/health
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1
+# Healthcheck Coolify : /api/health (utilise 127.0.0.1, pas 'localhost' qui peut ne pas etre dans /etc/hosts sur Alpine slim)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+    CMD wget --quiet --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
 
 # tini = init proper qui propage SIGTERM
 ENTRYPOINT ["/sbin/tini", "--"]
