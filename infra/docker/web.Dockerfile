@@ -47,13 +47,13 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Génère le client Prisma (binaire alpine)
-# On utilise `cd` + `npx` pour éviter les soucis de résolution de binaires
-# avec pnpm workspaces (le binaire prisma est hoisté à la racine).
-RUN cd packages/db && npx prisma generate --schema=./prisma/schema.prisma
+# Utilise le script `db:generate` défini dans packages/db/package.json
+# (pnpm run garantit l'utilisation du Prisma local — pas npx qui DL la dernière)
+RUN pnpm --filter @tt/db run db:generate
 
 # Build Next.js standalone
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN cd apps/web && npx next build
+RUN pnpm --filter @tt/web run build
 
 # ---- 3) runner : image finale minimale
 FROM node:20-alpine AS runner
