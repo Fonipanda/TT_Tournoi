@@ -500,7 +500,9 @@ sudo docker compose up -d
 
 1. Projet → **`+ New Resource`** → **`Applications`** → **`Public Repository`**
 2. Configurer :
-   - **Repository URL** : `https://github.com/Fonipanda/TT_Tournoi`
+   - **Repository URL** : `Fonipanda/TT_Tournoi`
+     - ⚠️ **Pas de `https://github.com/` devant**, pas de `.git` à la fin. Coolify v4.1+ ajoute le préfixe automatiquement → si tu mets l'URL complète, tu obtiens un double préfixe et un `404 Not Found`.
+     - ⚠️ **Si ton repo est PRIVÉ**, il faut d'abord ajouter une **Source GitHub** dans Coolify (menu **`Sources`** → **`+ Add`** → **`GitHub App`**), puis sur l'app, basculer de "Public Repository" vers "GitHub App" et choisir le repo dans la liste.
    - **Branch** : `v2-ovh-coolify`
    - **Build Pack** : **`Dockerfile`**
    - **Dockerfile location** : `infra/docker/web.Dockerfile`
@@ -578,7 +580,7 @@ NODE_ENV = production
 
 1. Projet → **`+ New Resource`** → **`Applications`** → **`Public Repository`**
 2. Mêmes paramètres GitHub :
-   - Repository URL : `https://github.com/Fonipanda/TT_Tournoi`
+   - Repository URL : `Fonipanda/TT_Tournoi` (⚠️ même format que tt-web : sans `https://github.com/` ni `.git`)
    - Branch : `v2-ovh-coolify`
    - Build Pack : **Dockerfile**
    - Dockerfile location : `infra/docker/ws.Dockerfile`
