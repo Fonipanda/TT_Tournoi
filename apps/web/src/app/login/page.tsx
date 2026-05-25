@@ -6,13 +6,28 @@ import { useRouter, useSearchParams } from 'next/navigation';
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const redirect = params.get('redirect') ?? '/';
+  const redirectParam = params.get('redirect');
 
   const [mode, setMode] = useState<'admin' | 'player'>('admin');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  /**
+   * Détermine la page d'accueil par défaut selon le rôle.
+   * Si l'utilisateur arrivait d'une page protégée (?redirect=...), on
+   * respecte cette destination.
+   */
+  function pickDestination(role: string | undefined): string {
+    if (redirectParam && redirectParam !== '/' && redirectParam !== '/login') {
+      return redirectParam;
+    }
+    if (role === 'admin') return '/admin';
+    if (role === 'juge_arbitre') return '/juge-arbitre';
+    if (role === 'player') return '/mon-espace';
+    return '/';
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +48,8 @@ function LoginForm() {
         setError(data.error ?? 'Erreur de connexion');
         return;
       }
-      router.push(redirect);
+      const target = pickDestination(data.user?.role);
+      router.push(target);
       router.refresh();
     } catch {
       setError('Erreur réseau');
