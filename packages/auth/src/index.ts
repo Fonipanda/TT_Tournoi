@@ -15,6 +15,6 @@
  *   import { hashPassword, verifyPassword } from '@tt/auth/password'  // Node only
  */
 
-export * from './jwt.js';
-export * from './password.js';
-export * from './rbac.js';
+export * from './jwt';
+export * from './password';
+export * from './rbac';

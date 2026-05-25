@@ -7,8 +7,8 @@
 
 import { prisma, type Player, type SmsAdapterConfig, type SmsLog } from '@tt/db';
 import type { BulkRecipient, BulkSendResult, SmsAdapter, SmsSendResult } from '@tt/types';
-import { getAdapter } from './registry.js';
-import { smsQueue } from './queue.js';
+import { getAdapter } from './registry';
+import { smsQueue } from './queue';
 
 let cachedActiveConfig: SmsAdapterConfig | null = null;
 let cachedActiveAt = 0;

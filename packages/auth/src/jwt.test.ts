@@ -6,7 +6,7 @@ import {
   verifyRefreshToken,
   isJwtExpired,
   isJwtInvalid,
-} from './jwt.js';
+} from './jwt';
 
 beforeAll(() => {
   process.env.JWT_ACCESS_SECRET =

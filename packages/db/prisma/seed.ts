@@ -15,7 +15,7 @@
  */
 
 import argon2 from 'argon2';
-import { Prisma, prisma } from '../src/index.js';
+import { Prisma, prisma } from '../src/index';
 
 async function hashPassword(pw: string): Promise<string> {
   return argon2.hash(pw, {

@@ -6,7 +6,7 @@
  * activé en v1 (aucun cas d'usage immédiat).
  */
 
-import { BaseSmsAdapter } from '../adapter.js';
+import { BaseSmsAdapter } from '../adapter';
 import type { AdapterField, SmsSendResult } from '@tt/types';
 
 export class SmppSmsAdapter extends BaseSmsAdapter {

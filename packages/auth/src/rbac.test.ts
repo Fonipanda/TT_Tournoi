@@ -6,7 +6,7 @@ import {
   findRoutePolicy,
   ForbiddenError,
   UnauthorizedError,
-} from './rbac.js';
+} from './rbac';
 
 describe('RBAC — hasRole', () => {
   it('admin a accès à tout (super-user)', () => {

@@ -5,7 +5,7 @@
  * du compte Free configuré. Utile pour tests perso.
  */
 
-import { BaseSmsAdapter } from '../adapter.js';
+import { BaseSmsAdapter } from '../adapter';
 import type { AdapterField, SmsSendResult } from '@tt/types';
 
 interface FreeMobileConfig {

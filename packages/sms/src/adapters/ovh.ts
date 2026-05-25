@@ -9,7 +9,7 @@
  */
 
 import crypto from 'node:crypto';
-import { BaseSmsAdapter } from '../adapter.js';
+import { BaseSmsAdapter } from '../adapter';
 import type { AdapterField, SmsSendResult } from '@tt/types';
 
 const OVH_API_BASE = 'https://eu.api.ovh.com/1.0';

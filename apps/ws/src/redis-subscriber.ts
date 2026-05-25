@@ -5,7 +5,7 @@
 import IORedis from 'ioredis';
 import type { LiveEvent } from '@tt/types';
 import { LIVE_CHANNEL_PATTERN } from '@tt/types';
-import type { Broadcaster } from './broadcaster.js';
+import type { Broadcaster } from './broadcaster';
 
 export async function startRedisSubscriber(broadcaster: Broadcaster): Promise<IORedis> {
   const url = process.env.REDIS_URL || 'redis://localhost:6379';

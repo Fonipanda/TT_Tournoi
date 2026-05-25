@@ -2,7 +2,7 @@
  * Types pour le système d'authentification.
  */
 
-import type { Role } from './live-events.js';
+import type { Role } from './live-events';
 
 export interface JwtAccessClaims {
   /** UserAccount.id */

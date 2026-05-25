@@ -8,7 +8,7 @@
 
 import type { LiveEvent } from '@tt/types';
 import { LIVE_CHANNEL_PREFIX } from '@tt/types';
-import { redis } from '../redis.js';
+import { redis } from '../redis';
 
 export async function publishLiveEvent(event: LiveEvent): Promise<void> {
   const channel = LIVE_CHANNEL_PREFIX + event.type;

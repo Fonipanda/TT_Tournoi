@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashPassword, verifyPassword, generateRefreshTokenString, hashRefreshToken } from './password.js';
+import { hashPassword, verifyPassword, generateRefreshTokenString, hashRefreshToken } from './password';
 
 describe('Password — argon2id', () => {
   it('hache et vérifie un mot de passe', async () => {

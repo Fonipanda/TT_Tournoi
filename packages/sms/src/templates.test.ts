@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderTemplate, countSegments, SMS_TEMPLATE_VARIABLES } from './templates.js';
+import { renderTemplate, countSegments, SMS_TEMPLATE_VARIABLES } from './templates';
 
 describe('renderTemplate', () => {
   it('remplace les variables', () => {

@@ -17,8 +17,8 @@ import Fastify from 'fastify';
 import websocket, { type SocketStream } from '@fastify/websocket';
 import { verifyAccessToken } from '@tt/auth/jwt';
 import type { Role } from '@tt/types';
-import { Broadcaster } from './broadcaster.js';
-import { startRedisSubscriber } from './redis-subscriber.js';
+import { Broadcaster } from './broadcaster';
+import { startRedisSubscriber } from './redis-subscriber';
 
 const PORT = Number(process.env.WS_PORT ?? 3001);
 const HOST = '0.0.0.0';

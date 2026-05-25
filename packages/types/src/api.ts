@@ -6,7 +6,7 @@
  * éventuellement quelques relations préchargées.
  */
 
-import type { LiveEventType } from './live-events.js';
+import type { LiveEventType } from './live-events';
 
 // -----------------------------------------------------------------------------
 // Réponses standard

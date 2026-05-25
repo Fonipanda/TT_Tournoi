@@ -8,7 +8,7 @@
  * connexions Postgres en mode dev (hot-reload Next.js).
  */
 
-import { PrismaClient } from './generated/index.js';
+import { PrismaClient } from './generated/index';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -32,8 +32,8 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Re-export complet du client généré (types + enums + Prisma namespace)
-export * from './generated/index.js';
-export { Prisma } from './generated/index.js';
+export * from './generated/index';
+export { Prisma } from './generated/index';
 
 // Helpers utiles
-export type { PrismaClient } from './generated/index.js';
+export type { PrismaClient } from './generated/index';

@@ -3,11 +3,11 @@
  */
 
 import type { AdapterType, SmsAdapter } from '@tt/types';
-import { OvhSmsAdapter } from './adapters/ovh.js';
-import { TestSmsAdapter } from './adapters/test.js';
-import { TwilioSmsAdapter } from './adapters/twilio.js';
-import { FreeMobileSmsAdapter } from './adapters/free-mobile.js';
-import { SmppSmsAdapter } from './adapters/smpp.js';
+import { OvhSmsAdapter } from './adapters/ovh';
+import { TestSmsAdapter } from './adapters/test';
+import { TwilioSmsAdapter } from './adapters/twilio';
+import { FreeMobileSmsAdapter } from './adapters/free-mobile';
+import { SmppSmsAdapter } from './adapters/smpp';
 
 export type AdapterFactory = (config: Record<string, unknown>) => SmsAdapter;
 

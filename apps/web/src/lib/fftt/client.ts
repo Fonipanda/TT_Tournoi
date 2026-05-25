@@ -6,7 +6,7 @@
  */
 
 import type { FfttPlayerLookup } from '@tt/types';
-import { redis } from '../redis.js';
+import { redis } from '../redis';
 
 const CACHE_PREFIX = 'fftt:player:';
 const CACHE_TTL = Number(process.env.FFTT_CACHE_TTL ?? 86400);

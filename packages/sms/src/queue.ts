@@ -8,8 +8,8 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { prisma } from '@tt/db';
-import { getActiveAdapterConfig } from './engine.js';
-import { getAdapter } from './registry.js';
+import { getActiveAdapterConfig } from './engine';
+import { getAdapter } from './registry';
 
 export interface SmsJobPayload {
   to: string;

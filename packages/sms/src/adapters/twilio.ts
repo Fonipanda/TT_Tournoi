@@ -5,7 +5,7 @@
  * Utilise l'API REST Twilio Messages.
  */
 
-import { BaseSmsAdapter } from '../adapter.js';
+import { BaseSmsAdapter } from '../adapter';
 import type { AdapterField, SmsSendResult } from '@tt/types';
 
 interface TwilioConfig {

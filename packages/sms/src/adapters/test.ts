@@ -2,7 +2,7 @@
  * Adaptateur Test — log console (utilisé en développement / tests).
  */
 
-import { BaseSmsAdapter } from '../adapter.js';
+import { BaseSmsAdapter } from '../adapter';
 import type { AdapterField, SmsSendResult } from '@tt/types';
 
 export class TestSmsAdapter extends BaseSmsAdapter {
