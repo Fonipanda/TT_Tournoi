@@ -12,7 +12,7 @@
 
 # ---- 1) deps : installe les dépendances mono-repo
 FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat python3 make g++
+RUN apk add --no-cache libc6-compat openssl python3 make g++
 RUN corepack enable
 WORKDIR /app
 
@@ -39,7 +39,7 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 
 # ---- 2) builder : génère client Prisma + build Next.js
 FROM node:20-alpine AS builder
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat openssl
 RUN corepack enable
 WORKDIR /app
 
@@ -55,7 +55,7 @@ RUN pnpm --filter @tt/web build
 
 # ---- 3) runner : image finale minimale
 FROM node:20-alpine AS runner
-RUN apk add --no-cache libc6-compat tini
+RUN apk add --no-cache libc6-compat openssl tini
 WORKDIR /app
 
 ENV NODE_ENV=production

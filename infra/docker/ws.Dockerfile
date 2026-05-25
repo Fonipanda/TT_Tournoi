@@ -7,7 +7,7 @@
 
 # ---- 1) deps
 FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat openssl
 RUN corepack enable
 WORKDIR /app
 
@@ -30,7 +30,7 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 
 # ---- 2) builder
 FROM node:20-alpine AS builder
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat openssl
 RUN corepack enable
 WORKDIR /app
 
@@ -42,7 +42,7 @@ RUN pnpm --filter @tt/ws build || true
 
 # ---- 3) runner
 FROM node:20-alpine AS runner
-RUN apk add --no-cache libc6-compat tini
+RUN apk add --no-cache libc6-compat openssl tini
 WORKDIR /app
 
 ENV NODE_ENV=production
