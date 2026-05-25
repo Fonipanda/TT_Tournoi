@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/server';
+import { LogoutButton } from '@/components/LogoutButton';
 
 export default async function StaffLayout({ children }: { children: ReactNode }) {
   const me = await getCurrentUser();
@@ -65,15 +66,12 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             Live (public) ↗
           </Link>
         </nav>
-        <form action="/api/auth/logout" method="post" className="mt-auto">
-          <button
-            type="submit"
-            className="w-full text-sm text-danger hover:underline pt-4 border-t border-slate-700"
-            data-testid="logout"
-          >
-            Déconnexion ({me.username ?? me.role})
-          </button>
-        </form>
+        <div className="mt-auto">
+          <LogoutButton
+            label={`Déconnexion (${me.username ?? me.role})`}
+            className="w-full text-sm text-danger hover:underline pt-4 border-t border-slate-700 text-left disabled:opacity-50"
+          />
+        </div>
       </aside>
       <main className="flex-1 p-6 overflow-x-auto">{children}</main>
     </div>

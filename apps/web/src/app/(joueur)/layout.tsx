@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/server';
 import { PublicNav } from '@/components/PublicNav';
+import { LogoutButton } from '@/components/LogoutButton';
 
 export default async function JoueurLayout({ children }: { children: ReactNode }) {
   const me = await getCurrentUser();
@@ -22,16 +23,9 @@ export default async function JoueurLayout({ children }: { children: ReactNode }
           <Link href="/inscription" className="btn-secondary text-sm">
             Inscription
           </Link>
-          <form action="/api/auth/logout" method="post" className="ml-auto">
-            <button
-              type="submit"
-              formAction="/api/auth/logout"
-              className="text-sm text-danger hover:underline"
-              data-testid="logout"
-            >
-              Déconnexion
-            </button>
-          </form>
+          <div className="ml-auto">
+            <LogoutButton label="Déconnexion" />
+          </div>
         </nav>
         <main>{children}</main>
       </div>
