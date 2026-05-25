@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@tt/db';
+import { Prisma, prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
 
 export async function GET() {
@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     const created = await prisma.tournament.create({
       data: {
         ...data,
+        schedule: data.schedule as Prisma.InputJsonValue,
         startDate: data.startDate ? new Date(data.startDate) : null,
         endDate: data.endDate ? new Date(data.endDate) : null,
       },
