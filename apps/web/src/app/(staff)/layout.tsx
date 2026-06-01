@@ -42,8 +42,14 @@ export default async function StaffLayout({ children }: { children: ReactNode })
               <Link href="/admin/salles" className="hover:bg-slate-800 px-2 py-2">
                 Salles & tables
               </Link>
+              <Link href="/admin/buvette" className="hover:bg-slate-800 px-2 py-2">
+                Buvette
+              </Link>
               <Link href="/admin/sms" className="hover:bg-slate-800 px-2 py-2">
                 SMS
+              </Link>
+              <Link href="/admin/comptes" className="hover:bg-slate-800 px-2 py-2">
+                Comptes
               </Link>
               <Link
                 href="/admin/sync-status"

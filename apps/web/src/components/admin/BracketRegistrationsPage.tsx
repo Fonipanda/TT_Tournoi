@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { PlayerRegistrationModal } from './PlayerRegistrationModal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
-import { apiDelete, apiPost, ApiError } from '@/lib/api-client';
+import { apiPatch, apiDelete, apiPost, ApiError } from '@/lib/api-client';
 
 interface Registration {
   id: string;
@@ -35,15 +35,43 @@ export function BracketRegistrationsPage({ bracketId, bracketName, registrations
   const [registerOpen, setRegisterOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<Registration | null>(null);
   const [working, setWorking] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const alreadyRegisteredIds = new Set(registrations.map((r) => r.player.id));
+
+  const togglePayment = async (r: Registration) => {
+    setBusy(`pay-${r.id}`);
+    try {
+      const newStatus = r.paymentStatus === 'paid' ? 'pending' : 'paid';
+      await apiPatch(`/api/registrations/${r.id}`, { paymentStatus: newStatus });
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cycleCheckin = async (r: Registration) => {
+    setBusy(`chk-${r.id}`);
+    try {
+      // '' → 'P' → 'A' → ''
+      const next = r.checkinStatus === '' ? 'P' : r.checkinStatus === 'P' ? 'A' : '';
+      await apiPatch(`/api/registrations/${r.id}`, { checkinStatus: next });
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const onRemove = async () => {
     if (!confirmRemove) return;
     try {
-      // Pas d'API DELETE registration → on désactive via API alternative ?
-      // Pour l'instant on utilise l'API existante (à étendre si besoin)
-      toast.error('Suppression d\'inscription non encore implémentée côté API');
+      await apiDelete(`/api/registrations/${confirmRemove.id}`);
+      toast.success('Joueur retiré');
+      router.refresh();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Erreur');
     } finally {
@@ -66,6 +94,10 @@ export function BracketRegistrationsPage({ bracketId, bracketName, registrations
     }
   };
 
+  // Stats paiement
+  const paid = registrations.filter((r) => r.paymentStatus === 'paid').length;
+  const present = registrations.filter((r) => r.checkinStatus === 'P').length;
+
   return (
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
@@ -75,7 +107,7 @@ export function BracketRegistrationsPage({ bracketId, bracketName, registrations
           </Link>
           <h1 className="font-heading text-3xl uppercase tracking-wide mt-1">{bracketName}</h1>
           <p className="text-foreground-muted text-sm">
-            {registrations.length} joueurs inscrits
+            {registrations.length} inscrits · {paid} payés · {present} présents
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -127,20 +159,37 @@ export function BracketRegistrationsPage({ bracketId, bracketName, registrations
                   <td className="py-2 text-foreground-muted">{r.player.club ?? '—'}</td>
                   <td className="py-2 text-right tabular">{Math.round(r.player.points)}</td>
                   <td className="py-2 text-center">
-                    <span
-                      className={`text-xs px-2 py-0.5 ${
+                    <button
+                      type="button"
+                      onClick={() => togglePayment(r)}
+                      disabled={busy === `pay-${r.id}`}
+                      className={`text-xs px-2 py-0.5 cursor-pointer ${
                         r.paymentStatus === 'paid'
-                          ? 'bg-success-soft text-success'
-                          : 'bg-warning-soft text-warning'
-                      }`}
+                          ? 'bg-success-soft text-success hover:bg-success-soft/80'
+                          : 'bg-warning-soft text-warning hover:bg-warning-soft/80'
+                      } disabled:opacity-50`}
+                      data-testid={`payment-${r.id}`}
                     >
-                      {r.paymentStatus === 'paid' ? '✓' : 'En attente'}
-                    </span>
+                      {r.paymentStatus === 'paid' ? '✓ Payé' : 'En attente'}
+                    </button>
                   </td>
                   <td className="py-2 text-center">
-                    <span className="text-xs">
-                      {r.checkinStatus === 'P' ? '✓ Présent' : r.checkinStatus === 'A' ? '✗ Absent' : '—'}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => cycleCheckin(r)}
+                      disabled={busy === `chk-${r.id}`}
+                      className={`text-xs px-2 py-0.5 cursor-pointer ${
+                        r.checkinStatus === 'P'
+                          ? 'bg-success-soft text-success'
+                          : r.checkinStatus === 'A'
+                            ? 'bg-danger-soft text-danger'
+                            : 'bg-bg-alt text-foreground-subtle'
+                      } disabled:opacity-50`}
+                      title="Clic pour cycler : — → Présent → Absent → —"
+                      data-testid={`checkin-${r.id}`}
+                    >
+                      {r.checkinStatus === 'P' ? '✓ Présent' : r.checkinStatus === 'A' ? '✗ Absent' : '— Non pointé'}
+                    </button>
                   </td>
                   <td className="py-2 text-right">
                     <button
