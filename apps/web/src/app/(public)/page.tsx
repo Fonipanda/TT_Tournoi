@@ -57,11 +57,12 @@ export default async function HomePage() {
     name: b.name,
     category: b.category,
     startTime: b.startTime,
+    checkinEnd: b.checkinEnd,
     day: b.day,
     maxPlayers: b.maxPlayers,
     inscrits: b._count.registrations,
     prize: b.prize,
-    dotationWinner: Number(b.dotationWinner),
+    byePlayers: b.byePlayers,
   }));
 
   // Liste des inscrits (pour le popup recherche)
@@ -106,7 +107,7 @@ export default async function HomePage() {
           {tournament.description && (
             <p className="text-primary-100/90 max-w-2xl">{tournament.description}</p>
           )}
-          <div className="mt-8 flex gap-3 flex-wrap">
+          <div className="mt-8 flex gap-3 flex-wrap items-center">
             <Link
               href="/register"
               className="bg-surface text-primary font-medium px-6 py-3 rounded-full hover:bg-bg-alt transition-all hover:scale-105 shadow-lg"
@@ -116,9 +117,15 @@ export default async function HomePage() {
             </Link>
             <Link
               href="/live"
-              className="bg-primary-fg/20 backdrop-blur text-primary-fg font-medium px-6 py-3 rounded-full hover:bg-primary-fg/30 transition-all border border-primary-fg/30"
+              className="bg-danger text-white font-medium px-6 py-3 rounded-full hover:bg-red-700 transition-all flex items-center gap-2 shadow-lg"
+              data-testid="btn-live"
             >
-              Voir le Live
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+              </span>
+              <span className="font-bold tracking-wider">REC</span>
+              <span>Voir le Live</span>
             </Link>
           </div>
         </div>

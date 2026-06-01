@@ -202,9 +202,44 @@ function ItemFormModal({
           label="Chemin de l'image (optionnel)"
           value={form.imageUrl ?? ''}
           onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-          placeholder="/images/sandwich.jpg ou https://..."
-          helper="Formats acceptés : PNG, JPEG, WEBP, SVG"
+          placeholder="/uploads/xxx.jpg ou https://..."
+          helper="Formats acceptés : PNG, JPEG, WEBP, SVG, GIF"
         />
+        <div className="flex items-center gap-2 -mt-3">
+          <label className="btn-secondary text-xs cursor-pointer">
+            📁 Parcourir...
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append('file', file);
+                try {
+                  const res = await fetch('/api/upload', { method: 'POST', body: fd });
+                  const j = await res.json();
+                  if (res.ok && j.url) {
+                    setForm((f) => ({ ...f, imageUrl: j.url }));
+                    toast.success('Image uploadée');
+                  } else {
+                    toast.error(j.error ?? 'Échec upload');
+                  }
+                } catch {
+                  toast.error('Erreur réseau');
+                }
+              }}
+            />
+          </label>
+          {form.imageUrl && (
+            <img
+              src={form.imageUrl}
+              alt="Aperçu"
+              className="w-12 h-12 object-cover border border-border rounded"
+            />
+          )}
+        </div>
         <CheckboxField
           label="Disponible (visible par les visiteurs)"
           checked={form.isAvailable}

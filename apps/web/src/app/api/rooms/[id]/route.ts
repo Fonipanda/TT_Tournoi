@@ -57,7 +57,11 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   try {
     await requireRole(['admin']);
     const { id } = await params;
-    await prisma.room.update({ where: { id }, data: { isActive: false } });
+    // Désactiver la salle ET supprimer ses tables (libère les numéros)
+    await prisma.$transaction([
+      prisma.tableModel.deleteMany({ where: { roomId: id } }),
+      prisma.room.update({ where: { id }, data: { isActive: false } }),
+    ]);
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

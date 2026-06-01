@@ -7,14 +7,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
+import { ensureSiteSettingTable } from '../route';
 
 interface Params { params: Promise<{ key: string }> }
 
-const Schema = z.object({ value: z.string().max(2_000_000) }); // 2 Mo max (data URL base64)
+const Schema = z.object({ value: z.string().max(2_000_000) });
 
 export async function PUT(req: NextRequest, { params }: Params) {
   try {
     await requireRole(['admin']);
+    await ensureSiteSettingTable();
     const { key } = await params;
     const body = Schema.parse(await req.json());
     const result = await prisma.siteSetting.upsert({
@@ -34,6 +36,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   try {
     await requireRole(['admin']);
+    await ensureSiteSettingTable();
     const { key } = await params;
     await prisma.siteSetting.delete({ where: { key } }).catch(() => undefined);
     return new NextResponse(null, { status: 204 });

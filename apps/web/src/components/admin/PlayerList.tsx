@@ -94,40 +94,58 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
+      <div className="card rounded-2xl overflow-x-auto p-0">
         <table className="w-full text-sm">
-          <thead className="text-xs uppercase tracking-widest text-foreground-muted">
-            <tr className="border-b border-border">
-              <th className="text-left py-2">Licence</th>
-              <th className="text-left py-2">Nom</th>
-              <th className="text-left py-2">Prénom</th>
-              <th className="text-left py-2">Club</th>
-              <th className="text-right py-2">Points</th>
-              <th className="text-left py-2">Téléphone</th>
-              <th className="text-left py-2">Email</th>
-              <th className="text-left py-2">Tableaux</th>
-              <th className="text-right py-2">Actions</th>
+          <thead className="text-xs uppercase tracking-widest text-foreground-muted bg-bg-alt">
+            <tr>
+              <th className="text-left px-3 py-3 border-r border-border">Licence</th>
+              <th className="text-left px-3 py-3 border-r border-border">Nom</th>
+              <th className="text-left px-3 py-3 border-r border-border">Prénom</th>
+              <th className="text-left px-3 py-3 border-r border-border">Club</th>
+              <th className="text-right px-3 py-3 border-r border-border">Points</th>
+              <th className="text-left px-3 py-3 border-r border-border">Téléphone</th>
+              <th className="text-left px-3 py-3 border-r border-border">Email</th>
+              <th className="text-left px-3 py-3 border-r border-border">Tableaux</th>
+              <th className="text-right px-3 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {initial.map((p) => (
-              <tr key={p.id} className="border-b border-border hover:bg-bg-alt">
-                <td className="py-2 font-mono tabular text-xs">{p.licenseNumber ?? '—'}</td>
-                <td className="py-2 font-medium uppercase">{p.lastName}</td>
-                <td className="py-2">{p.firstName}</td>
-                <td className="py-2 text-foreground-muted">{p.club ?? '—'}</td>
-                <td className="py-2 text-right tabular">{Math.round(p.points)}</td>
-                <td className="py-2 font-mono text-xs text-foreground-muted">{p.phone ?? '—'}</td>
-                <td className="py-2 text-xs text-foreground-muted truncate max-w-[200px]" title={p.email}>
+            {initial.map((p, idx) => (
+              <tr
+                key={p.id}
+                className={`border-t border-border hover:bg-primary-soft/30 transition-colors ${
+                  idx % 2 === 0 ? 'bg-surface' : 'bg-bg-alt/50'
+                }`}
+              >
+                <td className="px-3 py-2 font-mono tabular text-xs border-r border-border">
+                  {p.licenseNumber ?? '—'}
+                </td>
+                <td className="px-3 py-2 font-medium uppercase border-r border-border">
+                  {p.lastName}
+                </td>
+                <td className="px-3 py-2 border-r border-border">{p.firstName}</td>
+                <td className="px-3 py-2 text-foreground-muted border-r border-border">
+                  {p.club ?? '—'}
+                </td>
+                <td className="px-3 py-2 text-right tabular font-semibold text-primary border-r border-border">
+                  {Math.round(p.points)}
+                </td>
+                <td className="px-3 py-2 font-mono text-xs text-foreground-muted border-r border-border">
+                  {p.phone ?? '—'}
+                </td>
+                <td
+                  className="px-3 py-2 text-xs text-foreground-muted truncate max-w-[200px] border-r border-border"
+                  title={p.email}
+                >
                   {p.email || '—'}
                 </td>
-                <td className="py-2 text-xs">
+                <td className="px-3 py-2 text-xs border-r border-border">
                   {p.bracketNames && p.bracketNames.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {p.bracketNames.map((b, i) => (
                         <span
                           key={i}
-                          className="bg-primary-soft text-primary px-1.5 py-0.5 text-[10px] font-medium"
+                          className="bg-primary-soft text-primary px-1.5 py-0.5 text-[10px] font-medium rounded-full"
                         >
                           {b}
                         </span>
@@ -137,18 +155,18 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
                     <span className="text-foreground-subtle">—</span>
                   )}
                 </td>
-                <td className="py-2 text-right space-x-2">
+                <td className="px-3 py-2 text-right space-x-2">
                   <button
                     type="button"
                     onClick={() => onEdit(p)}
-                    className="text-primary text-xs hover:underline"
+                    className="text-primary text-xs hover:underline font-medium"
                   >
                     Éditer
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmDelete(p)}
-                    className="text-danger text-xs hover:underline"
+                    className="text-danger text-xs hover:underline font-medium"
                   >
                     Désact.
                   </button>

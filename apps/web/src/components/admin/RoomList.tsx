@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { RoomFormModal, TableFormModal, type RoomForm, type TableForm } from './RoomFormModal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
-import { apiDelete, ApiError } from '@/lib/api-client';
+import { apiDelete, apiPatch, ApiError } from '@/lib/api-client';
 
 interface Table {
   id: string;
@@ -23,6 +23,7 @@ interface Room {
   description: string | null;
   width: number;
   height: number;
+  isActive: boolean;
   tables: Table[];
 }
 
@@ -34,9 +35,11 @@ interface Tournament {
 export function RoomList({
   rooms,
   tournaments,
+  showInactive,
 }: {
   rooms: Room[];
   tournaments: Tournament[];
+  showInactive?: boolean;
 }) {
   const router = useRouter();
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
@@ -46,9 +49,18 @@ export function RoomList({
   const [confirmDeleteRoom, setConfirmDeleteRoom] = useState<Room | null>(null);
   const [confirmDeleteTable, setConfirmDeleteTable] = useState<Table | null>(null);
 
-  // Trouve le N° de table le plus haut + 1
   const allTableNumbers = rooms.flatMap((r) => r.tables.map((t) => t.number));
   const nextTableNumber = (allTableNumbers.length ? Math.max(...allTableNumbers) : 0) + 1;
+
+  const reactivate = async (room: Room) => {
+    try {
+      await apiPatch(`/api/rooms/${room.id}`, { isActive: true });
+      toast.success(`Salle ${room.name} réactivée`);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    }
+  };
 
   const onDeleteRoom = async () => {
     if (!confirmDeleteRoom) return;
@@ -82,15 +94,23 @@ export function RoomList({
     <>
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-heading text-3xl uppercase tracking-wide">Salles &amp; tables</h1>
-        <button
-          type="button"
-          onClick={() => setCreateRoomOpen(true)}
-          className="btn-primary text-sm"
-          data-testid="new-room"
-          disabled={!tournamentId}
-        >
-          + Nouvelle salle
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href={showInactive ? '/admin/salles' : '/admin/salles?inactive=1'}
+            className="text-sm text-foreground-muted hover:text-foreground"
+          >
+            {showInactive ? '✓ Inclure désactivées' : 'Afficher désactivées'}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setCreateRoomOpen(true)}
+            className="btn-primary text-sm rounded-full"
+            data-testid="new-room"
+            disabled={!tournamentId}
+          >
+            + Nouvelle salle
+          </button>
+        </div>
       </div>
 
       {!tournamentId && (
@@ -101,10 +121,21 @@ export function RoomList({
 
       <div className="space-y-4">
         {rooms.map((r) => (
-          <div key={r.id} className="card" data-testid={`room-${r.id}`}>
+          <div
+            key={r.id}
+            className={`card rounded-2xl ${!r.isActive ? 'opacity-60 border-warning' : ''}`}
+            data-testid={`room-${r.id}`}
+          >
             <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
               <div>
-                <h2 className="font-heading text-2xl uppercase tracking-wide">{r.name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-heading text-2xl uppercase tracking-wide">{r.name}</h2>
+                  {!r.isActive && (
+                    <span className="text-xs bg-warning-soft text-warning px-2 py-0.5 rounded-full">
+                      Désactivée
+                    </span>
+                  )}
+                </div>
                 {r.description && (
                   <p className="text-sm text-foreground-muted mt-1">{r.description}</p>
                 )}
@@ -113,42 +144,55 @@ export function RoomList({
                 </p>
               </div>
               <div className="flex gap-2 flex-wrap">
-                <Link
-                  href={`/admin/salles/${r.id}`}
-                  className="btn-secondary text-sm"
-                  title="Édition canvas drag & drop"
-                >
-                  Éditeur visuel →
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setCreateTableFor({ roomId: r.id, nextNumber: nextTableNumber })}
-                  className="btn-secondary text-sm"
-                >
-                  + Table
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditingRoom({
-                      id: r.id,
-                      name: r.name,
-                      description: r.description ?? '',
-                      width: r.width,
-                      height: r.height,
-                    })
-                  }
-                  className="btn-secondary text-sm"
-                >
-                  Éditer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteRoom(r)}
-                  className="text-sm text-danger hover:underline px-2"
-                >
-                  Désactiver
-                </button>
+                {r.isActive ? (
+                  <>
+                    <Link
+                      href={`/admin/salles/${r.id}`}
+                      className="btn-secondary text-sm rounded-full"
+                      title="Édition canvas drag & drop"
+                    >
+                      Éditeur visuel →
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setCreateTableFor({ roomId: r.id, nextNumber: nextTableNumber })}
+                      className="btn-secondary text-sm rounded-full"
+                    >
+                      + Table
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingRoom({
+                          id: r.id,
+                          name: r.name,
+                          description: r.description ?? '',
+                          width: r.width,
+                          height: r.height,
+                        })
+                      }
+                      className="btn-secondary text-sm rounded-full"
+                    >
+                      Éditer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteRoom(r)}
+                      className="text-sm text-danger hover:underline px-2"
+                    >
+                      Désactiver
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => reactivate(r)}
+                    className="btn-primary text-sm rounded-full"
+                    data-testid={`reactivate-${r.id}`}
+                  >
+                    ↻ Réactiver
+                  </button>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-8 gap-2">
@@ -229,8 +273,10 @@ export function RoomList({
         title="Désactiver la salle ?"
         message={
           <>
-            La salle <strong>{confirmDeleteRoom?.name}</strong> sera désactivée. Les tables
-            seront conservées mais cachées.
+            La salle <strong>{confirmDeleteRoom?.name}</strong> sera désactivée et ses{' '}
+            <strong>{confirmDeleteRoom?.tables.length ?? 0} tables seront supprimées</strong>{' '}
+            (les numéros de tables seront libérés et pourront être réutilisés). La salle
+            elle-même reste réactivable plus tard.
           </>
         }
         confirmLabel="Désactiver"

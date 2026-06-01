@@ -8,11 +8,12 @@ interface BracketStat {
   name: string;
   category: string;
   startTime: string | null;
+  checkinEnd: string | null;
   day: string | null;
   maxPlayers: number;
   inscrits: number;
   prize: string;
-  dotationWinner: number;
+  byePlayers: string;
 }
 
 interface PlayerLite {
@@ -21,6 +22,14 @@ interface PlayerLite {
   lastName: string;
   club: string | null;
   bracketName: string;
+}
+
+interface PlayerGrouped {
+  id: string;
+  firstName: string;
+  lastName: string;
+  club: string | null;
+  brackets: string[];
 }
 
 interface Props {
@@ -33,14 +42,36 @@ export function HomeStatsButtons({ brackets, players }: Props) {
   const [playersOpen, setPlayersOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const filteredPlayers = players.filter((p) => {
+  // Grouper les inscrits : 1 ligne par joueur, tous ses tableaux ensemble
+  const playersGrouped: PlayerGrouped[] = (() => {
+    const map = new Map<string, PlayerGrouped>();
+    for (const p of players) {
+      const existing = map.get(p.id);
+      if (existing) {
+        if (!existing.brackets.includes(p.bracketName)) {
+          existing.brackets.push(p.bracketName);
+        }
+      } else {
+        map.set(p.id, {
+          id: p.id,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          club: p.club,
+          brackets: [p.bracketName],
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.lastName.localeCompare(b.lastName));
+  })();
+
+  const filteredPlayers = playersGrouped.filter((p) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
       p.firstName.toLowerCase().includes(q) ||
       p.lastName.toLowerCase().includes(q) ||
       (p.club ?? '').toLowerCase().includes(q) ||
-      p.bracketName.toLowerCase().includes(q)
+      p.brackets.some((b) => b.toLowerCase().includes(q))
     );
   });
 
@@ -95,9 +126,9 @@ export function HomeStatsButtons({ brackets, players }: Props) {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div>
-                    <p className="text-foreground-muted">Jour / heure</p>
+                    <p className="text-foreground-muted">Heure de pointage</p>
                     <p className="font-medium">
-                      {b.day ?? '—'} · {b.startTime ?? '—'}
+                      {b.day ?? '—'} · {b.checkinEnd ?? b.startTime ?? '—'}
                     </p>
                   </div>
                   <div>
@@ -107,9 +138,9 @@ export function HomeStatsButtons({ brackets, players }: Props) {
                     </p>
                   </div>
                   <div>
-                    <p className="text-foreground-muted">Vainqueur</p>
+                    <p className="text-foreground-muted">Tête(s) de série</p>
                     <p className="font-medium tabular text-primary">
-                      {Number(b.dotationWinner) > 0 ? `${b.dotationWinner} €` : '—'}
+                      {b.byePlayers ? b.byePlayers.split(',').filter(Boolean).length : 0}
                     </p>
                   </div>
                   <div>
@@ -154,20 +185,27 @@ export function HomeStatsButtons({ brackets, players }: Props) {
               <tr className="border-b border-border">
                 <th className="text-left py-2">Nom</th>
                 <th className="text-left py-2">Club</th>
-                <th className="text-left py-2">Tableau</th>
+                <th className="text-left py-2">Tableaux</th>
               </tr>
             </thead>
             <tbody>
-              {filteredPlayers.map((p, i) => (
-                <tr key={`${p.id}-${i}`} className="border-b border-border hover:bg-bg-alt">
+              {filteredPlayers.map((p) => (
+                <tr key={p.id} className="border-b border-border hover:bg-bg-alt">
                   <td className="py-1.5 font-medium uppercase">
                     {p.lastName} <span className="font-normal normal-case">{p.firstName}</span>
                   </td>
                   <td className="py-1.5 text-foreground-muted">{p.club ?? '—'}</td>
                   <td className="py-1.5">
-                    <span className="text-xs bg-primary-soft text-primary px-2 py-0.5 rounded-full">
-                      {p.bracketName}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {p.brackets.map((b) => (
+                        <span
+                          key={b}
+                          className="text-xs bg-primary-soft text-primary px-2 py-0.5 rounded-full"
+                        >
+                          {b}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}

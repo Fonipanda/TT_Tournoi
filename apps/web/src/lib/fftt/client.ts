@@ -56,12 +56,32 @@ export async function lookupFfttPlayer(licence: string): Promise<FfttPlayerLooku
     throw new FfttError('Licence FFTT introuvable', 404);
   }
 
+  // L'API peut renvoyer plusieurs noms de champs selon la version
+  const pickString = (obj: Record<string, unknown>, ...keys: string[]): string | null => {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  };
+  const pickNumber = (obj: Record<string, unknown>, ...keys: string[]): number | null => {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string' && v.trim() && !Number.isNaN(Number(v))) return Number(v);
+    }
+    return null;
+  };
+
+  const club = pickString(data, 'nomclub', 'club', 'nom_club', 'clubname');
+  const points = pickNumber(data, 'point', 'points', 'pointm', 'initm') ?? 500;
+
   const result: FfttPlayerLookup = {
     licence: String(data.licence ?? cleaned),
     nom: String(data.nom),
     prenom: String(data.prenom),
-    points: Number(data.point ?? data.initm ?? 500),
-    club: data.club ? String(data.club) : null,
+    points,
+    club,
   };
 
   // Cache pour 24h
