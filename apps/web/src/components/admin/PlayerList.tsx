@@ -103,6 +103,7 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
               <th className="text-left py-2">Club</th>
               <th className="text-right py-2">Points</th>
               <th className="text-left py-2">Téléphone</th>
+              <th className="text-left py-2">Email</th>
               <th className="text-right py-2">Actions</th>
             </tr>
           </thead>
@@ -115,6 +116,9 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
                 <td className="py-2 text-foreground-muted">{p.club ?? '—'}</td>
                 <td className="py-2 text-right tabular">{Math.round(p.points)}</td>
                 <td className="py-2 font-mono text-xs text-foreground-muted">{p.phone ?? '—'}</td>
+                <td className="py-2 text-xs text-foreground-muted truncate max-w-[200px]" title={p.email}>
+                  {p.email || '—'}
+                </td>
                 <td className="py-2 text-right space-x-2">
                   <button
                     type="button"
@@ -135,7 +139,7 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
             ))}
             {initial.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-6 text-center text-foreground-muted">
+                <td colSpan={8} className="py-6 text-center text-foreground-muted">
                   Aucun joueur. Cliquez « + Nouveau joueur » pour commencer.
                 </td>
               </tr>

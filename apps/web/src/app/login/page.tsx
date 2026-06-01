@@ -45,6 +45,15 @@ function LoginForm() {
       });
       const data = await res.json();
       if (!res.ok) {
+        // Si licence FFTT non trouvée → rediriger vers la page d'inscription
+        if (
+          mode === 'player' &&
+          (data.code === 'fftt_error' || res.status === 404) &&
+          /^\d{6,10}$/.test(identifier)
+        ) {
+          router.push(`/register?licence=${identifier}&reason=fftt-not-found`);
+          return;
+        }
         setError(data.error ?? 'Erreur de connexion');
         return;
       }
@@ -139,6 +148,15 @@ function LoginForm() {
             {loading ? '…' : 'Se connecter'}
           </button>
         </form>
+
+        {mode === 'player' && (
+          <p className="text-xs text-foreground-muted text-center mt-4">
+            Pas de licence FFTT ou licence introuvable ?{' '}
+            <a href="/register" className="text-primary underline">
+              Créer un compte
+            </a>
+          </p>
+        )}
       </div>
     </div>
   );
