@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/server';
 import { LogoutButton } from '@/components/LogoutButton';
+import { ToastViewport } from '@/components/ui/toast';
 
 export default async function StaffLayout({ children }: { children: ReactNode }) {
   const me = await getCurrentUser();
@@ -74,6 +75,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
         </div>
       </aside>
       <main className="flex-1 p-6 overflow-x-auto">{children}</main>
+      <ToastViewport />
     </div>
   );
 }
