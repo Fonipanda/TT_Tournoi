@@ -11,8 +11,19 @@ import { apiDelete, ApiError } from '@/lib/api-client';
 interface Tournament {
   id: string;
   name: string;
+  description: string | null;
   date: string;
+  startDate: Date | string | null;
+  endDate: Date | string | null;
   location: string;
+  contact: string;
+  hours: string;
+  schedule: unknown;
+  assoConnectUrl: string;
+  publicUrl: string;
+  smsAutoOnTableAssigned: boolean;
+  smsAutoOnMatchCreated: boolean;
+  smsAutoOnResult: boolean;
   isActive: boolean;
   _count: { brackets: number };
 }
@@ -25,11 +36,28 @@ export function TournamentList({ tournaments }: { tournaments: Tournament[] }) {
   const [confirmDelete, setConfirmDelete] = useState<Tournament | null>(null);
 
   const onEdit = (t: Tournament) => {
+    const toLocalDateTime = (d: Date | string | null): string | undefined => {
+      if (!d) return undefined;
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return undefined;
+      // input datetime-local attend YYYY-MM-DDTHH:MM
+      return dt.toISOString().slice(0, 16);
+    };
     setEditing({
       id: t.id,
       name: t.name,
+      description: t.description ?? '',
       date: t.date,
+      startDate: toLocalDateTime(t.startDate),
+      endDate: toLocalDateTime(t.endDate),
       location: t.location,
+      contact: t.contact,
+      hours: t.hours,
+      assoConnectUrl: t.assoConnectUrl,
+      publicUrl: t.publicUrl,
+      smsAutoOnTableAssigned: t.smsAutoOnTableAssigned,
+      smsAutoOnMatchCreated: t.smsAutoOnMatchCreated,
+      smsAutoOnResult: t.smsAutoOnResult,
       isActive: t.isActive,
     });
     setEditOpen(true);

@@ -392,6 +392,16 @@ model Notification {
 }
 
 // -----------------------------------------------------------------------------
+// Site settings (key-value config global, ex: logo)
+// -----------------------------------------------------------------------------
+
+model SiteSetting {
+  key       String   @id
+  value     String   @db.Text // peut contenir un data URL base64 pour le logo
+  updatedAt DateTime @updatedAt
+}
+
+// -----------------------------------------------------------------------------
 // SMS — Multi-adaptateur
 // -----------------------------------------------------------------------------
 

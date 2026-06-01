@@ -199,11 +199,11 @@ function ItemFormModal({
           />
         </div>
         <TextField
-          label="URL image (optionnel)"
-          type="url"
+          label="Chemin de l'image (optionnel)"
           value={form.imageUrl ?? ''}
           onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-          placeholder="https://..."
+          placeholder="/images/sandwich.jpg ou https://..."
+          helper="Formats acceptés : PNG, JPEG, WEBP, SVG"
         />
         <CheckboxField
           label="Disponible (visible par les visiteurs)"

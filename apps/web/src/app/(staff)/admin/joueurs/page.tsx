@@ -26,11 +26,32 @@ export default async function AdminJoueursPage({ searchParams }: Props) {
     where,
     orderBy: [{ lastName: 'asc' }],
     take: 200,
+    include: {
+      registrations: {
+        where: { isActive: true },
+        include: { bracket: { select: { name: true } } },
+      },
+    },
   });
+
+  // Mapper avec les noms de tableaux
+  const playersWithBrackets = players.map((p) => ({
+    id: p.id,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    licenseNumber: p.licenseNumber,
+    ranking: p.ranking,
+    points: p.points,
+    club: p.club,
+    email: p.email,
+    phone: p.phone,
+    isActive: p.isActive,
+    bracketNames: p.registrations.map((r) => r.bracket.name),
+  }));
 
   return (
     <div data-testid="admin-joueurs">
-      <PlayerList players={players} />
+      <PlayerList players={playersWithBrackets} />
     </div>
   );
 }

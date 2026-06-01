@@ -32,7 +32,18 @@ export default async function BuvettePage() {
               </h2>
               <ul className="divide-y divide-border">
                 {s.items.map((it) => (
-                  <li key={it.id} className="py-2 flex items-center justify-between gap-3">
+                  <li key={it.id} className="py-2 flex items-center gap-3">
+                    {it.imageUrl && (
+                      <img
+                        src={it.imageUrl}
+                        alt={it.name}
+                        className="w-12 h-12 object-cover border border-border flex-shrink-0"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium">{it.name}</p>
                       {it.description && (

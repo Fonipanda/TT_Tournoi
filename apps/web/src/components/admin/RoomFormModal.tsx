@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
 import { TextField, NumberField, TextAreaField } from '@/components/ui/fields';
 import { toast } from '@/components/ui/toast';
-import { apiPatch, apiPost, ApiError } from '@/lib/api-client';
+import { apiPatch, apiPost, apiGet, ApiError } from '@/lib/api-client';
 
 export interface RoomForm {
   id?: string;
@@ -14,6 +14,7 @@ export interface RoomForm {
   description?: string;
   width?: number;
   height?: number;
+  initialTableCount?: number; // Nombre de tables à créer en même temps
 }
 
 interface Props {
@@ -34,6 +35,7 @@ export function RoomFormModal({ open, onClose, tournamentId, initial }: Props) {
       description: '',
       width: 900,
       height: 550,
+      initialTableCount: 6,
     },
   );
 
@@ -45,11 +47,54 @@ export function RoomFormModal({ open, onClose, tournamentId, initial }: Props) {
     setSubmitting(true);
     try {
       if (isEdit) {
-        await apiPatch(`/api/rooms/${initial!.id}`, form);
+        await apiPatch(`/api/rooms/${initial!.id}`, {
+          name: form.name,
+          description: form.description,
+          width: form.width,
+          height: form.height,
+        });
         toast.success('Salle mise à jour');
       } else {
-        await apiPost('/api/rooms', form);
-        toast.success('Salle créée');
+        const room = await apiPost<{ id: string; width: number; height: number }>('/api/rooms', {
+          tournamentId: form.tournamentId,
+          name: form.name,
+          description: form.description,
+          width: form.width,
+          height: form.height,
+        });
+        // Créer N tables avec placement intelligent en grille
+        const count = form.initialTableCount ?? 0;
+        if (count > 0) {
+          const cols = Math.ceil(Math.sqrt(count));
+          const rows = Math.ceil(count / cols);
+          const cellW = (room.width - 100) / cols;
+          const cellH = (room.height - 100) / rows;
+          // Trouver le prochain N° de table libre
+          const allTables = await apiGet<{ data: { number: number }[] }>(
+            '/api/tables',
+          ).catch(() => ({ data: [] as { number: number }[] }));
+          const usedNumbers = new Set((allTables.data ?? []).map((t) => t.number));
+          let nextNum = 1;
+          for (let i = 0; i < count; i++) {
+            while (usedNumbers.has(nextNum)) nextNum++;
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const x = Math.round(50 + col * cellW + cellW / 2 - 45);
+            const y = Math.round(50 + row * cellH + cellH / 2 - 25);
+            await apiPost('/api/tables', {
+              roomId: room.id,
+              number: nextNum,
+              x,
+              y,
+              rotation: 0,
+            });
+            usedNumbers.add(nextNum);
+            nextNum++;
+          }
+          toast.success(`Salle créée avec ${count} tables`);
+        } else {
+          toast.success('Salle créée');
+        }
       }
       router.refresh();
       onClose();
@@ -98,6 +143,16 @@ export function RoomFormModal({ open, onClose, tournamentId, initial }: Props) {
             max={2000}
           />
         </div>
+        {!isEdit && (
+          <NumberField
+            label="Nombre de tables à créer"
+            value={form.initialTableCount ?? 0}
+            onChange={(e) => update('initialTableCount', Number(e.target.value))}
+            min={0}
+            max={50}
+            helper="Les tables seront placées automatiquement en grille. Tu pourras les déplacer avec l'éditeur visuel."
+          />
+        )}
         <div className="flex gap-2 justify-end pt-3 border-t border-border">
           <button type="button" onClick={onClose} className="btn-secondary text-sm">
             Annuler

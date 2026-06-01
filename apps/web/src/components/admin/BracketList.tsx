@@ -13,9 +13,19 @@ interface Bracket {
   tournamentId: string;
   name: string;
   category: string;
+  minPoints: number | null;
+  maxPoints: number | null;
+  maxPlayers: number;
+  entryFee: string | number;
   startTime: string | null;
   day: string | null;
   poolQualifiers: number;
+  byePlayers: string;
+  dotationWinner: string | number;
+  dotationFinalist: string | number;
+  dotationSemi: string | number;
+  dotationQuarter: string | number;
+  prize: string;
   isActive: boolean;
   tournament: { name: string };
   _count: { matches: number; registrations: number };
@@ -48,9 +58,19 @@ export function BracketList({ brackets, tournaments, selectedTournamentId }: Pro
       tournamentId: b.tournamentId,
       name: b.name,
       category: b.category,
+      minPoints: b.minPoints,
+      maxPoints: b.maxPoints,
+      maxPlayers: b.maxPlayers,
+      entryFee: Number(b.entryFee),
       day: b.day ?? '',
       startTime: b.startTime ?? '',
       poolQualifiers: b.poolQualifiers,
+      byePlayers: b.byePlayers,
+      dotationWinner: Number(b.dotationWinner),
+      dotationFinalist: Number(b.dotationFinalist),
+      dotationSemi: Number(b.dotationSemi),
+      dotationQuarter: Number(b.dotationQuarter),
+      prize: b.prize,
     });
   };
 
@@ -139,7 +159,6 @@ export function BracketList({ brackets, tournaments, selectedTournamentId }: Pro
         <table className="w-full text-sm">
           <thead className="text-xs uppercase tracking-widest text-foreground-muted">
             <tr className="border-b border-border">
-              <th className="text-left py-2">Tournoi</th>
               <th className="text-left py-2">Tableau</th>
               <th className="text-left py-2">Catégorie</th>
               <th className="text-center py-2">Inscrits</th>
@@ -150,7 +169,6 @@ export function BracketList({ brackets, tournaments, selectedTournamentId }: Pro
           <tbody>
             {brackets.map((b) => (
               <tr key={b.id} className="border-b border-border hover:bg-bg-alt">
-                <td className="py-2 text-foreground-muted">{b.tournament.name}</td>
                 <td className="py-2 font-medium">{b.name}</td>
                 <td className="py-2 text-foreground-muted">{b.category}</td>
                 <td className="py-2 text-center tabular">{b._count.registrations}</td>
@@ -207,7 +225,7 @@ export function BracketList({ brackets, tournaments, selectedTournamentId }: Pro
             ))}
             {brackets.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-foreground-muted">
+                <td colSpan={5} className="py-6 text-center text-foreground-muted">
                   {tournaments.length === 0
                     ? "Aucun tournoi. Créez d'abord un tournoi."
                     : 'Aucun tableau pour ce tournoi.'}

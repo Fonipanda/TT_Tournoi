@@ -31,11 +31,12 @@ class ToastBus {
     return () => this.listeners.delete(fn);
   }
 
-  push(kind: ToastKind, message: string, ttl = 4000): void {
+  push(kind: ToastKind, message: string, ttl = 0): void {
     const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.toasts = [...this.toasts, { id, kind, message, ttl }];
     this.emit();
-    setTimeout(() => this.dismiss(id), ttl);
+    // ttl = 0 → pas d'auto-dismiss, l'utilisateur ferme manuellement
+    if (ttl > 0) setTimeout(() => this.dismiss(id), ttl);
   }
 
   dismiss(id: string): void {
@@ -80,11 +81,24 @@ export function ToastViewport() {
       {items.map((t) => (
         <div
           key={t.id}
-          className={`card border-2 shadow-lg ${KIND_STYLES[t.kind]} animate-in fade-in slide-in-from-top-2`}
+          className={`card border-2 shadow-lg ${KIND_STYLES[t.kind]} animate-in fade-in slide-in-from-top-2 cursor-pointer`}
           onClick={() => bus.dismiss(t.id)}
           role="alert"
         >
-          <p className="text-sm font-medium pr-6">{t.message}</p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-medium pr-2">{t.message}</p>
+            <button
+              type="button"
+              className="text-lg leading-none opacity-70 hover:opacity-100"
+              aria-label="Fermer"
+              onClick={(e) => {
+                e.stopPropagation();
+                bus.dismiss(t.id);
+              }}
+            >
+              ×
+            </button>
+          </div>
         </div>
       ))}
     </div>

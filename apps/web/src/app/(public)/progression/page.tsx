@@ -27,10 +27,7 @@ export default async function ProgressionPage() {
               className="card hover:border-primary transition-colors"
               data-testid={`bracket-card-${b.id}`}
             >
-              <p className="text-xs uppercase tracking-widest text-foreground-muted">
-                {b.tournament.name}
-              </p>
-              <h2 className="font-heading text-2xl uppercase tracking-wide mt-1">{b.name}</h2>
+              <h2 className="font-heading text-2xl uppercase tracking-wide">{b.name}</h2>
               <p className="text-foreground-muted text-sm mt-1">{b.category}</p>
               <p className="font-mono text-xs text-foreground-subtle mt-3">
                 {b._count.matches} matches · {b.startTime ?? '—'}

@@ -97,7 +97,7 @@ function LoginForm() {
             }`}
             onClick={() => setMode('player')}
           >
-            Joueur (licence FFTT)
+            Joueur
           </button>
         </div>
 
@@ -148,15 +148,6 @@ function LoginForm() {
             {loading ? '…' : 'Se connecter'}
           </button>
         </form>
-
-        {mode === 'player' && (
-          <p className="text-xs text-foreground-muted text-center mt-4">
-            Pas de licence FFTT ou licence introuvable ?{' '}
-            <a href="/register" className="text-primary underline">
-              Créer un compte
-            </a>
-          </p>
-        )}
       </div>
     </div>
   );

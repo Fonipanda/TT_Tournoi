@@ -1,32 +1,74 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { TextField } from '@/components/ui/fields';
 import { toast, ToastViewport } from '@/components/ui/toast';
-import { apiPost, ApiError } from '@/lib/api-client';
+import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 
 function RegisterForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [submitting, setSubmitting] = useState(false);
+  const [looking, setLooking] = useState(false);
+  const [licenseFound, setLicenseFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const initialLicence = params.get('licence') ?? '';
   const reason = params.get('reason'); // 'fftt-not-found' si redirigé du login
 
   const [form, setForm] = useState({
+    licenseNumber: initialLicence,
     firstName: '',
     lastName: '',
+    club: '',
     email: '',
     phone: '',
-    licenseNumber: initialLicence,
-    club: '',
   });
 
   const update = <K extends keyof typeof form>(key: K, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  // Auto-lookup FFTT au chargement si licence pré-remplie
+  useEffect(() => {
+    if (initialLicence && /^\d{6,10}$/.test(initialLicence)) {
+      void doLookup(initialLicence);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const doLookup = async (licence: string) => {
+    if (!/^\d{6,10}$/.test(licence)) return;
+    setLooking(true);
+    setLicenseFound(false);
+    setError(null);
+    try {
+      const data = await apiGet<{ nom: string; prenom: string; club: string | null }>(
+        `/api/fftt/lookup/${licence}`,
+      );
+      setForm((f) => ({
+        ...f,
+        firstName: data.prenom,
+        lastName: data.nom,
+        club: data.club ?? '',
+      }));
+      setLicenseFound(true);
+      toast.success(`Licence trouvée : ${data.prenom} ${data.nom}`);
+    } catch (e) {
+      setLicenseFound(false);
+      // On ne bloque pas — l'utilisateur peut saisir manuellement
+      toast.info('Licence non trouvée — saisis tes informations manuellement');
+    } finally {
+      setLooking(false);
+    }
+  };
+
+  const onLicenseBlur = () => {
+    if (form.licenseNumber && /^\d{6,10}$/.test(form.licenseNumber)) {
+      void doLookup(form.licenseNumber);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,32 +94,68 @@ function RegisterForm() {
         Créer un compte
       </h1>
       <p className="text-center text-foreground-muted text-sm mb-6">
-        Inscris-toi pour pouvoir t'inscrire aux tournois TT Chelles.
+        Inscris-toi pour pouvoir t'inscrire au tournoi ChellesTT.
       </p>
 
       {reason === 'fftt-not-found' && (
         <div className="card border-warning bg-warning-soft text-warning mb-4 text-sm">
-          ⚠ Licence FFTT introuvable dans la base officielle. Tu peux quand même créer un
-          compte ici (avec ou sans licence) pour t'inscrire.
+          ⚠ Licence FFTT introuvable. Vérifie ton numéro ou crée un compte sans licence.
         </div>
       )}
 
       <div className="card">
         <form onSubmit={submit} className="space-y-3" data-testid="register-form">
+          <div className="flex gap-2 items-end">
+            <TextField
+              label="N° licence FFTT"
+              required
+              value={form.licenseNumber}
+              onChange={(e) => update('licenseNumber', e.target.value.replace(/\D/g, ''))}
+              onBlur={onLicenseBlur}
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="7711100001"
+              className="flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => doLookup(form.licenseNumber)}
+              disabled={looking || !form.licenseNumber}
+              className="btn-secondary text-sm whitespace-nowrap disabled:opacity-50 mb-0"
+              data-testid="fftt-lookup"
+            >
+              {looking ? '…' : 'Vérifier'}
+            </button>
+          </div>
+
+          {licenseFound && (
+            <p className="text-xs text-success">✓ Licence vérifiée auprès de la FFTT</p>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <TextField
               label="Prénom"
               required
               value={form.firstName}
               onChange={(e) => update('firstName', e.target.value)}
+              helper={licenseFound ? 'Auto-rempli FFTT' : undefined}
             />
             <TextField
               label="Nom"
               required
               value={form.lastName}
               onChange={(e) => update('lastName', e.target.value.toUpperCase())}
+              helper={licenseFound ? 'Auto-rempli FFTT' : undefined}
             />
           </div>
+
+          <TextField
+            label="Club"
+            value={form.club}
+            onChange={(e) => update('club', e.target.value)}
+            placeholder="Chelles TT"
+            helper={licenseFound ? 'Auto-rempli FFTT' : 'Optionnel'}
+          />
 
           <TextField
             label="Email"
@@ -96,23 +174,6 @@ function RegisterForm() {
             placeholder="+33612345678"
             autoComplete="tel"
             helper="Format international (+33...)"
-          />
-
-          <TextField
-            label="N° licence FFTT (optionnel)"
-            value={form.licenseNumber}
-            onChange={(e) => update('licenseNumber', e.target.value.replace(/\D/g, ''))}
-            inputMode="numeric"
-            maxLength={10}
-            placeholder="7711100001"
-            helper="Si tu n'as pas de licence, laisse vide"
-          />
-
-          <TextField
-            label="Club (optionnel)"
-            value={form.club}
-            onChange={(e) => update('club', e.target.value)}
-            placeholder="Chelles TT"
           />
 
           {error && (

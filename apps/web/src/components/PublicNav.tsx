@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Accueil' },
@@ -13,18 +14,35 @@ const NAV_ITEMS = [
 
 export function PublicNav() {
   const pathname = usePathname();
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.data?.logo) setLogoUrl(j.data.logo);
+      })
+      .catch(() => undefined);
+  }, []);
+
   return (
     <header
       className="sticky top-0 z-40 bg-surface border-b border-border"
       data-testid="public-nav"
     >
       <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-14">
-        <Link
-          href="/"
-          className="font-heading text-xl font-semibold tracking-wide text-primary uppercase"
-          data-testid="logo"
-        >
-          TT Tournoi
+        <Link href="/" className="flex items-center" data-testid="logo">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Logo"
+              className="max-h-10 w-auto object-contain"
+            />
+          ) : (
+            <span className="font-heading text-xl font-semibold tracking-wide text-primary uppercase">
+              TT Tournoi
+            </span>
+          )}
         </Link>
         <nav className="flex items-center gap-1">
           {NAV_ITEMS.map((item) => {
