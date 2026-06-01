@@ -129,6 +129,22 @@ async function loginByLicence(licence: string, req: NextRequest) {
     });
   }
 
+  // Vérifier que le joueur a au moins une inscription active dans un tournoi actif
+  const hasActiveRegistration = await prisma.playerBracketRegistration.findFirst({
+    where: {
+      playerId: player.id,
+      isActive: true,
+      bracket: { isActive: true, tournament: { isActive: true } },
+    },
+  });
+  if (!hasActiveRegistration) {
+    throw new HttpError(
+      403,
+      "Vous n'êtes inscrit à aucun tournoi actif. Inscrivez-vous d'abord.",
+      'no_registration',
+    );
+  }
+
   const ua = req.headers.get('user-agent') ?? undefined;
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined;
   const { accessToken, refreshToken } = await issueTokens({

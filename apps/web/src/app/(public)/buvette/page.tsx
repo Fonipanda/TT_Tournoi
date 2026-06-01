@@ -1,4 +1,5 @@
 import { prisma } from '@tt/db';
+import { BuvetteMenu } from './BuvetteMenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,52 +20,18 @@ export default async function BuvettePage() {
   });
 
   return (
-    <div data-testid="buvette-page">
-      <h1 className="font-heading text-3xl uppercase tracking-wide mb-6">Buvette</h1>
-      {sections.length === 0 ? (
-        <p className="text-foreground-muted">Menu non encore configuré.</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sections.map((s) => (
-            <section key={s.id} className="card" data-testid={`menu-section-${s.id}`}>
-              <h2 className="font-heading text-2xl uppercase tracking-wide mb-3 text-primary">
-                {s.name}
-              </h2>
-              <ul className="divide-y divide-border">
-                {s.items.map((it) => (
-                  <li key={it.id} className="py-2 flex items-center gap-3">
-                    {it.imageUrl && (
-                      <img
-                        src={it.imageUrl}
-                        alt={it.name}
-                        className="w-12 h-12 object-cover border border-border flex-shrink-0"
-                        loading="lazy"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium">{it.name}</p>
-                      {it.description && (
-                        <p className="text-sm text-foreground-muted truncate">
-                          {it.description}
-                        </p>
-                      )}
-                    </div>
-                    <span className="font-mono tabular text-primary font-semibold whitespace-nowrap">
-                      {Number(it.price).toFixed(2)} €
-                    </span>
-                  </li>
-                ))}
-                {s.items.length === 0 && (
-                  <li className="py-2 text-foreground-subtle text-sm">Aucun article</li>
-                )}
-              </ul>
-            </section>
-          ))}
-        </div>
-      )}
-    </div>
+    <BuvetteMenu
+      sections={sections.map((s) => ({
+        id: s.id,
+        name: s.name,
+        items: s.items.map((it) => ({
+          id: it.id,
+          name: it.name,
+          description: it.description,
+          price: it.price.toString(),
+          imageUrl: it.imageUrl,
+        })),
+      }))}
+    />
   );
 }

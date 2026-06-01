@@ -14,13 +14,16 @@ echo "[entrypoint] Synchronizing database schema (prisma db push)..."
   --accept-data-loss \
   --skip-generate
 
-echo "[entrypoint] Applying SQL triggers (idempotent)..."
-if [ -f ./packages/db/prisma/migrations/0002_triggers/migration.sql ]; then
-  ./packages/db/node_modules/.bin/prisma db execute \
-    --schema=./packages/db/prisma/schema.prisma \
-    --file=./packages/db/prisma/migrations/0002_triggers/migration.sql \
-    || echo "[entrypoint] WARN: triggers SQL returned non-zero (may already exist)"
-fi
+echo "[entrypoint] Applying SQL migrations (idempotent)..."
+for sqlfile in ./packages/db/prisma/migrations/*/migration.sql; do
+  if [ -f "$sqlfile" ]; then
+    echo "[entrypoint]   - $sqlfile"
+    ./packages/db/node_modules/.bin/prisma db execute \
+      --schema=./packages/db/prisma/schema.prisma \
+      --file="$sqlfile" \
+      || echo "[entrypoint] WARN: $sqlfile returned non-zero"
+  fi
+done
 
 echo "[entrypoint] Schema OK. Starting Next.js..."
 exec node apps/web/server.js

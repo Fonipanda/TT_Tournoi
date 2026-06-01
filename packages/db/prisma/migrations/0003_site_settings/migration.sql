@@ -1,0 +1,6 @@
+-- Migration idempotente pour SiteSetting (créée si absente)
+CREATE TABLE IF NOT EXISTS "SiteSetting" (
+  "key" TEXT PRIMARY KEY,
+  "value" TEXT NOT NULL,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
