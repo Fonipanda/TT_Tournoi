@@ -109,6 +109,17 @@ function LoginForm() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3" data-testid="login-form">
+          {error && (
+            <div
+              className="card border-danger bg-danger-soft text-danger text-sm rounded-xl px-3 py-2 flex items-start gap-2"
+              data-testid="login-error"
+              role="alert"
+            >
+              <span aria-hidden="true">⚠</span>
+              <span>{error}</span>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium mb-1">
               {mode === 'admin' ? 'Identifiant' : 'Numéro de licence FFTT'}
@@ -138,12 +149,6 @@ function LoginForm() {
                 autoComplete="current-password"
               />
             </div>
-          )}
-
-          {error && (
-            <p className="text-danger text-sm" data-testid="login-error">
-              {error}
-            </p>
           )}
 
           <button
