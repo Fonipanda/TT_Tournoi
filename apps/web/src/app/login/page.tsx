@@ -45,13 +45,20 @@ function LoginForm() {
       });
       const data = await res.json();
       if (!res.ok) {
-        // Si licence FFTT non trouvée → rediriger vers la page d'inscription
+        // Joueur sans compte → rediriger vers /register avec licence pré-remplie
         if (
           mode === 'player' &&
-          (data.code === 'fftt_error' || res.status === 404) &&
+          (data.code === 'not_registered' || data.code === 'fftt_error') &&
           /^\d{6,10}$/.test(identifier)
         ) {
-          router.push(`/register?licence=${identifier}&reason=fftt-not-found`);
+          router.push(`/register?licence=${identifier}&reason=not_registered`);
+          return;
+        }
+        // Joueur sans inscription active → message + lien /inscription
+        if (mode === 'player' && data.code === 'no_registration') {
+          setError(
+            data.error ?? "Vous n'êtes inscrit à aucun tournoi actif.",
+          );
           return;
         }
         setError(data.error ?? 'Erreur de connexion');

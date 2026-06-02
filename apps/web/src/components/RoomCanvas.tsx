@@ -260,6 +260,19 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
           const wPct = (TABLE_W / room.width) * 100;
           const hPct = (TABLE_H / room.height) * 100;
           const isDragging = draggingId === t.id;
+          // Couleurs selon statut
+          const bgColor =
+            t.status === 'occupied'
+              ? '#7f1d1d' // rouge sombre = match en cours
+              : t.status === 'maintenance'
+                ? '#78350f' // ambre sombre
+                : '#1e3a8a'; // bleu profond classique TT
+          const borderColor =
+            t.status === 'occupied'
+              ? '#dc2626'
+              : t.status === 'maintenance'
+                ? '#d97706'
+                : '#3b82f6';
           return (
             <div
               key={t.id}
@@ -268,13 +281,7 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
               onPointerMove={(e) => onPointerMove(e, t.id)}
               onPointerUp={(e) => onPointerUp(e, t.id)}
               onDoubleClick={() => rotateTable(t.id)}
-              className={`absolute flex items-center justify-center font-heading uppercase tracking-wide text-xs ${
-                t.status === 'occupied'
-                  ? 'bg-danger-soft border-2 border-danger text-danger'
-                  : t.status === 'maintenance'
-                    ? 'bg-warning-soft border-2 border-warning text-warning'
-                    : 'bg-success-soft border-2 border-success text-success'
-              } ${editable ? 'cursor-move' : 'cursor-default'} ${
+              className={`absolute ${editable ? 'cursor-move' : 'cursor-default'} ${
                 isDragging ? 'shadow-lg z-10 ring-2 ring-primary' : ''
               }`}
               style={{
@@ -288,13 +295,36 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
                 userSelect: 'none',
               }}
             >
-              <div className="text-center leading-tight">
-                <p className="font-bold">T{t.number}</p>
-                {t.currentMatch && (
-                  <p className="text-[10px] mt-0.5 tabular">
-                    {t.currentMatch.setsP1}-{t.currentMatch.setsP2}
-                  </p>
-                )}
+              {/* Plateau de table TT vu du dessus */}
+              <div
+                className="relative w-full h-full overflow-hidden"
+                style={{
+                  background: bgColor,
+                  border: `2px solid ${borderColor}`,
+                  borderRadius: '4px',
+                  boxShadow: isDragging
+                    ? '0 8px 24px rgba(0,0,0,0.4)'
+                    : '0 2px 4px rgba(0,0,0,0.2)',
+                }}
+              >
+                {/* Lignes blanches sur les bords (lignes de la table) */}
+                <div className="absolute inset-1 border border-white/80" />
+
+                {/* Ligne centrale longitudinale (line de service) */}
+                <div className="absolute left-1/2 top-1 bottom-1 w-px bg-white/60 -translate-x-1/2" />
+
+                {/* Filet au milieu (perpendiculaire à la ligne centrale) */}
+                <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-1.5 bg-gradient-to-b from-slate-200 via-white to-slate-300 border-y border-slate-400 shadow-sm" />
+
+                {/* Numéro de table + score */}
+                <div className="relative z-10 w-full h-full flex flex-col items-center justify-center text-white drop-shadow-md">
+                  <p className="font-heading font-bold text-xs leading-tight">T{t.number}</p>
+                  {t.currentMatch && (
+                    <p className="text-[10px] mt-0.5 tabular bg-black/40 px-1 rounded">
+                      {t.currentMatch.setsP1}-{t.currentMatch.setsP2}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           );

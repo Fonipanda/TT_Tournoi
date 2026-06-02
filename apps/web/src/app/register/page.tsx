@@ -97,8 +97,13 @@ function RegisterForm() {
         Inscris-toi pour pouvoir t'inscrire au tournoi ChellesTT.
       </p>
 
+      {reason === 'not_registered' && (
+        <div className="card border-warning bg-warning-soft text-warning mb-4 text-sm rounded-xl">
+          ℹ️ Aucun compte trouvé avec cette licence. Crée ton compte pour t'inscrire au tournoi.
+        </div>
+      )}
       {reason === 'fftt-not-found' && (
-        <div className="card border-warning bg-warning-soft text-warning mb-4 text-sm">
+        <div className="card border-warning bg-warning-soft text-warning mb-4 text-sm rounded-xl">
           ⚠ Licence FFTT introuvable. Vérifie ton numéro ou crée un compte sans licence.
         </div>
       )}

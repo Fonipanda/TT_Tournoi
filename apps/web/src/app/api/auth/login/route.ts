@@ -13,7 +13,6 @@ import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { verifyPassword } from '@tt/auth/password';
 import { issueTokens, setAuthCookies, errorResponse, HttpError } from '@/lib/auth/server';
-import { lookupFfttPlayer, FfttError } from '@/lib/fftt/client';
 import type { LoginResponse } from '@tt/types';
 
 const LoginSchema = z.object({
@@ -88,45 +87,32 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Login par licence FFTT — autocrée le joueur + le UserAccount si besoin.
- * Pas de mot de passe : la connexion se fait à la licence (sécurité v1
- * volontairement légère, à renforcer si besoin avec OTP SMS plus tard).
+ * Login par licence FFTT — vérifie SEULEMENT que le joueur existe en BD locale
+ * et qu'il a une inscription active. PAS d'autocréation : si non trouvé,
+ * renvoie 404 → le frontend redirige vers /register.
  */
 async function loginByLicence(licence: string, req: NextRequest) {
-  let player = await prisma.player.findUnique({ where: { licenseNumber: licence } });
+  const player = await prisma.player.findUnique({ where: { licenseNumber: licence } });
 
   if (!player) {
-    let fftt;
-    try {
-      fftt = await lookupFfttPlayer(licence);
-    } catch (e) {
-      if (e instanceof FfttError) {
-        throw new HttpError(e.status, e.message, 'fftt_error');
-      }
-      throw e;
-    }
-    player = await prisma.player.create({
-      data: {
-        firstName: fftt.prenom,
-        lastName: fftt.nom,
-        licenseNumber: fftt.licence,
-        points: fftt.points,
-        club: fftt.club ?? '',
-        email: '',
-      },
-    });
+    throw new HttpError(
+      404,
+      "Aucun compte trouvé avec cette licence. Veuillez créer votre compte.",
+      'not_registered',
+    );
   }
 
-  let account = await prisma.userAccount.findUnique({ where: { playerId: player.id } });
+  const account = await prisma.userAccount.findUnique({ where: { playerId: player.id } });
   if (!account) {
-    account = await prisma.userAccount.create({
-      data: {
-        username: `licence-${player.licenseNumber}`,
-        passwordHash: '', // pas de password pour les joueurs en v1
-        role: 'player',
-        playerId: player.id,
-      },
-    });
+    throw new HttpError(
+      404,
+      "Aucun compte trouvé avec cette licence. Veuillez créer votre compte.",
+      'not_registered',
+    );
+  }
+
+  if (!account.isActive) {
+    throw new HttpError(403, 'Compte désactivé', 'account_disabled');
   }
 
   // Vérifier que le joueur a au moins une inscription active dans un tournoi actif
@@ -140,7 +126,7 @@ async function loginByLicence(licence: string, req: NextRequest) {
   if (!hasActiveRegistration) {
     throw new HttpError(
       403,
-      "Vous n'êtes inscrit à aucun tournoi actif. Inscrivez-vous d'abord.",
+      "Vous n'êtes inscrit à aucun tournoi actif. Inscrivez-vous d'abord à un tableau.",
       'no_registration',
     );
   }

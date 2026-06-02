@@ -55,7 +55,21 @@ export function SmsAdminPage({ adapters, templates, recentLogs }: Props) {
   const [confirmDeleteAdapter, setConfirmDeleteAdapter] = useState<Adapter | null>(null);
   const [createTplOpen, setCreateTplOpen] = useState(false);
   const [editTpl, setEditTpl] = useState<SmsTemplateForm | null>(null);
+  const [confirmDeleteTpl, setConfirmDeleteTpl] = useState<Template | null>(null);
   const [testOpen, setTestOpen] = useState(false);
+
+  const onDeleteTpl = async () => {
+    if (!confirmDeleteTpl) return;
+    try {
+      await apiDelete(`/api/sms/templates/${confirmDeleteTpl.id}`);
+      toast.success('Template supprimé');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setConfirmDeleteTpl(null);
+    }
+  };
 
   const activate = async (a: Adapter) => {
     try {
@@ -211,23 +225,32 @@ export function SmsAdminPage({ adapters, templates, recentLogs }: Props) {
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {templates.map((t) => (
-              <div key={t.id} className="card" data-testid={`template-${t.name}`}>
+              <div key={t.id} className="card rounded-xl" data-testid={`template-${t.name}`}>
                 <div className="flex items-start justify-between mb-2 gap-2">
                   <p className="font-mono text-sm text-primary">{t.name}</p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditTpl({
-                        id: t.id,
-                        name: t.name,
-                        content: t.content,
-                        isActive: t.isActive,
-                      })
-                    }
-                    className="text-primary text-xs hover:underline"
-                  >
-                    Éditer
-                  </button>
+                  <div className="space-x-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditTpl({
+                          id: t.id,
+                          name: t.name,
+                          content: t.content,
+                          isActive: t.isActive,
+                        })
+                      }
+                      className="text-primary text-xs hover:underline"
+                    >
+                      Éditer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteTpl(t)}
+                      className="text-danger text-xs hover:underline"
+                    >
+                      Suppr.
+                    </button>
+                  </div>
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{t.content}</p>
               </div>
@@ -319,6 +342,19 @@ export function SmsAdminPage({ adapters, templates, recentLogs }: Props) {
         danger
         onConfirm={onDeleteAdapter}
         onCancel={() => setConfirmDeleteAdapter(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmDeleteTpl}
+        title="Supprimer le template ?"
+        message={
+          <>
+            Le template <strong>{confirmDeleteTpl?.name}</strong> sera supprimé définitivement.
+          </>
+        }
+        confirmLabel="Supprimer"
+        danger
+        onConfirm={onDeleteTpl}
+        onCancel={() => setConfirmDeleteTpl(null)}
       />
     </div>
   );
