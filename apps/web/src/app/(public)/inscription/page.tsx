@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { TextField } from '@/components/ui/fields';
 import { toast, ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
+import { PaymentModal } from '@/components/PaymentModal';
 
 interface Bracket {
   id: string;
@@ -41,6 +42,10 @@ export default function InscriptionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [createdRegistrations, setCreatedRegistrations] = useState<
+    Array<{ id: string; registrationId: string; name: string; entryFee: number }>
+  >([]);
 
   // Au chargement, vérifier si déjà loggé
   useEffect(() => {
@@ -131,20 +136,40 @@ export default function InscriptionPage() {
     setSubmitting(true);
     setMessage(null);
     try {
-      await apiPost(`/api/players/${me.playerId}/registrations`, {
-        bracketIds: [...selected],
+      const result = await apiPost<{ data: Array<{ id: string; bracketId: string }> }>(
+        `/api/players/${me.playerId}/registrations`,
+        { bracketIds: [...selected] },
+      );
+      // Mapper avec entryFee + name
+      const items = result.data.map((r) => {
+        const b = brackets.find((bb) => bb.id === r.bracketId);
+        return {
+          id: r.bracketId,
+          registrationId: r.id,
+          name: b?.name ?? 'Tableau',
+          entryFee: b ? Number(b.entryFee) : 0,
+        };
       });
-      setMessage('Inscription enregistrée ! Redirection vers ton espace…');
-      setSelected(new Set());
-      setTimeout(() => {
-        router.push('/mon-espace');
-        router.refresh();
-      }, 1500);
+      setCreatedRegistrations(items);
+      // Ouvrir le pop-up de paiement
+      if (items.some((i) => i.entryFee > 0)) {
+        setPaymentOpen(true);
+      } else {
+        // Aucun paiement nécessaire (gratuit) → direct mon-espace
+        setMessage('Inscription enregistrée !');
+        setTimeout(() => router.push('/mon-espace'), 1500);
+      }
     } catch (e) {
       setMessage(e instanceof ApiError ? e.message : 'Erreur');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const onPaymentSuccess = () => {
+    setPaymentOpen(false);
+    router.push('/mon-espace');
+    router.refresh();
   };
 
   // ========================================================================
@@ -286,6 +311,17 @@ export default function InscriptionPage() {
           ? 'Envoi…'
           : `Confirmer (${selected.size} tableau${selected.size > 1 ? 'x' : ''})`}
       </button>
+
+      <PaymentModal
+        open={paymentOpen}
+        registrations={createdRegistrations}
+        onCancel={() => {
+          setPaymentOpen(false);
+          // Inscription créée mais pas payée → on peut aller à mon-espace
+          router.push('/mon-espace');
+        }}
+        onSuccess={onPaymentSuccess}
+      />
 
       <ToastViewport />
     </div>

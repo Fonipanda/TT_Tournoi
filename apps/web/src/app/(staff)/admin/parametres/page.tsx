@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/components/ui/toast';
 import { apiJson, ApiError } from '@/lib/api-client';
+import { QrGenerator } from '@/components/admin/QrGenerator';
 
 const MAX_LOGO_SIZE = 500 * 1024; // 500 Ko
 
@@ -66,10 +67,10 @@ export default function AdminParametresPage() {
   };
 
   return (
-    <div data-testid="admin-parametres">
+    <div data-testid="admin-parametres" className="space-y-6">
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-6">Paramètres</h1>
 
-      <div className="card max-w-2xl">
+      <div className="card max-w-2xl rounded-2xl">
         <h2 className="font-heading text-xl uppercase tracking-wide mb-3">Logo du site</h2>
         <p className="text-sm text-foreground-muted mb-4">
           Remplace le texte « TT Tournoi » dans l'en-tête. Max 500 Ko, formats PNG/JPEG/SVG/WebP.
@@ -121,6 +122,9 @@ export default function AdminParametresPage() {
           </label>
         )}
       </div>
+
+      {/* QR Code Generator */}
+      <QrGenerator initialLogoUrl={logoUrl} />
     </div>
   );
 }

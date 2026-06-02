@@ -24,7 +24,7 @@ export default async function JoueurLayout({ children }: { children: ReactNode }
             Inscription
           </Link>
           <div className="ml-auto">
-            <LogoutButton label="Déconnexion" />
+            <LogoutButton label="Déconnexion" redirectTo="/" />
           </div>
         </nav>
         <main>{children}</main>
