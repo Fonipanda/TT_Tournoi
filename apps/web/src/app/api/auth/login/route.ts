@@ -115,21 +115,9 @@ async function loginByLicence(licence: string, req: NextRequest) {
     throw new HttpError(403, 'Compte désactivé', 'account_disabled');
   }
 
-  // Vérifier que le joueur a au moins une inscription active dans un tournoi actif
-  const hasActiveRegistration = await prisma.playerBracketRegistration.findFirst({
-    where: {
-      playerId: player.id,
-      isActive: true,
-      bracket: { isActive: true, tournament: { isActive: true } },
-    },
-  });
-  if (!hasActiveRegistration) {
-    throw new HttpError(
-      403,
-      "Vous n'êtes inscrit à aucun tournoi actif. Inscrivez-vous d'abord à un tableau.",
-      'no_registration',
-    );
-  }
+  // Note : on ne vérifie plus l'inscription au tournoi ici.
+  // Le joueur peut se connecter même sans inscription, et choisir des tableaux
+  // sur la page /inscription.
 
   const ua = req.headers.get('user-agent') ?? undefined;
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined;

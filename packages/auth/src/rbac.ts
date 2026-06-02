@@ -68,8 +68,8 @@ export const ROUTE_POLICIES: Record<string, readonly Role[]> = {
   '/buvette': ['visitor', 'player', 'juge_arbitre', 'admin'],
   '/reglement': ['visitor', 'player', 'juge_arbitre', 'admin'],
 
-  // Joueur
-  '/inscription': ['player'],
+  // Joueur (mais inscription est publique pour permettre le pré-login licence)
+  '/inscription': ['visitor', 'player', 'juge_arbitre', 'admin'],
   '/mon-espace': ['player'],
   '/notifications': ['player'],
 

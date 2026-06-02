@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { TextField } from '@/components/ui/fields';
+import { toast, ToastViewport } from '@/components/ui/toast';
+import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 
 interface Bracket {
   id: string;
@@ -25,45 +29,84 @@ interface Player {
 
 export default function InscriptionPage() {
   const router = useRouter();
+
+  // États
+  const [step, setStep] = useState<'check' | 'pick'>('check');
+  const [licence, setLicence] = useState('');
+  const [checking, setChecking] = useState(false);
   const [me, setMe] = useState<{ playerId: string | null } | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
+  // Au chargement, vérifier si déjà loggé
   useEffect(() => {
     (async () => {
-      const meRes = await fetch('/api/auth/me');
-      const meData = await meRes.json();
-      if (!meData.user?.playerId) {
-        router.push('/login?redirect=/inscription');
+      try {
+        const meData = await apiGet<{ user: { playerId: string | null } }>('/api/auth/me');
+        if (meData.user?.playerId) {
+          setMe(meData.user);
+          await loadBrackets(meData.user.playerId);
+          setStep('pick');
+        }
+      } catch {
+        // pas loggé, on reste sur l'étape "check"
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function loadBrackets(playerId: string) {
+    const pData = await apiGet<Player>(`/api/players/${playerId}`);
+    setPlayer(pData);
+    const tournRes = await apiGet<{ data: { id: string; isActive: boolean }[] }>(
+      '/api/tournaments',
+    );
+    const active = tournRes.data?.find((t) => t.isActive);
+    if (active) {
+      const bRes = await apiGet<{ data: Bracket[] }>(`/api/brackets?tournamentId=${active.id}`);
+      setBrackets(bRes.data ?? []);
+    }
+  }
+
+  // Étape 1 : vérifier la licence
+  const checkLicence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{6,10}$/.test(licence)) {
+      setError('Numéro de licence invalide (6 à 10 chiffres)');
+      return;
+    }
+    setChecking(true);
+    setError(null);
+    try {
+      const res = await apiPost<{ user: { playerId: string } }>('/api/auth/login-player', {
+        licence,
+      });
+      setMe(res.user);
+      await loadBrackets(res.user.playerId);
+      setStep('pick');
+      toast.success('Licence reconnue · Sélectionne tes tableaux');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        // Licence inconnue → redirige vers /register
+        toast.info('Licence inconnue · Crée un compte');
+        router.push(`/register?licence=${licence}&reason=not_registered`);
         return;
       }
-      setMe(meData.user);
+      setError(e instanceof ApiError ? e.message : 'Erreur réseau');
+    } finally {
+      setChecking(false);
+    }
+  };
 
-      // Récupérer les infos du joueur (pour points)
-      const pRes = await fetch(`/api/players/${meData.user.playerId}`);
-      const pData = await pRes.json();
-      setPlayer(pData);
-
-      const tournRes = await fetch('/api/tournaments');
-      const tournJson = await tournRes.json();
-      const active = tournJson.data?.find((t: { isActive: boolean }) => t.isActive);
-      if (active) {
-        const bRes = await fetch(`/api/brackets?tournamentId=${active.id}`);
-        const bJson = await bRes.json();
-        setBrackets(bJson.data ?? []);
-      }
-      setLoading(false);
-    })();
-  }, [router]);
-
+  // Étape 2 : éligibilité tableaux selon points
   const isEligible = (b: Bracket): { ok: boolean; reason?: string } => {
     if (!player) return { ok: false, reason: 'Chargement…' };
     if (b.minPoints !== null && player.points < b.minPoints) {
-      return { ok: false, reason: `Min ${b.minPoints} pts requis (tu as ${Math.round(player.points)})` };
+      return { ok: false, reason: `Min ${b.minPoints} pts (tu as ${Math.round(player.points)})` };
     }
     if (b.maxPoints !== null && player.points > b.maxPoints) {
       return { ok: false, reason: `Max ${b.maxPoints} pts (tu as ${Math.round(player.points)})` };
@@ -88,29 +131,80 @@ export default function InscriptionPage() {
     setSubmitting(true);
     setMessage(null);
     try {
-      const res = await fetch(`/api/players/${me.playerId}/registrations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bracketIds: [...selected] }),
+      await apiPost(`/api/players/${me.playerId}/registrations`, {
+        bracketIds: [...selected],
       });
-      if (res.ok) {
-        setMessage('Inscription enregistrée ! Redirection vers ton espace…');
-        setSelected(new Set());
-        setTimeout(() => {
-          router.push('/mon-espace');
-          router.refresh();
-        }, 1500);
-      } else {
-        const j = await res.json();
-        setMessage(j.error ?? 'Erreur');
-      }
+      setMessage('Inscription enregistrée ! Redirection vers ton espace…');
+      setSelected(new Set());
+      setTimeout(() => {
+        router.push('/mon-espace');
+        router.refresh();
+      }, 1500);
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : 'Erreur');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading) return <p className="text-foreground-muted">Chargement…</p>;
+  // ========================================================================
+  // RENDU
+  // ========================================================================
 
+  // Étape 1 : pré-formulaire licence
+  if (step === 'check') {
+    return (
+      <div className="max-w-md mx-auto" data-testid="inscription-precheck">
+        <h1 className="font-heading text-3xl uppercase tracking-wide mb-3 text-center">
+          Inscription au tournoi
+        </h1>
+        <p className="text-center text-foreground-muted text-sm mb-6">
+          Saisis ton numéro de licence FFTT pour t'inscrire.
+        </p>
+
+        <div className="card rounded-2xl">
+          <form onSubmit={checkLicence} className="space-y-4">
+            <TextField
+              label="Numéro de licence FFTT"
+              required
+              value={licence}
+              onChange={(e) => setLicence(e.target.value.replace(/\D/g, ''))}
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="7711100001"
+              autoFocus
+            />
+
+            {error && (
+              <div className="card border-danger bg-danger-soft text-danger text-sm rounded-xl px-3 py-2">
+                ⚠ {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={checking || !licence}
+              className="btn-primary w-full disabled:opacity-50 rounded-full"
+              data-testid="check-licence"
+            >
+              {checking ? '…' : 'Continuer →'}
+            </button>
+          </form>
+
+          <p className="text-xs text-foreground-muted text-center mt-4">
+            Pas encore de compte ?{' '}
+            <Link href="/register" className="text-primary underline">
+              Créer un compte
+            </Link>
+          </p>
+        </div>
+
+        <ToastViewport />
+      </div>
+    );
+  }
+
+  // Étape 2 : choix des tableaux
   return (
     <div data-testid="inscription-page">
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-2">
@@ -192,7 +286,8 @@ export default function InscriptionPage() {
           ? 'Envoi…'
           : `Confirmer (${selected.size} tableau${selected.size > 1 ? 'x' : ''})`}
       </button>
+
+      <ToastViewport />
     </div>
   );
 }
-

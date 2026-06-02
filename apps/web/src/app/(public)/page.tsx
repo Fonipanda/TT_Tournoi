@@ -110,7 +110,7 @@ export default async function HomePage() {
           )}
           <div className="mt-8 flex gap-3 flex-wrap items-center">
             <Link
-              href="/register"
+              href="/inscription"
               className="bg-surface text-primary font-medium px-6 py-3 rounded-full hover:bg-bg-alt transition-all hover:scale-105 shadow-lg"
               data-testid="btn-register"
             >
