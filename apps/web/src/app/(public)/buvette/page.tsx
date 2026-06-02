@@ -4,24 +4,25 @@ import { BuvetteMenu } from './BuvetteMenu';
 export const dynamic = 'force-dynamic';
 
 export default async function BuvettePage() {
-  const tournament = await prisma.tournament.findFirst({
-    where: { isActive: true },
-    orderBy: { startDate: 'desc' },
-  });
-  if (!tournament) {
-    return <p className="text-foreground-muted">Aucun tournoi actif.</p>;
-  }
+  // Affiche TOUTES les sections (peu importe le tournoi) → buvette globale
   const sections = await prisma.menuSection.findMany({
-    where: { tournamentId: tournament.id },
-    orderBy: { order: 'asc' },
+    orderBy: [{ order: 'asc' }, { name: 'asc' }],
     include: {
       items: { where: { isAvailable: true }, orderBy: { order: 'asc' } },
     },
   });
 
+  // Déduplication par nom (si plusieurs tournois ont la même section "Boissons")
+  const seen = new Set<string>();
+  const unique = sections.filter((s) => {
+    if (seen.has(s.name)) return false;
+    seen.add(s.name);
+    return true;
+  });
+
   return (
     <BuvetteMenu
-      sections={sections.map((s) => ({
+      sections={unique.map((s) => ({
         id: s.id,
         name: s.name,
         items: s.items.map((it) => ({

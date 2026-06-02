@@ -94,9 +94,12 @@ export default function InscriptionPage() {
         body: JSON.stringify({ bracketIds: [...selected] }),
       });
       if (res.ok) {
-        setMessage('Inscription enregistrée. Rendez-vous sur Mon espace.');
+        setMessage('Inscription enregistrée ! Redirection vers ton espace…');
         setSelected(new Set());
-        router.refresh();
+        setTimeout(() => {
+          router.push('/mon-espace');
+          router.refresh();
+        }, 1500);
       } else {
         const j = await res.json();
         setMessage(j.error ?? 'Erreur');
@@ -110,7 +113,9 @@ export default function InscriptionPage() {
 
   return (
     <div data-testid="inscription-page">
-      <h1 className="font-heading text-3xl uppercase tracking-wide mb-2">Inscription</h1>
+      <h1 className="font-heading text-3xl uppercase tracking-wide mb-2">
+        Choisis tes tableaux
+      </h1>
       {player && (
         <p className="text-foreground-muted mb-2 text-sm">
           {player.firstName} {player.lastName} —{' '}
@@ -124,10 +129,10 @@ export default function InscriptionPage() {
 
       {message && (
         <p
-          className="card border-primary text-primary mb-4 rounded-xl"
+          className="card border-success bg-success-soft text-success mb-4 rounded-xl"
           data-testid="inscription-message"
         >
-          {message}
+          ✓ {message}
         </p>
       )}
 

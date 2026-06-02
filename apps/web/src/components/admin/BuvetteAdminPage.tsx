@@ -316,30 +316,20 @@ export function BuvetteAdminPage({ tournaments, selectedTournamentId, sections }
   return (
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="font-heading text-3xl uppercase tracking-wide">Buvette</h1>
-        <div className="flex items-center gap-3">
-          {tournaments.length > 1 && (
-            <select
-              value={selectedTournamentId}
-              onChange={(e) => router.push(`/admin/buvette?tournamentId=${e.target.value}`)}
-              className="input text-sm py-1"
-            >
-              {tournaments.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            type="button"
-            onClick={() => setCreateSecOpen(true)}
-            className="btn-primary text-sm"
-            data-testid="new-section"
-          >
-            + Nouvelle section
-          </button>
+        <div>
+          <h1 className="font-heading text-3xl uppercase tracking-wide">Buvette</h1>
+          <p className="text-xs text-foreground-muted mt-1">
+            Menu global affiché pour tous les tournois
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setCreateSecOpen(true)}
+          className="btn-primary text-sm rounded-full"
+          data-testid="new-section"
+        >
+          + Nouvelle section
+        </button>
       </div>
 
       <div className="space-y-4">

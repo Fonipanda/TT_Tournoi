@@ -76,8 +76,9 @@ function RegisterForm() {
     setError(null);
     try {
       const res = await apiPost<{ user: { role: string } }>('/api/auth/register', form);
-      toast.success('Compte créé · Bienvenue !');
-      router.push(res.user.role === 'player' ? '/mon-espace' : '/');
+      toast.success('Compte créé · Sélectionne tes tableaux');
+      // Toujours rediriger vers /inscription pour que le joueur choisisse ses tableaux
+      router.push('/inscription');
       router.refresh();
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Erreur réseau';
