@@ -28,6 +28,15 @@ export default async function AdminDashboardPage() {
   const totalPlaces = brackets.reduce((sum, b) => sum + b.maxPlayers, 0);
   const tauxGlobal = totalPlaces > 0 ? Math.round((totalInscrits / totalPlaces) * 100) : 0;
 
+  // Sérialiser les Decimal éventuels
+  const bracketsView = brackets.map((b) => ({
+    id: b.id,
+    name: b.name,
+    category: b.category,
+    maxPlayers: b.maxPlayers,
+    inscrits: b._count.registrations,
+  }));
+
   const stats = [
     { label: 'Tournois', value: tournaments, href: '/admin/tournois' },
     { label: 'Tableaux actifs', value: brackets.length, href: '/admin/tableaux' },
@@ -85,8 +94,8 @@ export default async function AdminDashboardPage() {
           Détail par tableau
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {brackets.map((b) => {
-            const inscrits = b._count.registrations;
+          {bracketsView.map((b) => {
+            const inscrits = b.inscrits;
             const taux = b.maxPlayers > 0 ? Math.round((inscrits / b.maxPlayers) * 100) : 0;
             const full = inscrits >= b.maxPlayers;
             return (
@@ -127,7 +136,7 @@ export default async function AdminDashboardPage() {
               </Link>
             );
           })}
-          {brackets.length === 0 && (
+          {bracketsView.length === 0 && (
             <p className="col-span-full card text-center text-foreground-muted py-6">
               Aucun tableau actif.
             </p>

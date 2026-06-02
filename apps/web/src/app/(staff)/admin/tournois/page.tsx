@@ -9,9 +9,18 @@ export default async function AdminTournoisPage() {
     include: { _count: { select: { brackets: true } } },
   });
 
+  // Sérialiser dates et JSON pour Client Components
+  const serialized = tournaments.map((t) => ({
+    ...t,
+    startDate: t.startDate ? t.startDate.toISOString() : null,
+    endDate: t.endDate ? t.endDate.toISOString() : null,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+  }));
+
   return (
     <div data-testid="admin-tournois">
-      <TournamentList tournaments={tournaments} />
+      <TournamentList tournaments={serialized} />
     </div>
   );
 }

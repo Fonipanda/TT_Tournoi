@@ -1,5 +1,6 @@
 import { prisma } from '@tt/db';
 import { PlayerList } from '@/components/admin/PlayerList';
+import { serialize } from '@/lib/serialize';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,7 @@ export default async function AdminJoueursPage({ searchParams }: Props) {
 
   return (
     <div data-testid="admin-joueurs">
-      <PlayerList players={playersWithBrackets} />
+      <PlayerList players={serialize(playersWithBrackets)} />
     </div>
   );
 }

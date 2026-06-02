@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { prisma } from '@tt/db';
 import { HomeStatsButtons } from '@/components/HomeStatsButtons';
+import { serialize } from '@/lib/serialize';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,7 +97,7 @@ export default async function HomePage() {
             {tournament.date || 'Tournoi'}
           </p>
           <h1
-            className="font-heading text-4xl lg:text-6xl uppercase tracking-wide leading-none mb-4"
+            className="font-heading text-4xl lg:text-6xl uppercase tracking-wide leading-none mb-4 whitespace-pre-line"
             data-testid="tournament-name"
           >
             {tournament.name}
@@ -227,7 +228,7 @@ export default async function HomePage() {
 
       {/* Boutons popups */}
       <section className="flex flex-wrap gap-3 justify-center">
-        <HomeStatsButtons brackets={bracketStats} players={allPlayers} />
+        <HomeStatsButtons brackets={serialize(bracketStats)} players={serialize(allPlayers)} />
       </section>
 
       {/* Programme */}
