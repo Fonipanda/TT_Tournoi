@@ -53,15 +53,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     await requireRole(['admin']);
     const { id } = await params;
-    // Désactiver la salle ET supprimer ses tables (libère les numéros)
-    await prisma.$transaction([
-      prisma.tableModel.deleteMany({ where: { roomId: id } }),
-      prisma.room.update({ where: { id }, data: { isActive: false } }),
-    ]);
+    const hard = req.nextUrl.searchParams.get('hard') === 'true';
+    if (hard) {
+      await prisma.$transaction([
+        prisma.tableModel.deleteMany({ where: { roomId: id } }),
+        prisma.room.delete({ where: { id } }),
+      ]);
+    } else {
+      await prisma.$transaction([
+        prisma.tableModel.deleteMany({ where: { roomId: id } }),
+        prisma.room.update({ where: { id }, data: { isActive: false } }),
+      ]);
+    }
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

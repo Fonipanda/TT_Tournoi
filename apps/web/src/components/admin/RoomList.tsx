@@ -47,6 +47,7 @@ export function RoomList({
   const [createTableFor, setCreateTableFor] = useState<{ roomId: string; nextNumber: number } | null>(null);
   const [editingTable, setEditingTable] = useState<TableForm | null>(null);
   const [confirmDeleteRoom, setConfirmDeleteRoom] = useState<Room | null>(null);
+  const [confirmHardDeleteRoom, setConfirmHardDeleteRoom] = useState<Room | null>(null);
   const [confirmDeleteTable, setConfirmDeleteTable] = useState<Table | null>(null);
 
   const allTableNumbers = rooms.flatMap((r) => r.tables.map((t) => t.number));
@@ -72,6 +73,19 @@ export function RoomList({
       toast.error(e instanceof ApiError ? e.message : 'Erreur');
     } finally {
       setConfirmDeleteRoom(null);
+    }
+  };
+
+  const onHardDeleteRoom = async () => {
+    if (!confirmHardDeleteRoom) return;
+    try {
+      await apiDelete(`/api/rooms/${confirmHardDeleteRoom.id}?hard=true`);
+      toast.success('Salle supprimée définitivement');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setConfirmHardDeleteRoom(null);
     }
   };
 
@@ -178,20 +192,39 @@ export function RoomList({
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteRoom(r)}
-                      className="text-sm text-danger hover:underline px-2"
+                      className="text-sm text-warning hover:underline px-2"
+                      title="Désactivation (réversible)"
                     >
                       Désactiver
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmHardDeleteRoom(r)}
+                      className="text-sm text-danger hover:underline px-2"
+                      title="Suppression définitive"
+                    >
+                      🗑 Suppr.
+                    </button>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => reactivate(r)}
-                    className="btn-primary text-sm rounded-full"
-                    data-testid={`reactivate-${r.id}`}
-                  >
-                    ↻ Réactiver
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => reactivate(r)}
+                      className="btn-primary text-sm rounded-full"
+                      data-testid={`reactivate-${r.id}`}
+                    >
+                      ↻ Réactiver
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmHardDeleteRoom(r)}
+                      className="text-sm text-danger hover:underline px-2"
+                      title="Suppression définitive"
+                    >
+                      🗑 Suppr.
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -283,6 +316,23 @@ export function RoomList({
         danger
         onConfirm={onDeleteRoom}
         onCancel={() => setConfirmDeleteRoom(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmHardDeleteRoom}
+        title="⚠ Supprimer DÉFINITIVEMENT la salle ?"
+        message={
+          <>
+            <p>
+              La salle <strong>{confirmHardDeleteRoom?.name}</strong> et toutes ses tables
+              seront <strong className="text-danger">supprimées de la base</strong>.
+            </p>
+            <p className="mt-2 text-danger">Cette action est IRRÉVERSIBLE.</p>
+          </>
+        }
+        confirmLabel="Supprimer définitivement"
+        danger
+        onConfirm={onHardDeleteRoom}
+        onCancel={() => setConfirmHardDeleteRoom(null)}
       />
       <ConfirmDialog
         open={!!confirmDeleteTable}

@@ -153,6 +153,7 @@ export function UserList({ users }: { users: UserAccount[] }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserFormData | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserAccount | null>(null);
+  const [confirmHardDelete, setConfirmHardDelete] = useState<UserAccount | null>(null);
 
   const onDelete = async () => {
     if (!confirmDelete) return;
@@ -164,6 +165,19 @@ export function UserList({ users }: { users: UserAccount[] }) {
       toast.error(e instanceof ApiError ? e.message : 'Erreur');
     } finally {
       setConfirmDelete(null);
+    }
+  };
+
+  const onHardDelete = async () => {
+    if (!confirmHardDelete) return;
+    try {
+      await apiDelete(`/api/users/${confirmHardDelete.id}?hard=true`);
+      toast.success('Compte supprimé définitivement');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setConfirmHardDelete(null);
     }
   };
 
@@ -218,7 +232,7 @@ export function UserList({ users }: { users: UserAccount[] }) {
                     <span className="block text-xs text-warning mt-1">⚠ reset requis</span>
                   )}
                 </td>
-                <td className="py-2 text-right space-x-2">
+                <td className="py-2 text-right space-x-2 whitespace-nowrap">
                   <button
                     type="button"
                     onClick={() =>
@@ -239,9 +253,20 @@ export function UserList({ users }: { users: UserAccount[] }) {
                     <button
                       type="button"
                       onClick={() => setConfirmDelete(u)}
-                      className="text-danger text-xs hover:underline"
+                      className="text-warning text-xs hover:underline"
+                      title="Désactivation"
                     >
                       Désact.
+                    </button>
+                  )}
+                  {u.username !== 'admin' && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmHardDelete(u)}
+                      className="text-danger text-xs hover:underline"
+                      title="Suppression définitive"
+                    >
+                      🗑 Suppr.
                     </button>
                   )}
                 </td>
@@ -275,6 +300,23 @@ export function UserList({ users }: { users: UserAccount[] }) {
         danger
         onConfirm={onDelete}
         onCancel={() => setConfirmDelete(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmHardDelete}
+        title="⚠ Supprimer DÉFINITIVEMENT le compte ?"
+        message={
+          <>
+            <p>
+              Le compte <strong>{confirmHardDelete?.username}</strong> et toutes ses sessions
+              seront <strong className="text-danger">supprimés de la base</strong>.
+            </p>
+            <p className="mt-2 text-danger">Cette action est IRRÉVERSIBLE.</p>
+          </>
+        }
+        confirmLabel="Supprimer définitivement"
+        danger
+        onConfirm={onHardDelete}
+        onCancel={() => setConfirmHardDelete(null)}
       />
     </>
   );

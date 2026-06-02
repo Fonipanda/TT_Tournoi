@@ -53,11 +53,17 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     await requireRole(['admin']);
     const { id } = await params;
-    await prisma.player.update({ where: { id }, data: { isActive: false } });
+    const hard = req.nextUrl.searchParams.get('hard') === 'true';
+    if (hard) {
+      // Suppression physique : cascade sur registrations, notifications, matchs
+      await prisma.player.delete({ where: { id } });
+    } else {
+      await prisma.player.update({ where: { id }, data: { isActive: false } });
+    }
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

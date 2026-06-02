@@ -347,7 +347,7 @@ model MenuItem {
   name        String
   description String?
   price       Decimal @db.Decimal(6, 2)
-  imageUrl    String?
+  imageUrl    String? @db.Text
   isAvailable Boolean @default(true)
   order       Int     @default(0)
 

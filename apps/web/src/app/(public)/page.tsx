@@ -124,7 +124,6 @@ export default async function HomePage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
               </span>
-              <span className="font-bold tracking-wider">REC</span>
               <span>Voir le Live</span>
             </Link>
           </div>

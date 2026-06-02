@@ -85,12 +85,15 @@ export function TournamentFormModal({ open, onClose, initial }: Props) {
   return (
     <Modal open={open} onClose={onClose} title={isEdit ? 'Modifier le tournoi' : 'Nouveau tournoi'} size="lg">
       <form onSubmit={submit} className="space-y-4" data-testid="tournament-form">
-        <TextField
+        <TextAreaField
           label="Nom du tournoi"
           required
           value={form.name}
           onChange={(e) => update('name', e.target.value)}
           placeholder="Tournoi Open de Chelles 2026"
+          rows={2}
+          className="!min-h-[60px]"
+          helper="Peut tenir sur 2 lignes (titre long ou multiligne)"
         />
 
         <div className="grid grid-cols-2 gap-3">

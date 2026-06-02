@@ -48,11 +48,19 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     await requireRole(['admin']);
     const { id } = await params;
-    await prisma.userAccount.update({ where: { id }, data: { isActive: false } });
+    const hard = req.nextUrl.searchParams.get('hard') === 'true';
+    if (hard) {
+      await prisma.$transaction([
+        prisma.refreshToken.deleteMany({ where: { userId: id } }),
+        prisma.userAccount.delete({ where: { id } }),
+      ]);
+    } else {
+      await prisma.userAccount.update({ where: { id }, data: { isActive: false } });
+    }
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

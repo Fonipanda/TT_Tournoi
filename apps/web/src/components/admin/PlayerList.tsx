@@ -27,6 +27,7 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<PlayerForm | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Player | null>(null);
+  const [confirmHardDelete, setConfirmHardDelete] = useState<Player | null>(null);
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
 
   const onSearchSubmit = (e: React.FormEvent) => {
@@ -62,6 +63,19 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
       toast.error(e instanceof ApiError ? e.message : 'Erreur');
     } finally {
       setConfirmDelete(null);
+    }
+  };
+
+  const onHardDelete = async () => {
+    if (!confirmHardDelete) return;
+    try {
+      await apiDelete(`/api/players/${confirmHardDelete.id}?hard=true`);
+      toast.success('Joueur supprimé définitivement');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setConfirmHardDelete(null);
     }
   };
 
@@ -155,7 +169,7 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
                     <span className="text-foreground-subtle">—</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right space-x-2">
+                <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
                   <button
                     type="button"
                     onClick={() => onEdit(p)}
@@ -166,9 +180,18 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
                   <button
                     type="button"
                     onClick={() => setConfirmDelete(p)}
-                    className="text-danger text-xs hover:underline font-medium"
+                    className="text-warning text-xs hover:underline font-medium"
+                    title="Désactivation (réversible)"
                   >
                     Désact.
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmHardDelete(p)}
+                    className="text-danger text-xs hover:underline font-medium"
+                    title="Suppression définitive"
+                  >
+                    🗑 Suppr.
                   </button>
                 </td>
               </tr>
@@ -194,13 +217,33 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
         message={
           <>
             Le joueur <strong>{confirmDelete?.lastName} {confirmDelete?.firstName}</strong> sera
-            désactivé (soft-delete : ses données et historiques sont conservés).
+            désactivé (soft-delete : ses données et historiques sont conservés). Réversible.
           </>
         }
         confirmLabel="Désactiver"
         danger
         onConfirm={onDelete}
         onCancel={() => setConfirmDelete(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmHardDelete}
+        title="⚠ Supprimer DÉFINITIVEMENT ?"
+        message={
+          <>
+            <p>
+              <strong>
+                {confirmHardDelete?.lastName} {confirmHardDelete?.firstName}
+              </strong>{' '}
+              et toutes ses inscriptions, notifications, matchs seront{' '}
+              <strong className="text-danger">supprimés irréversiblement</strong>.
+            </p>
+            <p className="mt-2 text-danger">Cette action est IRRÉVERSIBLE.</p>
+          </>
+        }
+        confirmLabel="Supprimer définitivement"
+        danger
+        onConfirm={onHardDelete}
+        onCancel={() => setConfirmHardDelete(null)}
       />
     </>
   );
