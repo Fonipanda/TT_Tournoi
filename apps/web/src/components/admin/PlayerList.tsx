@@ -19,9 +19,20 @@ interface Player {
   phone: string | null;
   isActive: boolean;
   bracketNames?: string[];
+  bracketIds?: string[];
 }
 
-export function PlayerList({ players: initial }: { players: Player[] }) {
+interface BracketOption {
+  id: string;
+  name: string;
+}
+
+interface PlayerListProps {
+  players: Player[];
+  allBrackets?: BracketOption[];
+}
+
+export function PlayerList({ players: initial, allBrackets = [] }: PlayerListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [createOpen, setCreateOpen] = useState(false);
@@ -31,6 +42,7 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [editingBrackets, setEditingBrackets] = useState<{ id: string; selected: string[] } | null>(null);
 
   const startInlineEdit = (playerId: string, field: string, currentValue: string) => {
     setEditingCell({ id: playerId, field });
@@ -244,21 +256,75 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
                   p.email || '',
                   'px-3 py-2 text-xs text-foreground-muted truncate max-w-[200px] border-r border-border',
                 )}
-                <td className="px-3 py-2 text-xs border-r border-border">
-                  {p.bracketNames && p.bracketNames.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {p.bracketNames.map((b, i) => (
-                        <span
-                          key={i}
-                          className="bg-primary-soft text-primary px-1.5 py-0.5 text-[10px] font-medium rounded-full"
-                        >
-                          {b}
-                        </span>
+                <td className="px-3 py-2 text-xs border-r border-border relative">
+                  {editingBrackets?.id === p.id ? (
+                    <div className="absolute top-0 left-0 z-20 bg-bg border border-border rounded-lg shadow-lg p-2 min-w-[180px]">
+                      {allBrackets.map((b) => (
+                        <label key={b.id} className="flex items-center gap-1.5 py-0.5 text-xs cursor-pointer hover:bg-bg-alt px-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={editingBrackets.selected.includes(b.id)}
+                            onChange={(e) => {
+                              setEditingBrackets((prev) => {
+                                if (!prev) return prev;
+                                const sel = e.target.checked
+                                  ? [...prev.selected, b.id]
+                                  : prev.selected.filter((x) => x !== b.id);
+                                return { ...prev, selected: sel };
+                              });
+                            }}
+                            className="accent-primary"
+                          />
+                          {b.name}
+                        </label>
                       ))}
+                      <div className="flex gap-1 mt-2 border-t border-border pt-2">
+                        <button
+                          type="button"
+                          className="btn-primary text-[10px] px-2 py-0.5 flex-1"
+                          onClick={async () => {
+                            try {
+                              await apiPatch(`/api/players/${p.id}`, { bracketIds: editingBrackets.selected });
+                              router.refresh();
+                              toast.success('Tableaux mis à jour');
+                            } catch (e) {
+                              toast.error(e instanceof ApiError ? e.message : 'Erreur');
+                            }
+                            setEditingBrackets(null);
+                          }}
+                        >
+                          OK
+                        </button>
+                        <button
+                          type="button"
+                          className="text-[10px] px-2 py-0.5 border border-border rounded"
+                          onClick={() => setEditingBrackets(null)}
+                        >
+                          Annuler
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <span className="text-foreground-subtle">—</span>
-                  )}
+                  ) : null}
+                  <div
+                    className="cursor-pointer hover:bg-primary-soft/20 rounded p-0.5 min-h-[20px]"
+                    onClick={() => setEditingBrackets({ id: p.id, selected: p.bracketIds ?? [] })}
+                    title="Cliquer pour éditer les tableaux"
+                  >
+                    {p.bracketNames && p.bracketNames.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {p.bracketNames.map((b, i) => (
+                          <span
+                            key={i}
+                            className="bg-primary-soft text-primary px-1.5 py-0.5 text-[10px] font-medium rounded-full"
+                          >
+                            {b}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-foreground-subtle">—</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
                   <button

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { PlayerRegistrationModal } from './PlayerRegistrationModal';
+import { PoolSizeModal } from './PoolSizeModal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
 import { apiPatch, apiDelete, apiPost, ApiError } from '@/lib/api-client';
@@ -39,7 +40,9 @@ interface PoolMatch {
   roundNumber: number | null;
   status: string;
   player1: MatchPlayer | null;
+  player1Id: string | null;
   player2: MatchPlayer | null;
+  player2Id: string | null;
   winnerId: string | null;
   setsP1: number | null;
   setsP2: number | null;
@@ -59,6 +62,7 @@ interface Props {
   registrations: Registration[];
   matches?: PoolMatch[];
   availableTables?: AvailableTable[];
+  busyPlayerIds?: string[];
 }
 
 export function BracketRegistrationsPage({
@@ -67,15 +71,23 @@ export function BracketRegistrationsPage({
   registrations,
   matches = [],
   availableTables = [],
+  busyPlayerIds = [],
 }: Props) {
   const router = useRouter();
   const [registerOpen, setRegisterOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<Registration | null>(null);
-  const [working, setWorking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [assigningTable, setAssigningTable] = useState<string | null>(null);
+  const [assigningPool, setAssigningPool] = useState<number | null>(null);
+  const [poolSizeModalOpen, setPoolSizeModalOpen] = useState(false);
+  const [genElim, setGenElim] = useState(false);
 
   const alreadyRegisteredIds = new Set(registrations.map((r) => r.player.id));
+  const busySet = new Set(busyPlayerIds);
+
+  // Stats
+  const paid = registrations.filter((r) => r.paymentStatus === 'paid').length;
+  const present = registrations.filter((r) => r.checkinStatus === 'P').length;
+  const allPresent = registrations.every((r) => r.checkinStatus === 'P');
 
   const togglePayment = async (r: Registration) => {
     setBusy(`pay-${r.id}`);
@@ -116,8 +128,45 @@ export function BracketRegistrationsPage({
     }
   };
 
-  const assignTable = async (matchId: string, tableId: string) => {
-    setAssigningTable(matchId);
+  // Assign a table to an entire pool (all pending matches of that pool)
+  const assignPoolTable = async (poolNumber: number, tableId: string) => {
+    setAssigningPool(poolNumber);
+    try {
+      const poolM = poolMatches.filter(
+        (m) => m.poolNumber === poolNumber && m.status !== 'finished' && !m.tableId,
+      );
+      // Check if any player in this pool is already busy
+      const poolPlayerIds = new Set(
+        poolM.flatMap((m) => [m.player1Id, m.player2Id].filter(Boolean) as string[]),
+      );
+      const conflicting = [...poolPlayerIds].filter((pid) => busySet.has(pid));
+      if (conflicting.length > 0) {
+        toast.error('Un joueur de cette poule est déjà en match sur une autre table');
+        return;
+      }
+      // Assign to all pending matches
+      for (const m of poolM) {
+        await apiPost(`/api/matches/${m.id}/assign-table`, { tableId });
+      }
+      toast.success(`Table attribuée à la poule ${poolNumber}`);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setAssigningPool(null);
+    }
+  };
+
+  // Assign table to a single elimination match
+  const assignMatchTable = async (matchId: string, tableId: string, match: PoolMatch) => {
+    // Check busy players
+    const playerIds = [match.player1Id, match.player2Id].filter(Boolean) as string[];
+    const conflicting = playerIds.filter((pid) => busySet.has(pid));
+    if (conflicting.length > 0) {
+      toast.error('Un joueur de ce match est déjà en jeu sur une autre table');
+      return;
+    }
+    setBusy(`table-${matchId}`);
     try {
       await apiPost(`/api/matches/${matchId}/assign-table`, { tableId });
       toast.success('Table attribuée');
@@ -125,13 +174,24 @@ export function BracketRegistrationsPage({
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Erreur');
     } finally {
-      setAssigningTable(null);
+      setBusy(null);
     }
   };
 
-  // Stats paiement
-  const paid = registrations.filter((r) => r.paymentStatus === 'paid').length;
-  const present = registrations.filter((r) => r.checkinStatus === 'P').length;
+  const generateElimination = async () => {
+    setGenElim(true);
+    try {
+      const r = await apiPost<{ matchesCreated: number }>(
+        `/api/brackets/${bracketId}/generate-elimination`,
+      );
+      toast.success(`${r.matchesCreated} matches d'élimination créés`);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setGenElim(false);
+    }
+  };
 
   // Group matches by pool
   const poolMatches = matches.filter((m) => m.poolNumber != null);
@@ -162,6 +222,24 @@ export function BracketRegistrationsPage({
             className="btn-primary text-sm"
           >
             + Inscrire un joueur
+          </button>
+          <button
+            type="button"
+            onClick={() => setPoolSizeModalOpen(true)}
+            disabled={present < 2}
+            className="btn-secondary text-sm disabled:opacity-50"
+            title={present < 2 ? 'Tous les joueurs doivent être marqués Présent' : 'Générer poules'}
+          >
+            Générer poules
+          </button>
+          <button
+            type="button"
+            onClick={generateElimination}
+            disabled={genElim || poolMatches.length === 0}
+            className="btn-secondary text-sm disabled:opacity-50"
+            title="Générer le tableau d'élimination depuis les résultats des poules"
+          >
+            {genElim ? '…' : 'Générer élimination'}
           </button>
           <Link href={`/progression/${bracketId}`} className="btn-secondary text-sm">
             Voir progression
@@ -248,70 +326,78 @@ export function BracketRegistrationsPage({
         </table>
       </div>
 
-      {/* Pool matches with table assignment */}
+      {/* Pool matches with table assignment per POOL */}
       {poolsGrouped.size > 0 && (
         <div className="space-y-4">
           <h2 className="font-heading text-xl uppercase tracking-wide">Matches de poule</h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[...poolsGrouped.entries()].map(([poolNum, pMatches]) => (
-              <div key={poolNum} className="card rounded-xl p-4">
-                <h3 className="font-heading text-sm uppercase tracking-wider mb-3 text-primary">
-                  Poule {poolNum}
-                </h3>
-                <div className="space-y-2">
-                  {pMatches.map((m) => (
-                    <div
-                      key={m.id}
-                      className={`flex items-center gap-2 text-xs p-2 rounded-lg ${
-                        m.status === 'finished'
-                          ? 'bg-success-soft/30'
-                          : m.status === 'in_progress'
-                            ? 'bg-warning-soft/30'
-                            : 'bg-bg-alt'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className={m.winnerId === m.player1?.id ? 'font-bold' : ''}>
-                          {m.player1?.lastName ?? '?'}
-                        </span>
-                        <span className="text-foreground-muted mx-1">vs</span>
-                        <span className={m.winnerId === m.player2?.id ? 'font-bold' : ''}>
-                          {m.player2?.lastName ?? '?'}
-                        </span>
-                        {m.setsP1 != null && m.setsP2 != null && (
-                          <span className="text-foreground-muted ml-1">
-                            ({m.setsP1}-{m.setsP2})
+            {[...poolsGrouped.entries()].map(([poolNum, pMatches]) => {
+              const poolHasTable = pMatches.some((m) => m.table != null);
+              const poolAllFinished = pMatches.every((m) => m.status === 'finished');
+              const assignedTable = pMatches.find((m) => m.table)?.table;
+              return (
+                <div key={poolNum} className="card rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-heading text-sm uppercase tracking-wider text-primary">
+                      Poule {poolNum}
+                    </h3>
+                    {/* Pool-level table assignment */}
+                    {poolHasTable && assignedTable ? (
+                      <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded font-medium">
+                        Table {assignedTable.number}
+                      </span>
+                    ) : !poolAllFinished && availableTables.length > 0 ? (
+                      <select
+                        className="text-xs border border-border rounded px-1.5 py-0.5 bg-bg"
+                        value=""
+                        disabled={assigningPool === poolNum}
+                        onChange={(e) => {
+                          if (e.target.value) assignPoolTable(poolNum, e.target.value);
+                        }}
+                      >
+                        <option value="">Attrib. table…</option>
+                        {availableTables.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            T{t.number} ({t.room.name})
+                          </option>
+                        ))}
+                      </select>
+                    ) : poolAllFinished ? (
+                      <span className="text-xs text-success font-medium">Terminée</span>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    {pMatches.map((m) => (
+                      <div
+                        key={m.id}
+                        className={`flex items-center gap-2 text-xs p-2 rounded-lg ${
+                          m.status === 'finished'
+                            ? 'bg-success-soft/30'
+                            : m.status === 'in_progress'
+                              ? 'bg-warning-soft/30'
+                              : 'bg-bg-alt'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className={m.winnerId === m.player1?.id ? 'font-bold' : ''}>
+                            {m.player1?.lastName ?? '?'}
                           </span>
-                        )}
-                      </div>
-                      <div className="shrink-0">
-                        {m.table ? (
-                          <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded">
-                            T{m.table.number}
+                          <span className="text-foreground-muted mx-1">vs</span>
+                          <span className={m.winnerId === m.player2?.id ? 'font-bold' : ''}>
+                            {m.player2?.lastName ?? '?'}
                           </span>
-                        ) : m.status !== 'finished' && availableTables.length > 0 ? (
-                          <select
-                            className="text-xs border border-border rounded px-1 py-0.5 bg-bg"
-                            value=""
-                            disabled={assigningTable === m.id}
-                            onChange={(e) => {
-                              if (e.target.value) assignTable(m.id, e.target.value);
-                            }}
-                          >
-                            <option value="">Table…</option>
-                            {availableTables.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                T{t.number} ({t.room.name})
-                              </option>
-                            ))}
-                          </select>
-                        ) : null}
+                          {m.setsP1 != null && m.setsP2 != null && (
+                            <span className="text-foreground-muted ml-1">
+                              ({m.setsP1}-{m.setsP2})
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -353,9 +439,9 @@ export function BracketRegistrationsPage({
                         <select
                           className="text-xs border border-border rounded px-1 py-0.5 bg-bg"
                           value=""
-                          disabled={assigningTable === m.id}
+                          disabled={busy === `table-${m.id}`}
                           onChange={(e) => {
-                            if (e.target.value) assignTable(m.id, e.target.value);
+                            if (e.target.value) assignMatchTable(m.id, e.target.value, m);
                           }}
                         >
                           <option value="">Table…</option>
@@ -377,6 +463,12 @@ export function BracketRegistrationsPage({
         </div>
       )}
 
+      {poolSizeModalOpen && (
+        <PoolSizeModal
+          bracket={{ id: bracketId, name: bracketName, _count: { registrations: present } }}
+          onClose={() => setPoolSizeModalOpen(false)}
+        />
+      )}
       <PlayerRegistrationModal
         open={registerOpen}
         onClose={() => setRegisterOpen(false)}

@@ -26,12 +26,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
 const UpdateSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  licenseNumber: z.string().optional(),
   ranking: z.string().optional(),
   points: z.number().optional(),
   club: z.string().optional(),
   email: z.string().email().or(z.literal('')).optional(),
   phone: z.string().optional(),
   isActive: z.boolean().optional(),
+  bracketIds: z.array(z.string()).optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -43,7 +45,44 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       throw new HttpError(403, 'Modification interdite');
     }
     const body = UpdateSchema.parse(await req.json());
-    const updated = await prisma.player.update({ where: { id }, data: body });
+    const { bracketIds, ...playerData } = body;
+
+    // Update player fields
+    const updated = await prisma.player.update({ where: { id }, data: playerData });
+
+    // If bracketIds provided, sync registrations (admin only)
+    if (bracketIds !== undefined && me.role === 'admin') {
+      // Get current active registrations
+      const existing = await prisma.playerBracketRegistration.findMany({
+        where: { playerId: id, isActive: true },
+        select: { id: true, bracketId: true },
+      });
+      const existingBracketIds = existing.map((r: { id: string; bracketId: string }) => r.bracketId);
+
+      // Add new registrations
+      const toAdd = bracketIds.filter((bid) => !existingBracketIds.includes(bid));
+      for (const bracketId of toAdd) {
+        await prisma.playerBracketRegistration.create({
+          data: {
+            playerId: id,
+            bracketId,
+            paymentStatus: 'pending',
+            isActive: true,
+            qrToken: `${id}-${bracketId}-${Date.now().toString(36)}`,
+          },
+        });
+      }
+
+      // Deactivate removed registrations
+      const toRemove = existing.filter((r: { id: string; bracketId: string }) => !bracketIds.includes(r.bracketId));
+      for (const reg of toRemove) {
+        await prisma.playerBracketRegistration.update({
+          where: { id: reg.id },
+          data: { isActive: false },
+        });
+      }
+    }
+
     return NextResponse.json(updated);
   } catch (e) {
     if (e instanceof z.ZodError) {

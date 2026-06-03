@@ -39,13 +39,23 @@ export default async function AdminBracketDetail({ params }: Props) {
     select: { id: true, number: true, room: { select: { name: true } } },
   });
 
+  // Get players currently in_progress on any table (to prevent double assignment)
+  const busyPlayers = await prisma.match.findMany({
+    where: { status: 'in_progress', tableId: { not: null } },
+    select: { player1Id: true, player2Id: true },
+  });
+  const busyPlayerIds = new Set(
+    busyPlayers.flatMap((m) => [m.player1Id, m.player2Id].filter(Boolean) as string[]),
+  );
+
   return (
     <BracketRegistrationsPage
       bracketId={bracket.id}
       bracketName={bracket.name}
-      registrations={bracket.registrations}
+      registrations={serialize(bracket.registrations)}
       matches={serialize(bracket.matches)}
       availableTables={serialize(availableTables)}
+      busyPlayerIds={[...busyPlayerIds]}
     />
   );
 }

@@ -30,9 +30,16 @@ export default async function AdminJoueursPage({ searchParams }: Props) {
     include: {
       registrations: {
         where: { isActive: true },
-        include: { bracket: { select: { name: true } } },
+        include: { bracket: { select: { id: true, name: true } } },
       },
     },
+  });
+
+  // Get all active brackets for the editable Tableaux column
+  const allBrackets = await prisma.bracket.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
   });
 
   // Mapper avec les noms de tableaux
@@ -48,11 +55,15 @@ export default async function AdminJoueursPage({ searchParams }: Props) {
     phone: p.phone,
     isActive: p.isActive,
     bracketNames: p.registrations.map((r) => r.bracket.name),
+    bracketIds: p.registrations.map((r) => r.bracket.id),
   }));
 
   return (
     <div data-testid="admin-joueurs">
-      <PlayerList players={serialize(playersWithBrackets)} />
+      <PlayerList
+        players={serialize(playersWithBrackets)}
+        allBrackets={serialize(allBrackets)}
+      />
     </div>
   );
 }
