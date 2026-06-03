@@ -208,9 +208,7 @@ export default function JugeArbitrePage() {
   const [matches, setMatches] = useState<JaMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
-  const [online, setOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  );
+  const [online, setOnline] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
@@ -228,6 +226,7 @@ export default function JugeArbitrePage() {
   }, []);
 
   useEffect(() => {
+    setOnline(navigator.onLine);
     refresh();
     const id = setInterval(refresh, 15_000);
     const onOnline = () => { setOnline(true); refresh(); };
