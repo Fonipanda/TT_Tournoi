@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { PlayerFormModal, type PlayerForm } from './PlayerFormModal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
-import { apiDelete, ApiError } from '@/lib/api-client';
+import { apiDelete, apiPatch, ApiError } from '@/lib/api-client';
 
 interface Player {
   id: string;
@@ -29,6 +29,77 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
   const [confirmDelete, setConfirmDelete] = useState<Player | null>(null);
   const [confirmHardDelete, setConfirmHardDelete] = useState<Player | null>(null);
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
+  const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const startInlineEdit = (playerId: string, field: string, currentValue: string) => {
+    setEditingCell({ id: playerId, field });
+    setEditValue(currentValue);
+  };
+
+  const commitInlineEdit = async () => {
+    if (!editingCell) return;
+    const { id, field } = editingCell;
+    const player = initial.find((p) => p.id === id);
+    if (!player) return;
+    // Only commit if value changed
+    const oldValue = String((player as unknown as Record<string, unknown>)[field] ?? '');
+    if (editValue === oldValue) {
+      setEditingCell(null);
+      return;
+    }
+    try {
+      const patch: Record<string, unknown> = {};
+      if (field === 'points') patch[field] = Number(editValue) || 0;
+      else patch[field] = editValue;
+      await apiPatch(`/api/players/${id}`, patch);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setEditingCell(null);
+    }
+  };
+
+  const cancelInlineEdit = () => setEditingCell(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') commitInlineEdit();
+    else if (e.key === 'Escape') cancelInlineEdit();
+  };
+
+  const renderEditableCell = (
+    player: Player,
+    field: keyof Player,
+    value: string,
+    className: string,
+  ) => {
+    const isEditing = editingCell?.id === player.id && editingCell?.field === field;
+    if (isEditing) {
+      return (
+        <td className={className}>
+          <input
+            autoFocus
+            type={field === 'points' ? 'number' : 'text'}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={commitInlineEdit}
+            onKeyDown={handleKeyDown}
+            className="w-full bg-bg border border-primary rounded px-1 py-0.5 text-sm outline-none"
+          />
+        </td>
+      );
+    }
+    return (
+      <td
+        className={`${className} cursor-pointer hover:bg-primary-soft/20`}
+        onDoubleClick={() => startInlineEdit(player.id, field, value)}
+        title="Double-clic pour éditer"
+      >
+        {value || '—'}
+      </td>
+    );
+  };
 
   const onSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,28 +202,48 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
                   idx % 2 === 0 ? 'bg-surface' : 'bg-bg-alt/50'
                 }`}
               >
-                <td className="px-3 py-2 font-mono tabular text-xs border-r border-border">
-                  {p.licenseNumber ?? '—'}
-                </td>
-                <td className="px-3 py-2 font-medium uppercase border-r border-border">
-                  {p.lastName}
-                </td>
-                <td className="px-3 py-2 border-r border-border">{p.firstName}</td>
-                <td className="px-3 py-2 text-foreground-muted border-r border-border">
-                  {p.club ?? '—'}
-                </td>
-                <td className="px-3 py-2 text-right tabular font-semibold text-primary border-r border-border">
-                  {Math.round(p.points)}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-foreground-muted border-r border-border">
-                  {p.phone ?? '—'}
-                </td>
-                <td
-                  className="px-3 py-2 text-xs text-foreground-muted truncate max-w-[200px] border-r border-border"
-                  title={p.email}
-                >
-                  {p.email || '—'}
-                </td>
+                {renderEditableCell(
+                  p,
+                  'licenseNumber',
+                  p.licenseNumber ?? '',
+                  'px-3 py-2 font-mono tabular text-xs border-r border-border',
+                )}
+                {renderEditableCell(
+                  p,
+                  'lastName',
+                  p.lastName,
+                  'px-3 py-2 font-medium uppercase border-r border-border',
+                )}
+                {renderEditableCell(
+                  p,
+                  'firstName',
+                  p.firstName,
+                  'px-3 py-2 border-r border-border',
+                )}
+                {renderEditableCell(
+                  p,
+                  'club',
+                  p.club ?? '',
+                  'px-3 py-2 text-foreground-muted border-r border-border',
+                )}
+                {renderEditableCell(
+                  p,
+                  'points',
+                  String(Math.round(p.points)),
+                  'px-3 py-2 text-right tabular font-semibold text-primary border-r border-border',
+                )}
+                {renderEditableCell(
+                  p,
+                  'phone',
+                  p.phone ?? '',
+                  'px-3 py-2 font-mono text-xs text-foreground-muted border-r border-border',
+                )}
+                {renderEditableCell(
+                  p,
+                  'email',
+                  p.email || '',
+                  'px-3 py-2 text-xs text-foreground-muted truncate max-w-[200px] border-r border-border',
+                )}
                 <td className="px-3 py-2 text-xs border-r border-border">
                   {p.bracketNames && p.bracketNames.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
@@ -191,7 +282,7 @@ export function PlayerList({ players: initial }: { players: Player[] }) {
                     className="text-danger text-xs hover:underline font-medium"
                     title="Suppression définitive"
                   >
-                    🗑 Suppr.
+                    Suppr.
                   </button>
                 </td>
               </tr>

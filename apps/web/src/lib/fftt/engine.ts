@@ -344,11 +344,13 @@ export interface GenerateEliminationResult {
 }
 
 /**
- * Génère les poules pour un bracket : répartit les joueurs en poules de 3-4 joueurs
+ * Génère les poules pour un bracket : répartit les joueurs en poules de N joueurs
  * en équilibrant les niveaux (snake seeding), puis crée les matches dans l'ordre
  * I.301 et libellés.
+ * @param bracketId - ID du bracket
+ * @param requestedPoolSize - Taille de poule souhaitée (2, 3, 4 ou 5). Par défaut auto (4 ou 3).
  */
-export async function generatePools(bracketId: string): Promise<GeneratePoolsResult> {
+export async function generatePools(bracketId: string, requestedPoolSize?: number): Promise<GeneratePoolsResult> {
   const bracket = await prisma.bracket.findUnique({
     where: { id: bracketId },
     include: {
@@ -367,16 +369,18 @@ export async function generatePools(bracketId: string): Promise<GeneratePoolsRes
     .filter(Boolean);
   const eligible = players.filter((p) => !byeLicences.includes(p.licenseNumber ?? ''));
 
-  if (eligible.length < 3) {
-    throw new Error('Au moins 3 joueurs nécessaires pour générer les poules');
+  if (eligible.length < 2) {
+    throw new Error('Au moins 2 joueurs nécessaires pour générer les poules');
   }
 
   // Tri par points décroissants pour le snake seeding
   const sorted = [...eligible].sort((a, b) => b.points - a.points);
 
-  // Détermine la taille de poule (priorité 4, sinon 3, max 6)
+  // Détermine la taille de poule
   const totalPlayers = sorted.length;
-  const poolSize = totalPlayers % 4 === 0 ? 4 : totalPlayers % 3 === 0 ? 3 : 4;
+  const poolSize = requestedPoolSize && requestedPoolSize >= 2 && requestedPoolSize <= 5
+    ? requestedPoolSize
+    : totalPlayers % 4 === 0 ? 4 : totalPlayers % 3 === 0 ? 3 : 4;
   const numPools = Math.ceil(totalPlayers / poolSize);
 
   // Snake seeding : on alterne sens de remplissage à chaque "tour"

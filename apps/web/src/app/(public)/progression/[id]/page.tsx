@@ -1,6 +1,7 @@
 import { prisma } from '@tt/db';
 import Link from 'next/link';
 import { BracketTree, type BracketTreeMatch } from '@/components/BracketTree';
+import { serialize } from '@/lib/serialize';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +22,10 @@ export default async function ProgressionDetailPage({ params }: Params) {
 
   if (!bracket) {
     return (
-      <div className="card text-center py-12">
+      <div className="card text-center py-12 rounded-2xl">
         <p>Tableau introuvable.</p>
         <Link href="/progression" className="text-primary underline mt-4 inline-block">
-          ← Retour
+          &larr; Retour
         </Link>
       </div>
     );
@@ -40,58 +41,113 @@ export default async function ProgressionDetailPage({ params }: Params) {
     pools.set(m.poolNumber, arr);
   }
 
-  return (
-    <div data-testid="bracket-page">
-      <Link href="/progression" className="text-sm text-primary mb-4 inline-block">
-        ← Tous les tableaux
-      </Link>
-      <h1 className="font-heading text-3xl uppercase tracking-wide">
-        {bracket.name}
-        <span className="text-foreground-muted text-base ml-3 font-body normal-case">
-          · {bracket.category}
-        </span>
-      </h1>
+  // Compute pool standings
+  function computePoolStandings(matches: typeof poolMatches) {
+    const stats = new Map<string, { player: typeof matches[0]['player1']; w: number; l: number; setsW: number; setsL: number }>();
+    for (const m of matches) {
+      if (m.player1Id && m.player1) {
+        if (!stats.has(m.player1Id)) stats.set(m.player1Id, { player: m.player1, w: 0, l: 0, setsW: 0, setsL: 0 });
+      }
+      if (m.player2Id && m.player2) {
+        if (!stats.has(m.player2Id)) stats.set(m.player2Id, { player: m.player2, w: 0, l: 0, setsW: 0, setsL: 0 });
+      }
+      if (m.status === 'finished' && m.winnerId) {
+        const loserId = m.winnerId === m.player1Id ? m.player2Id : m.player1Id;
+        const ws = stats.get(m.winnerId);
+        const ls = loserId ? stats.get(loserId) : undefined;
+        if (ws) { ws.w++; ws.setsW += m.setsP1 > m.setsP2 ? m.setsP1 : m.setsP2; ws.setsL += m.setsP1 > m.setsP2 ? m.setsP2 : m.setsP1; }
+        if (ls) { ls.l++; ls.setsW += m.setsP1 < m.setsP2 ? m.setsP1 : m.setsP2; ls.setsL += m.setsP1 < m.setsP2 ? m.setsP2 : m.setsP1; }
+      }
+    }
+    return [...stats.values()].sort((a, b) => {
+      if (b.w !== a.w) return b.w - a.w;
+      return (b.setsW - b.setsL) - (a.setsW - a.setsL);
+    });
+  }
 
+  return (
+    <div data-testid="bracket-page" className="max-w-7xl mx-auto">
+      <Link href="/progression" className="text-sm text-primary mb-4 inline-block hover:underline">
+        &larr; Tous les tableaux
+      </Link>
+      <h1 className="font-heading text-3xl uppercase tracking-wide mb-1">
+        {bracket.name}
+      </h1>
+      <p className="text-foreground-muted text-sm mb-8">
+        {bracket.category} &middot;{' '}
+        {bracket.matches.filter((m) => m.status === 'finished').length}/{bracket.matches.length} matches terminés
+      </p>
+
+      {/* Poules */}
       {pools.size > 0 && (
-        <section className="mt-8">
-          <h2 className="font-heading text-2xl uppercase tracking-wide mb-4">Poules</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {[...pools.entries()].sort((a, b) => a[0] - b[0]).map(([num, matches]) => (
-              <div key={num} className="card" data-testid={`pool-${num}`}>
-                <h3 className="font-heading text-xl uppercase tracking-wide mb-3">
-                  Poule {num}
-                </h3>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {matches.map((m) => (
-                      <tr key={m.id} className="border-b border-border last:border-0">
-                        <td className="py-2 truncate">
-                          {m.player1
-                            ? `${m.player1.lastName} ${m.player1.firstName}`
-                            : '—'}
-                        </td>
-                        <td className="py-2 px-2 font-mono tabular text-center">
-                          {m.status === 'finished' ? `${m.setsP1}-${m.setsP2}` : '—'}
-                        </td>
-                        <td className="py-2 truncate">
-                          {m.player2
-                            ? `${m.player2.lastName} ${m.player2.firstName}`
-                            : '—'}
-                        </td>
+        <section className="mb-10">
+          <h2 className="font-heading text-xl uppercase tracking-wide mb-4">Poules</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {[...pools.entries()].sort((a, b) => a[0] - b[0]).map(([num, matches]) => {
+              const standings = computePoolStandings(matches);
+              return (
+                <div key={num} className="card rounded-2xl" data-testid={`pool-${num}`}>
+                  <h3 className="font-heading text-lg uppercase tracking-wide mb-3 text-primary">
+                    Poule {num}
+                  </h3>
+                  {/* Classement */}
+                  <table className="w-full text-xs mb-3">
+                    <thead>
+                      <tr className="border-b border-border text-foreground-muted">
+                        <th className="text-left py-1">#</th>
+                        <th className="text-left py-1">Joueur</th>
+                        <th className="text-center py-1">V</th>
+                        <th className="text-center py-1">D</th>
+                        <th className="text-center py-1">Sets</th>
                       </tr>
+                    </thead>
+                    <tbody>
+                      {standings.map((s, idx) => (
+                        <tr key={s.player?.id ?? idx} className="border-b border-border/50">
+                          <td className="py-1 font-medium">{idx + 1}</td>
+                          <td className="py-1 truncate max-w-[120px]">
+                            {s.player?.lastName} {s.player?.firstName?.[0]}.
+                          </td>
+                          <td className="py-1 text-center font-medium text-success">{s.w}</td>
+                          <td className="py-1 text-center text-danger">{s.l}</td>
+                          <td className="py-1 text-center tabular">{s.setsW}-{s.setsL}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {/* Matches */}
+                  <div className="space-y-1">
+                    {matches.map((m) => (
+                      <div
+                        key={m.id}
+                        className={`flex items-center text-xs p-1.5 rounded ${
+                          m.status === 'finished' ? 'bg-bg-alt/50' : ''
+                        }`}
+                      >
+                        <span className={`flex-1 truncate ${m.winnerId === m.player1Id ? 'font-bold' : ''}`}>
+                          {m.player1?.lastName ?? '?'}
+                        </span>
+                        <span className="mx-2 font-mono tabular">
+                          {m.status === 'finished' ? `${m.setsP1}-${m.setsP2}` : 'vs'}
+                        </span>
+                        <span className={`flex-1 truncate text-right ${m.winnerId === m.player2Id ? 'font-bold' : ''}`}>
+                          {m.player2?.lastName ?? '?'}
+                        </span>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
 
+      {/* Elimination bracket */}
       {elimMatches.length > 0 && (
-        <section className="mt-8">
-          <h2 className="font-heading text-2xl uppercase tracking-wide mb-4">
-            Tableau d'élimination
+        <section>
+          <h2 className="font-heading text-xl uppercase tracking-wide mb-4">
+            Tableau d&apos;élimination
           </h2>
           <BracketTree
             matches={elimMatches.map<BracketTreeMatch>((m) => ({

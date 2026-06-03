@@ -2,8 +2,7 @@
  * POST /api/brackets/:id/generate-pools
  *
  * Génère les matches de poule pour un bracket.
- * Le moteur FFTT (`@/lib/fftt/engine`) sera détaillé en L6 ; ici on appelle
- * son point d'entrée et on émet un événement live.
+ * Body optionnel : { poolSize: 2 | 3 | 4 | 5 }
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -14,11 +13,18 @@ import { publishLiveEvent } from '@/lib/live/publisher';
 
 interface Params { params: Promise<{ id: string }> }
 
-export async function POST(_req: NextRequest, { params }: Params) {
+export async function POST(req: NextRequest, { params }: Params) {
   try {
     await requireRole(['admin']);
     const { id } = await params;
-    const result = await generatePools(id);
+    let poolSize: number | undefined;
+    try {
+      const body = await req.json();
+      if (body?.poolSize && typeof body.poolSize === 'number') {
+        poolSize = body.poolSize;
+      }
+    } catch { /* no body is fine */ }
+    const result = await generatePools(id, poolSize);
     await publishLiveEvent({ type: 'pools_generated', bracketId: id });
     return NextResponse.json(result);
   } catch (e) {
