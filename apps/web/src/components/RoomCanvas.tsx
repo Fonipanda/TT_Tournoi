@@ -53,8 +53,8 @@ interface Props {
   editable?: boolean;
 }
 
-const TABLE_W = 90;
-const TABLE_H = 50;
+const TABLE_W = 180;
+const TABLE_H = 100;
 const SAVE_DEBOUNCE_MS = 600;
 
 function asMarkerArray(raw: unknown): MarkerPoint[] {
@@ -318,14 +318,30 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
 
                 {/* Numéro de table + score */}
                 <div className="relative z-10 w-full h-full flex flex-col items-center justify-center text-white drop-shadow-md">
-                  <p className="font-heading font-bold text-xs leading-tight">T{t.number}</p>
+                  <p className="font-heading font-bold text-sm leading-tight">T{t.number}</p>
                   {t.currentMatch && (
-                    <p className="text-[10px] mt-0.5 tabular bg-black/40 px-1 rounded">
+                    <p className="text-xs mt-0.5 tabular bg-black/40 px-1.5 rounded font-medium">
                       {t.currentMatch.setsP1}-{t.currentMatch.setsP2}
                     </p>
                   )}
                 </div>
               </div>
+
+              {/* Player names below the table (visible in live/non-editable mode) */}
+              {!editable && t.currentMatch && t.currentMatch.player1 && t.currentMatch.player2 && (
+                <div
+                  className="absolute left-0 right-0 text-center pointer-events-none"
+                  style={{
+                    top: '100%',
+                    marginTop: '2px',
+                    transform: t.rotation ? `rotate(-${t.rotation}deg)` : undefined,
+                  }}
+                >
+                  <p className="text-[10px] font-medium text-foreground bg-bg/80 backdrop-blur-sm rounded px-1 py-0.5 inline-block whitespace-nowrap">
+                    {t.currentMatch.player1.lastName} vs {t.currentMatch.player2.lastName}
+                  </p>
+                </div>
+              )}
             </div>
           );
         })}

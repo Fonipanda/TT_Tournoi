@@ -20,11 +20,13 @@ export function serialize<T>(value: T): T {
     return value.toISOString() as unknown as T;
   }
 
-  // Decimal de Prisma : a une méthode toString
+  // Decimal de Prisma : has s, e, d properties (Decimal.js structure)
   if (
-    typeof (value as { toFixed?: unknown }).toFixed === 'function' &&
-    typeof (value as { toString?: unknown }).toString === 'function' &&
-    (value as object).constructor?.name === 'Decimal'
+    typeof (value as Record<string, unknown>).toFixed === 'function' &&
+    typeof (value as Record<string, unknown>).toString === 'function' &&
+    'd' in (value as object) &&
+    's' in (value as object) &&
+    'e' in (value as object)
   ) {
     return Number((value as { toString(): string }).toString()) as unknown as T;
   }

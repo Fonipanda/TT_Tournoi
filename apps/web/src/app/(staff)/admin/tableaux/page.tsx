@@ -1,5 +1,6 @@
 import { prisma } from '@tt/db';
 import { BracketList } from '@/components/admin/BracketList';
+import { serialize } from '@/lib/serialize';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,22 +27,11 @@ export default async function AdminTableauxPage({ searchParams }: Props) {
     }),
   ]);
 
-  // Sérialiser les Decimal en number pour passer aux Client Components
-  const serializedBrackets = brackets.map((b) => ({
-    ...b,
-    entryFee: Number(b.entryFee),
-    dotationQuarter: Number(b.dotationQuarter),
-    dotationSemi: Number(b.dotationSemi),
-    dotationFinalist: Number(b.dotationFinalist),
-    dotationWinner: Number(b.dotationWinner),
-    createdAt: b.createdAt.toISOString(),
-  }));
-
   return (
     <div data-testid="admin-tableaux">
       <BracketList
-        brackets={serializedBrackets}
-        tournaments={tournaments}
+        brackets={serialize(brackets) as unknown as Parameters<typeof BracketList>[0]['brackets']}
+        tournaments={serialize(tournaments)}
         selectedTournamentId={tournamentId}
       />
     </div>

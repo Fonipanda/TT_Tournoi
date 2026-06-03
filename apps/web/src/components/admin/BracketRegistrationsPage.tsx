@@ -80,6 +80,7 @@ export function BracketRegistrationsPage({
   const [assigningPool, setAssigningPool] = useState<number | null>(null);
   const [poolSizeModalOpen, setPoolSizeModalOpen] = useState(false);
   const [genElim, setGenElim] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const alreadyRegisteredIds = new Set(registrations.map((r) => r.player.id));
   const busySet = new Set(busyPlayerIds);
@@ -193,6 +194,45 @@ export function BracketRegistrationsPage({
     }
   };
 
+  const deletePoolMatches = async () => {
+    setDeleting('pools');
+    try {
+      await apiDelete(`/api/brackets/${bracketId}/matches?type=pool`);
+      toast.success('Poules supprimées');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const deleteElimMatches = async () => {
+    setDeleting('elim');
+    try {
+      await apiDelete(`/api/brackets/${bracketId}/matches?type=elimination`);
+      toast.success('Élimination supprimée');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const deleteAllMatches = async () => {
+    setDeleting('all');
+    try {
+      await apiDelete(`/api/brackets/${bracketId}/matches`);
+      toast.success('Tous les matches supprimés');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   // Group matches by pool
   const poolMatches = matches.filter((m) => m.poolNumber != null);
   const elimMatches = matches.filter((m) => m.poolNumber == null);
@@ -246,6 +286,41 @@ export function BracketRegistrationsPage({
           </Link>
         </div>
       </div>
+
+      {/* Delete generated data buttons */}
+      {(poolMatches.length > 0 || elimMatches.length > 0) && (
+        <div className="flex gap-2 flex-wrap mb-4 p-3 bg-danger-soft/20 rounded-xl border border-danger/20">
+          <span className="text-xs text-danger font-medium self-center mr-2">Supprimer :</span>
+          {poolMatches.length > 0 && (
+            <button
+              type="button"
+              onClick={deletePoolMatches}
+              disabled={deleting === 'pools'}
+              className="text-xs px-3 py-1 rounded-lg bg-danger text-white hover:bg-danger/90 disabled:opacity-50"
+            >
+              {deleting === 'pools' ? '…' : 'Poules'}
+            </button>
+          )}
+          {elimMatches.length > 0 && (
+            <button
+              type="button"
+              onClick={deleteElimMatches}
+              disabled={deleting === 'elim'}
+              className="text-xs px-3 py-1 rounded-lg bg-danger text-white hover:bg-danger/90 disabled:opacity-50"
+            >
+              {deleting === 'elim' ? '…' : 'Élimination'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={deleteAllMatches}
+            disabled={deleting === 'all'}
+            className="text-xs px-3 py-1 rounded-lg border border-danger text-danger hover:bg-danger hover:text-white disabled:opacity-50"
+          >
+            {deleting === 'all' ? '…' : 'Tout supprimer'}
+          </button>
+        </div>
+      )}
 
       {/* Registrations table */}
       <div className="card overflow-x-auto mb-6">

@@ -14,9 +14,51 @@ export async function GET(req: NextRequest) {
   const rooms = await prisma.room.findMany({
     where,
     orderBy: { name: 'asc' },
-    include: { tables: true, _count: { select: { tables: true } } },
+    include: {
+      tables: {
+        orderBy: { number: 'asc' },
+        include: {
+          matches: {
+            where: { status: 'in_progress' },
+            take: 1,
+            select: {
+              setsP1: true,
+              setsP2: true,
+              player1: { select: { lastName: true, firstName: true } },
+              player2: { select: { lastName: true, firstName: true } },
+            },
+          },
+        },
+      },
+      _count: { select: { tables: true } },
+    },
   });
-  return NextResponse.json({ data: rooms });
+
+  // Map to include currentMatch on each table
+  const data = rooms.map((room) => ({
+    ...room,
+    tables: room.tables.map((t) => {
+      const match = t.matches?.[0] ?? null;
+      return {
+        id: t.id,
+        number: t.number,
+        x: t.x,
+        y: t.y,
+        rotation: t.rotation,
+        status: t.status,
+        currentMatch: match
+          ? {
+              player1: match.player1,
+              player2: match.player2,
+              setsP1: match.setsP1 ?? 0,
+              setsP2: match.setsP2 ?? 0,
+            }
+          : null,
+      };
+    }),
+  }));
+
+  return NextResponse.json({ data });
 }
 
 const CreateSchema = z.object({
