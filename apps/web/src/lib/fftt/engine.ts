@@ -331,6 +331,92 @@ export function fftPointsSwap(winnerPoints: number, loserPoints: number): number
 // Entrée publique : génération poules + élimination
 // =============================================================================
 
+// =============================================================================
+// Séparation des clubs — contrainte post-snake-seeding
+// =============================================================================
+
+/**
+ * Après le snake seeding, échange des joueurs entre poules pour éviter
+ * que 2 joueurs du même club soient dans la même poule.
+ * L'algorithme privilégie les swaps avec un joueur de même position (même "slot")
+ * afin de minimiser l'impact sur l'équilibre de niveau.
+ * Complexité : O(pools² × poolSize²) — négligeable pour des tournois < 100 joueurs.
+ */
+function separateClubs(pools: Player[][]): void {
+  const MAX_PASSES = 10;
+
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let swapped = false;
+
+    for (let pi = 0; pi < pools.length; pi++) {
+      const pool = pools[pi]!;
+      // Détecte les clubs en doublon dans cette poule
+      const clubCount = new Map<string, number>();
+      for (const p of pool) {
+        const club = p.club ?? '';
+        if (club) clubCount.set(club, (clubCount.get(club) ?? 0) + 1);
+      }
+
+      for (const [club, count] of clubCount) {
+        if (count <= 1) continue;
+        // Il y a un conflit : trouver le 2ème joueur de ce club (le plus faible)
+        // et le swapper avec un joueur d'une autre poule
+        const conflictIdx = findLastIndexByClub(pool, club);
+        if (conflictIdx === -1) continue;
+
+        const conflictPlayer = pool[conflictIdx]!;
+        let bestSwap: { targetPool: number; targetIdx: number; cost: number } | null = null;
+
+        for (let pj = 0; pj < pools.length; pj++) {
+          if (pj === pi) continue;
+          const targetPool = pools[pj]!;
+
+          // Vérifie que la poule cible n'a pas déjà un joueur de ce club
+          if (targetPool.some((tp) => (tp.club ?? '') === club)) continue;
+
+          for (let ti = 0; ti < targetPool.length; ti++) {
+            const candidate = targetPool[ti]!;
+            const candidateClub = candidate.club ?? '';
+
+            // Vérifie que le candidat ne créerait pas un conflit dans la poule source
+            const sourceHasCandidate = candidateClub
+              ? pool.some((sp, idx) => idx !== conflictIdx && (sp.club ?? '') === candidateClub)
+              : false;
+            if (sourceHasCandidate) continue;
+
+            // Coût = différence de points entre les 2 joueurs × écart de position
+            const pointsDiff = Math.abs(conflictPlayer.points - candidate.points);
+            const slotDiff = Math.abs(conflictIdx - ti);
+            const cost = pointsDiff + slotDiff * 50;
+
+            if (!bestSwap || cost < bestSwap.cost) {
+              bestSwap = { targetPool: pj, targetIdx: ti, cost };
+            }
+          }
+        }
+
+        if (bestSwap) {
+          // Effectue le swap
+          const temp = pools[bestSwap.targetPool]![bestSwap.targetIdx]!;
+          pools[bestSwap.targetPool]![bestSwap.targetIdx] = conflictPlayer;
+          pool[conflictIdx] = temp;
+          swapped = true;
+        }
+      }
+    }
+
+    if (!swapped) break; // Plus aucun conflit
+  }
+}
+
+/** Trouve l'index du dernier joueur d'un club donné dans la poule (le plus faible). */
+function findLastIndexByClub(pool: Player[], club: string): number {
+  for (let i = pool.length - 1; i >= 0; i--) {
+    if ((pool[i]!.club ?? '') === club) return i;
+  }
+  return -1;
+}
+
 export interface GeneratePoolsResult {
   bracketId: string;
   poolsCreated: number;
@@ -390,6 +476,9 @@ export async function generatePools(bracketId: string, requestedPoolSize?: numbe
     const poolIdx = round % 2 === 0 ? i % numPools : numPools - 1 - (i % numPools);
     pools[poolIdx]!.push(sorted[i]!);
   }
+
+  // ─── Contrainte « même club » : éviter 2 joueurs du même club dans la même poule ───
+  separateClubs(pools);
 
   // Suppression des matches existants de poule pour ce bracket
   await prisma.match.deleteMany({ where: { bracketId, poolNumber: { not: null } } });
