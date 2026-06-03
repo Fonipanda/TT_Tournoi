@@ -198,7 +198,7 @@ export function ffttPlaceQualifiers(
   poolStandings: PoolStanding[],
   qualifiersPerPool: number,
   byeIds: string[],
-): string[] {
+): (string | null)[] {
   const sortedStandings = [...poolStandings].sort((a, b) => a.poolName.localeCompare(b.poolName));
 
   const firsts: string[] = [];
@@ -301,7 +301,8 @@ export function ffttPlaceQualifiers(
     }
   }
 
-  return ordered.filter((x): x is string => x !== null);
+  // Retourne le tableau COMPLET avec positions (nulls = byes)
+  return ordered;
 }
 
 // =============================================================================
@@ -571,18 +572,25 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
 
   const ordered = ffttPlaceQualifiers(standings, bracket.poolQualifiers, byeIds);
 
-  if (ordered.length < 2) {
+  // Le tableau positionnel a une taille = puissance de 2 (avec nulls pour les byes)
+  const nextPower = ordered.length;
+  if (nextPower < 2) {
+    return { bracketId, matchesCreated: 0, rounds: 0 };
+  }
+
+  // Vérifie qu'il y a au moins 2 vrais joueurs
+  const realPlayers = ordered.filter((x) => x !== null);
+  if (realPlayers.length < 2) {
     return { bracketId, matchesCreated: 0, rounds: 0 };
   }
 
   // Suppression des matches d'élimination précédents (poolNumber=null)
+  await prisma.matchEvent.deleteMany({
+    where: { match: { bracketId, poolNumber: null } },
+  });
   await prisma.match.deleteMany({ where: { bracketId, poolNumber: null } });
 
-  // Crée les matches du 1er tour : (1 vs N), (2 vs N-1) etc.
-  const n = ordered.length;
-  let nextPower = 1;
-  while (nextPower < n) nextPower *= 2;
-
+  // Nombre de tours
   const rounds = Math.ceil(Math.log2(nextPower));
   const roundName = (i: number, total: number): string => {
     const remaining = total - i;
@@ -591,6 +599,7 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
     if (remaining === 3) return 'Quart de finale';
     if (remaining === 4) return '8ème de finale';
     if (remaining === 5) return '16ème de finale';
+    if (remaining === 6) return '32ème de finale';
     return `Tour ${i + 1}`;
   };
 
@@ -598,7 +607,12 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
   for (let i = 0; i < nextPower; i += 2) {
     const a = ordered[i] ?? null;
     const b = ordered[i + 1] ?? null;
-    // Si l'un est manquant (taille non puissance de 2), match avec winner direct
+
+    // Si aucun joueur dans cette position, on skip
+    if (!a && !b) continue;
+
+    // Si un seul joueur (bye), on crée un match auto-terminé
+    const isBye = (a && !b) || (!a && b);
     await prisma.match.create({
       data: {
         bracketId,
@@ -606,6 +620,9 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
         player2Id: b,
         roundName: roundName(0, rounds),
         roundNumber: 1,
+        ...(isBye
+          ? { status: 'finished', winnerId: a ?? b }
+          : {}),
       },
     });
     matchesCreated++;

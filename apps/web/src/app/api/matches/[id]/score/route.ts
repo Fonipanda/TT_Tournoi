@@ -37,6 +37,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     let updated;
     try {
       updated = await prisma.$transaction(async (tx) => {
+        // Read current match to conditionally set startTime
+        const current = await tx.match.findUnique({ where: { id } });
+        if (!current) throw new Error('Match introuvable');
+
         const m = await tx.match.update({
           where: { id, version: body.version },
           data: {
@@ -46,7 +50,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
             setsP2: body.setsP2,
             sets: (body.sets ?? []) as Prisma.InputJsonValue,
             status: 'in_progress',
-            startTime: { set: undefined }, // ne touche pas si déjà set
+            ...(current.startTime ? {} : { startTime: new Date() }),
             version: { increment: 1 },
           },
           include: { player1: true, player2: true, table: true },

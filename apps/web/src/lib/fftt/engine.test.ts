@@ -199,15 +199,18 @@ describe('FFTT I.305 — ffttPlaceQualifiers', () => {
     expect(ffttPlaceQualifiers([], 1, [])).toEqual([]);
   });
 
-  it('ne place pas de positions vides', () => {
+  it('inclut des positions null (byes) quand joueurs < nextPower', () => {
     const standings = [
       { poolName: 'Poule 1', ranking: ['a1', 'a2'] },
       { poolName: 'Poule 2', ranking: ['b1', 'b2'] },
       { poolName: 'Poule 3', ranking: ['c1', 'c2'] },
     ];
-    // 6 joueurs → bracket de 8 avec 2 byes virtuels
+    // 6 joueurs → bracket de 8 avec 2 byes (positions null)
     const placed = ffttPlaceQualifiers(standings, 2, []);
-    expect(placed.every((p) => p !== null && p !== undefined)).toBe(true);
+    expect(placed).toHaveLength(8);
+    const realPlayers = placed.filter((p) => p !== null);
+    expect(realPlayers).toHaveLength(6);
+    expect(new Set(realPlayers)).toEqual(new Set(['a1', 'a2', 'b1', 'b2', 'c1', 'c2']));
   });
 });
 
