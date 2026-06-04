@@ -81,6 +81,8 @@ export function BracketRegistrationsPage({
   const [poolSizeModalOpen, setPoolSizeModalOpen] = useState(false);
   const [genElim, setGenElim] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [swapMode, setSwapMode] = useState(false);
+  const [swapFirst, setSwapFirst] = useState<{ playerId: string; poolNumber: number } | null>(null);
 
   const alreadyRegisteredIds = new Set(registrations.map((r) => r.player.id));
   const busySet = new Set(busyPlayerIds);
@@ -171,6 +173,34 @@ export function BracketRegistrationsPage({
     try {
       await apiPost(`/api/matches/${matchId}/assign-table`, { tableId });
       toast.success('Table attribuée');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Swap two players between pools
+  const handlePoolSwapClick = async (playerId: string, poolNumber: number) => {
+    if (!swapFirst) {
+      setSwapFirst({ playerId, poolNumber });
+      return;
+    }
+    if (swapFirst.poolNumber === poolNumber) {
+      toast.error('Sélectionnez un joueur dans une poule différente');
+      setSwapFirst({ playerId, poolNumber });
+      return;
+    }
+    setBusy('swap');
+    try {
+      await apiPost(`/api/brackets/${bracketId}/swap-pool-players`, {
+        playerAId: swapFirst.playerId,
+        playerBId: playerId,
+      });
+      toast.success('Joueurs échangés');
+      setSwapMode(false);
+      setSwapFirst(null);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Erreur');
@@ -404,12 +434,41 @@ export function BracketRegistrationsPage({
       {/* Pool matches with table assignment per POOL */}
       {poolsGrouped.size > 0 && (
         <div className="space-y-4">
-          <h2 className="font-heading text-xl uppercase tracking-wide">Matches de poule</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-heading text-xl uppercase tracking-wide">Matches de poule</h2>
+            <div className="flex items-center gap-2">
+              {swapMode && (
+                <span className="text-xs text-warning">
+                  {swapFirst
+                    ? `Cliquez un joueur dans une autre poule pour échanger`
+                    : `Cliquez un joueur à déplacer`}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => { setSwapMode(!swapMode); setSwapFirst(null); }}
+                className={`btn text-xs px-3 py-1 rounded ${
+                  swapMode
+                    ? 'bg-warning text-white'
+                    : 'bg-bg-alt border border-border hover:bg-primary/10'
+                }`}
+              >
+                {swapMode ? 'Annuler' : 'Modifier les poules'}
+              </button>
+            </div>
+          </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[...poolsGrouped.entries()].map(([poolNum, pMatches]) => {
               const poolHasTable = pMatches.some((m) => m.table != null);
               const poolAllFinished = pMatches.every((m) => m.status === 'finished');
               const assignedTable = pMatches.find((m) => m.table)?.table;
+              // Get unique players in this pool
+              const poolPlayersMap = new Map<string, { id: string; lastName: string; firstName?: string; club?: string }>();
+              for (const m of pMatches) {
+                if (m.player1) poolPlayersMap.set(m.player1.id, m.player1 as { id: string; lastName: string; firstName?: string; club?: string });
+                if (m.player2) poolPlayersMap.set(m.player2.id, m.player2 as { id: string; lastName: string; firstName?: string; club?: string });
+              }
+              const poolPlayers = [...poolPlayersMap.values()];
               return (
                 <div key={poolNum} className="card rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -441,6 +500,27 @@ export function BracketRegistrationsPage({
                       <span className="text-xs text-success font-medium">Terminée</span>
                     ) : null}
                   </div>
+                  {/* Pool players (swap mode) */}
+                  {swapMode && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {poolPlayers.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handlePoolSwapClick(p.id, poolNum)}
+                          disabled={busy === 'swap'}
+                          className={`text-xs px-2 py-1 rounded border transition-colors ${
+                            swapFirst?.playerId === p.id
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-bg-alt border-border hover:bg-primary/10 hover:border-primary'
+                          }`}
+                        >
+                          {p.lastName} {p.firstName ? p.firstName[0] + '.' : ''}
+                          {p.club ? ` (${p.club})` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="space-y-2">
                     {pMatches.map((m) => (
                       <div

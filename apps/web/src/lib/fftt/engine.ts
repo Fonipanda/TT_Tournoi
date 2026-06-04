@@ -71,12 +71,13 @@ export interface PoolMatchInput {
   winnerId?: string | null;
   setsP1?: number;
   setsP2?: number;
+  sets?: unknown; // JSON: {p1: number, p2: number}[]
 }
 
 /**
  * Calcule le classement final d'une poule selon I.303.
  * V = 2 pts, D = 1 pt, absent/forfait = 0 pt (pris en charge si winner=null).
- * Départage : confrontation directe → quotient sets (2 ex-aequo).
+ * Départage : confrontation directe (2 ex-aequo) → quotient sets → quotient points.
  */
 export function ffttPoolRanking(
   poolMatches: PoolMatchInput[],
@@ -85,18 +86,25 @@ export function ffttPoolRanking(
   const pts: Record<string, number> = {};
   const setsW: Record<string, number> = {};
   const setsL: Record<string, number> = {};
+  const ptsW: Record<string, number> = {}; // points de jeu gagnés (total)
+  const ptsL: Record<string, number> = {}; // points de jeu perdus (total)
   const direct: Record<string, string> = {};
 
   for (const pid of playersInPool) {
     pts[pid] = 0;
     setsW[pid] = 0;
     setsL[pid] = 0;
+    ptsW[pid] = 0;
+    ptsL[pid] = 0;
   }
 
   for (const m of poolMatches) {
+    if (m.status !== 'finished') continue;
+
     const p1 = m.player1Id;
     const p2 = m.player2Id;
-    if (m.status === 'finished' && m.winnerId) {
+
+    if (m.winnerId) {
       const w = m.winnerId;
       const lo = w === p1 ? p2 : p1;
       pts[w] = (pts[w] ?? 0) + 2;
@@ -104,22 +112,38 @@ export function ffttPoolRanking(
       direct[`${p1}|${p2}`] = w;
       direct[`${p2}|${p1}`] = w;
     }
+
+    // Sets gagnés/perdus
     setsW[p1] = (setsW[p1] ?? 0) + (m.setsP1 ?? 0);
     setsL[p1] = (setsL[p1] ?? 0) + (m.setsP2 ?? 0);
     setsW[p2] = (setsW[p2] ?? 0) + (m.setsP2 ?? 0);
     setsL[p2] = (setsL[p2] ?? 0) + (m.setsP1 ?? 0);
+
+    // Points de jeu (somme de tous les points marqués dans les sets)
+    const sets = (m.sets as { p1: number; p2: number }[]) ?? [];
+    for (const s of sets) {
+      ptsW[p1] = (ptsW[p1] ?? 0) + (s.p1 ?? 0);
+      ptsL[p1] = (ptsL[p1] ?? 0) + (s.p2 ?? 0);
+      ptsW[p2] = (ptsW[p2] ?? 0) + (s.p2 ?? 0);
+      ptsL[p2] = (ptsL[p2] ?? 0) + (s.p1 ?? 0);
+    }
   }
 
-  function sortKey(pid: string): [number, number] {
+  // Tri par: 1) points matchs, 2) quotient sets, 3) quotient points de jeu
+  function sortKey(pid: string): [number, number, number] {
     const sw = setsW[pid] ?? 0;
     const sl = setsL[pid] ?? 0;
-    const quotient = sl > 0 ? sw / sl : sw > 0 ? sw * 100 : 0;
-    return [pts[pid] ?? 0, quotient];
+    const pw = ptsW[pid] ?? 0;
+    const pl = ptsL[pid] ?? 0;
+    const setsQ = sl > 0 ? sw / sl : sw > 0 ? sw * 100 : 0;
+    const ptsQ = pl > 0 ? pw / pl : pw > 0 ? pw * 100 : 0;
+    return [pts[pid] ?? 0, setsQ, ptsQ];
   }
 
-  function compareKeys(a: [number, number], b: [number, number]): number {
+  function compareKeys(a: [number, number, number], b: [number, number, number]): number {
     if (b[0] !== a[0]) return b[0] - a[0];
-    return b[1] - a[1];
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return b[2] - a[2];
   }
 
   const ranking = [...playersInPool].sort((a, b) => compareKeys(sortKey(a), sortKey(b)));
