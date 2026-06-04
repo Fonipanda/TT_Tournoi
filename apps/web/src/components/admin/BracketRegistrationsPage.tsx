@@ -307,9 +307,9 @@ export function BracketRegistrationsPage({
             onClick={generateElimination}
             disabled={genElim || poolMatches.length === 0}
             className="btn-secondary text-sm disabled:opacity-50"
-            title="Générer le tableau d'élimination depuis les résultats des poules"
+            title="Générer le tableau final depuis les résultats des poules"
           >
-            {genElim ? '…' : 'Générer élimination'}
+            {genElim ? '…' : 'Générer tableau final'}
           </button>
           <Link href={`/progression/${bracketId}`} className="btn-secondary text-sm">
             Voir progression

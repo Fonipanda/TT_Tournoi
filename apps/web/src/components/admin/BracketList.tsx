@@ -138,19 +138,16 @@ export function BracketList({ brackets, tournaments, selectedTournamentId }: Pro
           </thead>
           <tbody>
             {brackets.map((b) => (
-              <tr key={b.id} className="border-b border-border hover:bg-bg-alt">
+              <tr
+                key={b.id}
+                className="border-b border-border hover:bg-bg-alt cursor-pointer transition-colors"
+                onClick={() => router.push(`/admin/tableaux/${b.id}`)}
+              >
                 <td className="py-2 font-medium">{b.name}</td>
                 <td className="py-2 text-foreground-muted">{b.category}</td>
                 <td className="py-2 text-center tabular">{b._count.registrations}</td>
                 <td className="py-2 text-center tabular">{b._count.matches}</td>
-                <td className="py-2 text-right space-x-2 whitespace-nowrap">
-                  <Link
-                    href={`/admin/tableaux/${b.id}`}
-                    className="text-primary text-xs hover:underline"
-                    title="Inscrits + génération"
-                  >
-                    Inscrits
-                  </Link>
+                <td className="py-2 text-right space-x-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
                     onClick={() => onEdit(b)}

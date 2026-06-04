@@ -26,7 +26,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       });
       const match = await tx.match.update({
         where: { id },
-        data: { tableId, version: { increment: 1 } },
+        data: {
+          tableId,
+          status: 'in_progress',
+          startTime: new Date(),
+          version: { increment: 1 },
+        },
       });
       return { table, match };
     });

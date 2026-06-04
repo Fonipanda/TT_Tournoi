@@ -84,13 +84,13 @@ export const ROUTE_POLICIES: Record<string, readonly Role[]> = {
  */
 export function findRoutePolicy(pathname: string): readonly Role[] | null {
   // Match exact d'abord
-  if (ROUTE_POLICIES[pathname]) return ROUTE_POLICIES[pathname];
+  if (ROUTE_POLICIES[pathname]) return ROUTE_POLICIES[pathname]!;
 
   // Match par préfixe (ex: /admin/joueurs hérite de /admin)
   const sortedKeys = Object.keys(ROUTE_POLICIES).sort((a, b) => b.length - a.length);
   for (const key of sortedKeys) {
     if (pathname.startsWith(key + '/')) {
-      return ROUTE_POLICIES[key];
+      return ROUTE_POLICIES[key] ?? null;
     }
   }
   return null;

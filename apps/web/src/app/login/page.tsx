@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 function LoginForm() {
   const router = useRouter();
@@ -160,6 +161,12 @@ function LoginForm() {
             {loading ? '…' : 'Se connecter'}
           </button>
         </form>
+
+        <div className="mt-4 text-center">
+          <Link href="/" className="text-sm text-primary hover:underline">
+            ← Retour à l'accueil
+          </Link>
+        </div>
       </div>
     </div>
   );

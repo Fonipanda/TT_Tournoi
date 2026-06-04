@@ -13,6 +13,7 @@ interface RoomData extends RoomCanvasRoom {
 export default function LivePage() {
   const [rooms, setRooms] = useState<RoomData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentRoomIndex, setCurrentRoomIndex] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -72,6 +73,11 @@ export default function LivePage() {
     [refresh],
   );
 
+  const prevRoom = () => setCurrentRoomIndex((i) => Math.max(0, i - 1));
+  const nextRoom = () => setCurrentRoomIndex((i) => Math.min(rooms.length - 1, i + 1));
+
+  const currentRoom = rooms[currentRoomIndex];
+
   return (
     <div data-testid="live-page">
       <div className="flex items-center justify-between mb-4">
@@ -91,16 +97,43 @@ export default function LivePage() {
         </div>
       )}
 
-      <div className="space-y-6">
-        {rooms.map((r) => (
+      {!loading && rooms.length > 0 && currentRoom && (
+        <div>
+          {/* Navigation arrows + room name */}
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <button
+              type="button"
+              onClick={prevRoom}
+              disabled={currentRoomIndex === 0}
+              className="btn-secondary w-10 h-10 flex items-center justify-center rounded-full disabled:opacity-30"
+              aria-label="Salle précédente"
+            >
+              &lt;
+            </button>
+            <span className="font-heading text-lg uppercase tracking-wide">
+              {currentRoom.name}
+              <span className="text-foreground-muted text-sm ml-2">
+                ({currentRoomIndex + 1}/{rooms.length})
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={nextRoom}
+              disabled={currentRoomIndex === rooms.length - 1}
+              className="btn-secondary w-10 h-10 flex items-center justify-center rounded-full disabled:opacity-30"
+              aria-label="Salle suivante"
+            >
+              &gt;
+            </button>
+          </div>
+
           <RoomCanvas
-            key={r.id}
-            room={r}
-            tables={r.tables}
+            room={currentRoom}
+            tables={currentRoom.tables}
             editable={false}
           />
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

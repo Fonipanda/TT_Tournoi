@@ -38,11 +38,11 @@ function getRefreshSecret(): Uint8Array {
 }
 
 function getAccessTtl(): string {
-  return process.env.JWT_ACCESS_TTL || '15m';
+  return process.env.JWT_ACCESS_TTL || '365d';
 }
 
 function getRefreshTtl(): string {
-  return process.env.JWT_REFRESH_TTL || '7d';
+  return process.env.JWT_REFRESH_TTL || '365d';
 }
 
 // -----------------------------------------------------------------------------

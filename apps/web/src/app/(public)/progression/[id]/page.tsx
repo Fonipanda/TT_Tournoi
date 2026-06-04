@@ -41,28 +41,25 @@ export default async function ProgressionDetailPage({ params }: Params) {
     pools.set(m.poolNumber, arr);
   }
 
-  // Compute pool standings
+  // Compute pool standings with V=1pt, D=0pt, total
   function computePoolStandings(matches: typeof poolMatches) {
-    const stats = new Map<string, { player: typeof matches[0]['player1']; w: number; l: number; setsW: number; setsL: number }>();
+    const stats = new Map<string, { player: typeof matches[0]['player1']; v: number; d: number; pts: number }>();
     for (const m of matches) {
       if (m.player1Id && m.player1) {
-        if (!stats.has(m.player1Id)) stats.set(m.player1Id, { player: m.player1, w: 0, l: 0, setsW: 0, setsL: 0 });
+        if (!stats.has(m.player1Id)) stats.set(m.player1Id, { player: m.player1, v: 0, d: 0, pts: 0 });
       }
       if (m.player2Id && m.player2) {
-        if (!stats.has(m.player2Id)) stats.set(m.player2Id, { player: m.player2, w: 0, l: 0, setsW: 0, setsL: 0 });
+        if (!stats.has(m.player2Id)) stats.set(m.player2Id, { player: m.player2, v: 0, d: 0, pts: 0 });
       }
       if (m.status === 'finished' && m.winnerId) {
         const loserId = m.winnerId === m.player1Id ? m.player2Id : m.player1Id;
         const ws = stats.get(m.winnerId);
         const ls = loserId ? stats.get(loserId) : undefined;
-        if (ws) { ws.w++; ws.setsW += m.setsP1 > m.setsP2 ? m.setsP1 : m.setsP2; ws.setsL += m.setsP1 > m.setsP2 ? m.setsP2 : m.setsP1; }
-        if (ls) { ls.l++; ls.setsW += m.setsP1 < m.setsP2 ? m.setsP1 : m.setsP2; ls.setsL += m.setsP1 < m.setsP2 ? m.setsP2 : m.setsP1; }
+        if (ws) { ws.v++; ws.pts += 1; }
+        if (ls) { ls.d++; }
       }
     }
-    return [...stats.values()].sort((a, b) => {
-      if (b.w !== a.w) return b.w - a.w;
-      return (b.setsW - b.setsL) - (a.setsW - a.setsL);
-    });
+    return [...stats.values()].sort((a, b) => b.pts - a.pts);
   }
 
   return (
@@ -98,7 +95,7 @@ export default async function ProgressionDetailPage({ params }: Params) {
                         <th className="text-left py-1">Joueur</th>
                         <th className="text-center py-1">V</th>
                         <th className="text-center py-1">D</th>
-                        <th className="text-center py-1">Sets</th>
+                        <th className="text-center py-1">Pts</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -108,9 +105,9 @@ export default async function ProgressionDetailPage({ params }: Params) {
                           <td className="py-1 truncate max-w-[120px]">
                             {s.player?.lastName} {s.player?.firstName?.[0]}.
                           </td>
-                          <td className="py-1 text-center font-medium text-success">{s.w}</td>
-                          <td className="py-1 text-center text-danger">{s.l}</td>
-                          <td className="py-1 text-center tabular">{s.setsW}-{s.setsL}</td>
+                          <td className="py-1 text-center font-medium text-success">{s.v}</td>
+                          <td className="py-1 text-center text-danger">{s.d}</td>
+                          <td className="py-1 text-center font-bold tabular">{s.pts}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -143,11 +140,11 @@ export default async function ProgressionDetailPage({ params }: Params) {
         </section>
       )}
 
-      {/* Elimination bracket */}
+      {/* Tableau final */}
       {elimMatches.length > 0 && (
         <section>
           <h2 className="font-heading text-xl uppercase tracking-wide mb-4">
-            Tableau d&apos;élimination
+            Tableau final
           </h2>
           <BracketTree
             matches={elimMatches.map<BracketTreeMatch>((m) => ({
@@ -160,6 +157,7 @@ export default async function ProgressionDetailPage({ params }: Params) {
               status: m.status,
               setsP1: m.setsP1,
               setsP2: m.setsP2,
+              sets: m.sets as any,
             }))}
           />
         </section>

@@ -188,13 +188,15 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
   const arrowMarkers = asMarkerArray(room.arrowMarkers);
 
   return (
-    <div data-testid={`room-canvas-${room.id}`} className="card">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-heading text-xl uppercase tracking-wide">{room.name}</h3>
-        <span className="text-xs text-foreground-muted font-mono">
-          {room.width} × {room.height} px · {tables.length} tables
-        </span>
-      </div>
+    <div data-testid={`room-canvas-${room.id}`} className={editable ? 'card' : ''}>
+      {editable && (
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-heading text-xl uppercase tracking-wide">{room.name}</h3>
+          <span className="text-xs text-foreground-muted font-mono">
+            {room.width} × {room.height} px · {tables.length} tables
+          </span>
+        </div>
+      )}
 
       <div
         ref={canvasRef}

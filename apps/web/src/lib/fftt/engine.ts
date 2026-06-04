@@ -596,7 +596,7 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
     : [];
   const byeIds = byePlayers.map((p) => p.id);
 
-  const ordered = ffttPlaceQualifiers(standings, bracket.poolQualifiers, byeIds);
+  const ordered = ffttPlaceQualifiers(standings, Math.max(bracket.poolQualifiers, 2), byeIds);
 
   // Le tableau positionnel a une taille = puissance de 2 (avec nulls pour les byes)
   const nextPower = ordered.length;

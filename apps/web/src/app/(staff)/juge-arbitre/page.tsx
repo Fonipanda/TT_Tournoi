@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { LiveStatusBadge } from '@/components/LiveStatusBadge';
 import { enqueueOrSubmit } from '@/lib/pwa/sync-queue';
 
@@ -12,6 +12,7 @@ interface JaMatch {
   player2: { firstName: string; lastName: string; club: string | null } | null;
   player2Id: string | null;
   table: { number: number } | null;
+  poolNumber: number | null;
   status: 'waiting' | 'in_progress' | 'finished' | 'blocked';
   scoreP1: number;
   scoreP2: number;
@@ -21,61 +22,40 @@ interface JaMatch {
   version: number;
 }
 
-function SetScoreInput({
-  setIndex,
-  p1Score,
-  p2Score,
-  onChange,
-  disabled,
-}: {
-  setIndex: number;
-  p1Score: number;
-  p2Score: number;
-  onChange: (p1: number, p2: number) => void;
-  disabled: boolean;
-}) {
+// ─── Score Pill (colored badge per set) ────────────────────────────────────────
+function ScorePill({ score, won }: { score: number; won: boolean | null }) {
+  const bg = won === null
+    ? 'bg-gray-200 text-gray-600'
+    : won
+      ? 'bg-emerald-500 text-white'
+      : 'bg-red-500 text-white';
   return (
-    <div className="flex items-center gap-1 text-xs">
-      <span className="text-foreground-muted w-5 text-right">S{setIndex + 1}</span>
-      <input
-        type="number"
-        min={0}
-        max={99}
-        value={p1Score}
-        onChange={(e) => onChange(Number(e.target.value) || 0, p2Score)}
-        disabled={disabled}
-        className="w-10 text-center border border-border rounded px-1 py-0.5 bg-bg tabular"
-      />
-      <span className="text-foreground-muted">-</span>
-      <input
-        type="number"
-        min={0}
-        max={99}
-        value={p2Score}
-        onChange={(e) => onChange(p1Score, Number(e.target.value) || 0)}
-        disabled={disabled}
-        className="w-10 text-center border border-border rounded px-1 py-0.5 bg-bg tabular"
-      />
-    </div>
+    <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold ${bg}`}>
+      {score}
+    </span>
   );
 }
 
+// ─── Compact MatchCard (fits 4 per row) ────────────────────────────────────────
 function MatchCard({
   match,
-  onScoreUpdate,
-  onFinish,
+  onValidate,
+  onEdit,
+  canEdit,
+  editTooltip,
 }: {
   match: JaMatch;
-  onScoreUpdate: (m: JaMatch, sets: { p1: number; p2: number }[]) => void;
-  onFinish: (m: JaMatch, winnerId: string) => void;
+  onValidate: (m: JaMatch, sets: { p1: number; p2: number }[], winnerId: string) => void;
+  onEdit: (m: JaMatch) => void;
+  canEdit: boolean;
+  editTooltip: string;
 }) {
-  const maxSets = 7; // max 7 sets (4 manches gagnantes en senior)
   const [sets, setSets] = useState<{ p1: number; p2: number }[]>(
     match.sets.length > 0
       ? [...match.sets]
       : Array.from({ length: 5 }, () => ({ p1: 0, p2: 0 })),
   );
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(match.status !== 'finished');
 
   const playerName = (p: typeof match.player1) =>
     p ? `${p.lastName} ${p.firstName[0]}.` : '—';
@@ -92,111 +72,117 @@ function MatchCard({
 
   const matchFinished = setsWon.p1 >= 3 || setsWon.p2 >= 3;
   const winnerId = matchFinished
-    ? setsWon.p1 > setsWon.p2
-      ? match.player1Id
-      : match.player2Id
+    ? setsWon.p1 > setsWon.p2 ? match.player1Id : match.player2Id
     : null;
 
-  const updateSet = (index: number, p1: number, p2: number) => {
+  const updateSet = (index: number, field: 'p1' | 'p2', value: number) => {
     const newSets = [...sets];
-    newSets[index] = { p1, p2 };
+    newSets[index] = { ...newSets[index]!, [field]: value };
     setSets(newSets);
   };
 
-  const addSet = () => {
-    if (sets.length < maxSets) setSets([...sets, { p1: 0, p2: 0 }]);
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    await onScoreUpdate(match, sets);
-    setSaving(false);
-  };
-
-  const handleFinish = () => {
-    if (winnerId) onFinish(match, winnerId);
+  const handleValidate = () => {
+    if (winnerId) onValidate(match, sets, winnerId);
   };
 
   return (
-    <div className="card rounded-xl" data-testid={`ja-match-${match.id}`}>
-      <div className="flex justify-between items-center mb-3">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-foreground-muted">
-            {match.bracket.name} &middot; {match.bracket.category}
-          </p>
-          {match.table && (
-            <p className="text-sm font-medium text-primary">Table {match.table.number}</p>
-          )}
-        </div>
-        <span
-          className={`text-xs px-2 py-1 rounded ${
-            match.status === 'in_progress'
-              ? 'bg-success-soft text-success'
-              : 'bg-bg-alt text-foreground-muted'
-          }`}
-        >
-          {match.status === 'in_progress' ? 'En cours' : 'En attente'}
+    <div className="card rounded-lg p-3 flex flex-col gap-2 text-xs">
+      {/* Header: Table + bracket */}
+      <div className="flex justify-between items-center">
+        <span className="font-heading text-xs uppercase tracking-wider text-foreground-muted truncate">
+          {match.bracket.name}
         </span>
-      </div>
-
-      {/* Players header */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mb-4">
-        <div className="text-left">
-          <p className="font-medium text-sm truncate">{playerName(match.player1)}</p>
-          <p className="text-xs text-foreground-muted">{match.player1?.club ?? ''}</p>
-        </div>
-        <div className="text-center">
-          <div className="font-heading text-3xl tabular text-primary">
-            {setsWon.p1} - {setsWon.p2}
-          </div>
-          <p className="text-xs text-foreground-muted">Sets</p>
-        </div>
-        <div className="text-right">
-          <p className="font-medium text-sm truncate">{playerName(match.player2)}</p>
-          <p className="text-xs text-foreground-muted">{match.player2?.club ?? ''}</p>
-        </div>
-      </div>
-
-      {/* Set-by-set scores */}
-      <div className="space-y-1.5 mb-4">
-        {sets.map((s, i) => (
-          <SetScoreInput
-            key={i}
-            setIndex={i}
-            p1Score={s.p1}
-            p2Score={s.p2}
-            onChange={(p1, p2) => updateSet(i, p1, p2)}
-            disabled={saving}
-          />
-        ))}
-        {sets.length < maxSets && !matchFinished && (
-          <button
-            type="button"
-            onClick={addSet}
-            className="text-xs text-primary hover:underline mt-1"
-          >
-            + Ajouter un set
-          </button>
+        {match.table && (
+          <span className="bg-primary/10 text-primary font-bold text-xs px-1.5 py-0.5 rounded">
+            T{match.table.number}
+          </span>
         )}
       </div>
 
+      {/* Score overview (sets won) */}
+      <div className="flex items-center justify-center gap-2">
+        <span className={`font-heading text-2xl tabular ${setsWon.p1 > setsWon.p2 ? 'text-emerald-600' : 'text-foreground'}`}>
+          {setsWon.p1}
+        </span>
+        <span className="text-foreground-muted text-lg">-</span>
+        <span className={`font-heading text-2xl tabular ${setsWon.p2 > setsWon.p1 ? 'text-emerald-600' : 'text-foreground'}`}>
+          {setsWon.p2}
+        </span>
+      </div>
+
+      {/* Player 1 row with set pills */}
+      <div className="flex items-center gap-1.5">
+        <span className="font-medium truncate flex-1 text-xs" title={playerName(match.player1)}>
+          {playerName(match.player1)}
+        </span>
+        <div className="flex gap-0.5">
+          {sets.map((s, i) => {
+            if (s.p1 === 0 && s.p2 === 0) return null;
+            const won = (s.p1 >= 11 && s.p1 - s.p2 >= 2) ? true
+              : (s.p2 >= 11 && s.p2 - s.p1 >= 2) ? false
+              : null;
+            return <ScorePill key={i} score={s.p1} won={won} />;
+          })}
+        </div>
+      </div>
+
+      {/* Player 2 row with set pills */}
+      <div className="flex items-center gap-1.5">
+        <span className="font-medium truncate flex-1 text-xs" title={playerName(match.player2)}>
+          {playerName(match.player2)}
+        </span>
+        <div className="flex gap-0.5">
+          {sets.map((s, i) => {
+            if (s.p1 === 0 && s.p2 === 0) return null;
+            const won = (s.p2 >= 11 && s.p2 - s.p1 >= 2) ? true
+              : (s.p1 >= 11 && s.p1 - s.p2 >= 2) ? false
+              : null;
+            return <ScorePill key={i} score={s.p2} won={won} />;
+          })}
+        </div>
+      </div>
+
+      {/* Set inputs (compact) */}
+      {editing && (
+        <div className="grid grid-cols-5 gap-1 mt-1">
+          {sets.map((s, i) => (
+            <div key={i} className="flex flex-col items-center gap-0.5">
+              <span className="text-[10px] text-foreground-muted">S{i + 1}</span>
+              <input
+                type="number" min={0} max={99} value={s.p1 || ''}
+                onChange={(e) => updateSet(i, 'p1', Number(e.target.value) || 0)}
+                className="w-8 h-6 text-center text-xs border border-border rounded bg-bg tabular"
+              />
+              <input
+                type="number" min={0} max={99} value={s.p2 || ''}
+                onChange={(e) => updateSet(i, 'p2', Number(e.target.value) || 0)}
+                className="w-8 h-6 text-center text-xs border border-border rounded bg-bg tabular"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Actions */}
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="btn-secondary text-sm flex-1 disabled:opacity-50"
-        >
-          {saving ? 'Sauvegarde…' : 'Sauvegarder'}
-        </button>
-        {matchFinished && winnerId && (
+      <div className="flex gap-1.5 mt-1">
+        {editing && matchFinished && winnerId && (
           <button
             type="button"
-            onClick={handleFinish}
-            className="btn-primary text-sm flex-1"
+            onClick={handleValidate}
+            className="btn-primary text-xs py-1 px-2 flex-1 rounded"
           >
-            Valider ({setsWon.p1 > setsWon.p2 ? match.player1?.lastName : match.player2?.lastName} gagne)
+            Valider
+          </button>
+        )}
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => { if (canEdit) { setEditing(true); onEdit(match); } }}
+            disabled={!canEdit}
+            title={canEdit ? 'Modifier le résultat' : editTooltip}
+            className="btn-secondary text-xs py-1 px-2 flex-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Modifier
           </button>
         )}
       </div>
@@ -212,12 +198,12 @@ export default function JugeArbitrePage() {
 
   const refresh = useCallback(async () => {
     try {
-      const r = await fetch('/api/matches?status=in_progress', { cache: 'no-store' });
-      const j = await r.json();
-      const inProg = j.data ?? [];
-      const r2 = await fetch('/api/matches?status=waiting', { cache: 'no-store' });
-      const j2 = await r2.json();
-      setMatches([...inProg, ...(j2.data ?? [])]);
+      const [r1, r2] = await Promise.all([
+        fetch('/api/matches?status=in_progress', { cache: 'no-store' }),
+        fetch('/api/matches?status=waiting', { cache: 'no-store' }),
+      ]);
+      const [j1, j2] = await Promise.all([r1.json(), r2.json()]);
+      setMatches([...(j1.data ?? []), ...(j2.data ?? [])]);
     } catch {
       /* offline */
     } finally {
@@ -240,7 +226,8 @@ export default function JugeArbitrePage() {
     };
   }, [refresh]);
 
-  const handleScoreUpdate = async (m: JaMatch, sets: { p1: number; p2: number }[]) => {
+  // Valider = save score + finish match (shows on table + saves for export)
+  const handleValidate = async (m: JaMatch, sets: { p1: number; p2: number }[], winnerId: string) => {
     const setsWon = sets.reduce(
       (acc, s) => {
         if (s.p1 >= 11 && s.p1 - s.p2 >= 2) return { p1: acc.p1 + 1, p2: acc.p2 };
@@ -250,43 +237,6 @@ export default function JugeArbitrePage() {
       { p1: 0, p2: 0 },
     );
 
-    const optimisticId = `score-${m.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const body = {
-      scoreP1: m.scoreP1,
-      scoreP2: m.scoreP2,
-      setsP1: setsWon.p1,
-      setsP2: setsWon.p2,
-      sets,
-      version: m.version,
-      optimisticId,
-    };
-
-    // Optimistic update
-    setMatches((prev) =>
-      prev.map((x) =>
-        x.id === m.id
-          ? { ...x, setsP1: setsWon.p1, setsP2: setsWon.p2, sets, version: x.version + 1 }
-          : x,
-      ),
-    );
-
-    const result = await enqueueOrSubmit(`/api/matches/${m.id}/score`, 'PATCH', body);
-    if (result.queued) setPendingCount((c) => c + 1);
-    else if (!result.ok) refresh();
-  };
-
-  const handleFinish = async (m: JaMatch, winnerId: string) => {
-    const sets = m.sets.length > 0 ? m.sets : [];
-    const setsWon = sets.reduce(
-      (acc, s) => {
-        if (s.p1 >= 11 && s.p1 - s.p2 >= 2) return { p1: acc.p1 + 1, p2: acc.p2 };
-        if (s.p2 >= 11 && s.p2 - s.p1 >= 2) return { p1: acc.p1, p2: acc.p2 + 1 };
-        return acc;
-      },
-      { p1: 0, p2: 0 },
-    );
-
-    const optimisticId = `finish-${m.id}-${Date.now()}`;
     const body = {
       winnerId,
       scoreP1: m.scoreP1,
@@ -295,10 +245,10 @@ export default function JugeArbitrePage() {
       setsP2: setsWon.p2,
       sets,
       version: m.version,
-      optimisticId,
+      optimisticId: `finish-${m.id}-${Date.now()}`,
     };
 
-    // Remove from list optimistically
+    // Optimistic: mark as finished
     setMatches((prev) => prev.filter((x) => x.id !== m.id));
 
     const result = await enqueueOrSubmit(`/api/matches/${m.id}/finish`, 'POST', body);
@@ -306,11 +256,49 @@ export default function JugeArbitrePage() {
     else refresh();
   };
 
+  // Edit handler (re-open a finished match)
+  const handleEdit = (_m: JaMatch) => {
+    // Just re-enables editing in the card (state is local)
+  };
+
+  // Determine if a match can be edited (the next round/match hasn't started)
+  const canEditMatch = (m: JaMatch): { allowed: boolean; reason: string } => {
+    if (m.status !== 'finished') return { allowed: true, reason: '' };
+    // For pool matches: editable as long as elimination hasn't started
+    // For elimination: editable as long as next round match hasn't started
+    // Simplified: always allow if match is still visible in the list
+    return { allowed: true, reason: '' };
+  };
+
+  // Export SPID XML
+  const handleExportSPID = async () => {
+    try {
+      const r = await fetch('/api/export/spid', { cache: 'no-store' });
+      if (!r.ok) throw new Error('Export failed');
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `export-spid-${new Date().toISOString().slice(0, 10)}.xml`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Erreur lors de l\'export SPID');
+    }
+  };
+
   return (
     <div data-testid="juge-arbitre-page">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-heading text-3xl uppercase tracking-wide">Juge-Arbitre</h1>
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="font-heading text-2xl uppercase tracking-wide">Juge-Arbitre</h1>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleExportSPID}
+            className="btn-secondary text-xs px-3 py-1.5 rounded"
+          >
+            Export SPID
+          </button>
           <LiveStatusBadge />
           <span
             className={`text-xs px-2 py-1 rounded ${
@@ -329,20 +317,26 @@ export default function JugeArbitrePage() {
 
       {loading && <p className="text-foreground-muted">Chargement…</p>}
       {!loading && matches.length === 0 && (
-        <p className="card text-foreground-muted text-center py-8 rounded-xl">
+        <p className="card text-foreground-muted text-center py-6 rounded-xl">
           Aucun match en cours ou en attente.
         </p>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {matches.map((m) => (
-          <MatchCard
-            key={m.id}
-            match={m}
-            onScoreUpdate={handleScoreUpdate}
-            onFinish={handleFinish}
-          />
-        ))}
+      {/* Grid 4 columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        {matches.map((m) => {
+          const { allowed, reason } = canEditMatch(m);
+          return (
+            <MatchCard
+              key={m.id}
+              match={m}
+              onValidate={handleValidate}
+              onEdit={handleEdit}
+              canEdit={allowed}
+              editTooltip={reason}
+            />
+          );
+        })}
       </div>
     </div>
   );

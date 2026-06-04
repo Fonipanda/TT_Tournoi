@@ -78,12 +78,38 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
       }
 
-      // Libérer la table
+      // Libérer la table :
+      // - Poule : libérer seulement quand TOUS les matchs de la poule sont terminés
+      // - Élimination : libérer immédiatement
       if (m.tableId) {
-        await tx.tableModel.update({
-          where: { id: m.tableId },
-          data: { status: 'free', currentMatchId: null },
-        });
+        const isPoolMatch = current.poolNumber != null;
+        let shouldRelease = true;
+
+        if (isPoolMatch) {
+          // Vérifier si tous les matchs de la même poule sont terminés
+          const pendingPoolMatches = await tx.match.count({
+            where: {
+              bracketId: current.bracketId,
+              poolNumber: current.poolNumber,
+              status: { not: 'finished' },
+              id: { not: id },
+            },
+          });
+          shouldRelease = pendingPoolMatches === 0;
+        }
+
+        if (shouldRelease) {
+          await tx.tableModel.update({
+            where: { id: m.tableId },
+            data: { status: 'free', currentMatchId: null },
+          });
+        } else {
+          // Poule pas terminée: on garde la table rouge mais on enlève le match courant
+          await tx.tableModel.update({
+            where: { id: m.tableId },
+            data: { currentMatchId: null },
+          });
+        }
       }
 
       // Idempotency

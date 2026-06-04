@@ -7,7 +7,7 @@ import { TextField, SelectField, CheckboxField } from '@/components/ui/fields';
 import { toast } from '@/components/ui/toast';
 import { apiPost, apiPatch, apiDelete, ApiError } from '@/lib/api-client';
 
-type Role = 'admin' | 'juge_arbitre' | 'player';
+type Role = 'admin' | 'juge_arbitre' | 'player' | 'visitor';
 
 interface UserAccount {
   id: string;
@@ -25,12 +25,14 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: 'Administrateur',
   juge_arbitre: 'Juge-Arbitre',
   player: 'Joueur',
+  visitor: 'Visiteur',
 };
 
 const ROLE_BADGE: Record<Role, string> = {
   admin: 'bg-danger-soft text-danger',
   juge_arbitre: 'bg-warning-soft text-warning',
   player: 'bg-primary-soft text-primary',
+  visitor: 'bg-gray-100 text-gray-600',
 };
 
 interface UserFormData {

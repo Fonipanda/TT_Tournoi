@@ -1,15 +1,17 @@
 'use client';
 
 /**
- * BracketTree — affichage visuel d'un tableau d'élimination directe.
+ * BracketTree — Roland Garros-style bracket display.
  *
- * Layout : colonnes de matches par tour, espacement vertical doublé à chaque tour,
- * connecteurs CSS géométriques entre les paires.
- *
- * Port simplifié du composant du dépôt B (`frontend/src/components/BracketTree.jsx`).
+ * Features:
+ * - Horizontal column layout with round labels in a navigation bar
+ * - Match cards with player name, checkmark for winner, set-by-set scores
+ * - Connectors between rounds
+ * - Navigation arrows < > for horizontal scrolling
+ * - Responsive with soft rounded cards
  */
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 interface PlayerLite {
   id: string;
@@ -28,6 +30,7 @@ export interface BracketTreeMatch {
   status: 'waiting' | 'in_progress' | 'finished' | 'blocked';
   setsP1: number;
   setsP2: number;
+  sets?: { p1: number; p2: number }[] | null;
 }
 
 interface Props {
@@ -35,12 +38,15 @@ interface Props {
   highlightWinner?: boolean;
 }
 
-const MATCH_HEIGHT = 70;
-const MATCH_WIDTH = 220;
-const COLUMN_GAP = 60;
+const MATCH_HEIGHT = 80;
+const MATCH_WIDTH = 260;
+const COLUMN_GAP = 48;
 
 export function BracketTree({ matches, highlightWinner = true }: Props) {
-  const { columns, totalRounds } = useMemo(() => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeRound, setActiveRound] = useState(0);
+
+  const { columns, totalRounds, roundNames } = useMemo(() => {
     const byRound = new Map<number, BracketTreeMatch[]>();
     for (const m of matches) {
       const round = m.roundNumber || 1;
@@ -49,84 +55,154 @@ export function BracketTree({ matches, highlightWinner = true }: Props) {
     }
     const totalRounds = byRound.size > 0 ? Math.max(...byRound.keys()) : 0;
     const columns: BracketTreeMatch[][] = [];
+    const roundNames: string[] = [];
     for (let r = 1; r <= totalRounds; r++) {
-      columns.push(byRound.get(r) ?? []);
+      const col = byRound.get(r) ?? [];
+      columns.push(col);
+      roundNames.push(col[0]?.roundName ?? `Tour ${r}`);
     }
-    return { columns, totalRounds };
+    return { columns, totalRounds, roundNames };
   }, [matches]);
 
   if (matches.length === 0) {
     return (
-      <div className="card text-center py-12 text-foreground-muted" data-testid="bracket-empty">
-        Tableau d'élimination non encore généré.
+      <div className="card text-center py-12 text-foreground-muted rounded-2xl" data-testid="bracket-empty">
+        Tableau final non encore généré.
       </div>
     );
   }
 
-  // Hauteur totale = nb max de matches au 1er tour × espacement
-  const firstRoundCount = columns[0]?.length ?? 0;
-  const totalHeight = Math.max(MATCH_HEIGHT, firstRoundCount * MATCH_HEIGHT * 2);
+  const firstRoundCount = columns[0]?.length ?? 1;
+  const totalHeight = Math.max(MATCH_HEIGHT * 2, firstRoundCount * (MATCH_HEIGHT + 12));
+
+  const scrollTo = (direction: 'left' | 'right') => {
+    if (!scrollRef.current) return;
+    const scrollAmount = MATCH_WIDTH + COLUMN_GAP;
+    scrollRef.current.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth',
+    });
+  };
+
+  const scrollToRound = (idx: number) => {
+    setActiveRound(idx);
+    if (!scrollRef.current) return;
+    const scrollTarget = idx * (MATCH_WIDTH + COLUMN_GAP);
+    scrollRef.current.scrollTo({ left: scrollTarget, behavior: 'smooth' });
+  };
 
   return (
-    <div
-      className="overflow-x-auto card"
-      data-testid="bracket-tree"
-      style={{ minHeight: totalHeight + 40 }}
-    >
-      <div
-        className="relative inline-block min-w-full"
-        style={{
-          height: totalHeight,
-          padding: '20px 0',
-          minWidth: totalRounds * (MATCH_WIDTH + COLUMN_GAP),
-        }}
-      >
-        {columns.map((col, colIdx) => {
-          const matchesInRound = col.length || 1;
-          const slotHeight = totalHeight / matchesInRound;
-          const left = colIdx * (MATCH_WIDTH + COLUMN_GAP);
-          return (
-            <div
-              key={colIdx}
-              className="absolute top-0"
-              style={{ left, width: MATCH_WIDTH, height: totalHeight }}
-              data-testid={`bracket-column-${colIdx}`}
-            >
-              {/* Label du tour */}
-              <p className="absolute -top-1 left-0 text-xs uppercase tracking-widest text-foreground-muted">
-                {col[0]?.roundName ?? `Tour ${colIdx + 1}`}
-              </p>
+    <div data-testid="bracket-tree" className="space-y-4">
+      {/* Round navigation bar */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-border">
+        {roundNames.map((name, idx) => (
+          <button
+            key={idx}
+            type="button"
+            onClick={() => scrollToRound(idx)}
+            className={`text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
+              activeRound === idx
+                ? 'bg-primary text-primary-fg font-medium'
+                : 'text-foreground-muted hover:bg-bg-alt'
+            }`}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
 
-              {col.map((m, i) => {
-                const top = slotHeight * i + slotHeight / 2 - MATCH_HEIGHT / 2;
-                return (
-                  <div
-                    key={m.id}
-                    className="absolute"
-                    style={{ top, left: 0, width: MATCH_WIDTH, height: MATCH_HEIGHT }}
-                    data-testid={`bracket-match-${m.id}`}
-                  >
-                    <MatchCard match={m} highlightWinner={highlightWinner} />
-                    {/* Connecteur vers le tour suivant */}
-                    {colIdx < totalRounds - 1 && (
-                      <Connector
-                        isUpper={i % 2 === 0}
-                        slotHeight={slotHeight}
-                        gap={COLUMN_GAP}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+      {/* Bracket area with navigation arrows */}
+      <div className="relative">
+        {/* Left arrow */}
+        <button
+          type="button"
+          onClick={() => scrollTo('left')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-primary text-primary-fg flex items-center justify-center shadow-lg hover:bg-primary/80 transition-colors"
+          aria-label="Tour précédent"
+        >
+          &lt;
+        </button>
+
+        {/* Right arrow */}
+        <button
+          type="button"
+          onClick={() => scrollTo('right')}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-primary text-primary-fg flex items-center justify-center shadow-lg hover:bg-primary/80 transition-colors"
+          aria-label="Tour suivant"
+        >
+          &gt;
+        </button>
+
+        {/* Scrollable bracket */}
+        <div
+          ref={scrollRef}
+          className="overflow-x-auto mx-12 scroll-smooth"
+          style={{ minHeight: totalHeight + 60 }}
+          onScroll={() => {
+            if (!scrollRef.current) return;
+            const idx = Math.round(scrollRef.current.scrollLeft / (MATCH_WIDTH + COLUMN_GAP));
+            setActiveRound(Math.min(idx, totalRounds - 1));
+          }}
+        >
+          <div
+            className="relative inline-flex gap-0"
+            style={{
+              height: totalHeight,
+              paddingTop: 20,
+              minWidth: totalRounds * (MATCH_WIDTH + COLUMN_GAP),
+            }}
+          >
+            {columns.map((col, colIdx) => {
+              const matchesInRound = col.length || 1;
+              const slotHeight = totalHeight / matchesInRound;
+              const left = colIdx * (MATCH_WIDTH + COLUMN_GAP);
+
+              return (
+                <div
+                  key={colIdx}
+                  className="absolute top-5"
+                  style={{ left, width: MATCH_WIDTH, height: totalHeight }}
+                  data-testid={`bracket-column-${colIdx}`}
+                >
+                  {col.map((m, i) => {
+                    const top = slotHeight * i + slotHeight / 2 - MATCH_HEIGHT / 2;
+                    return (
+                      <div
+                        key={m.id}
+                        className="absolute"
+                        style={{ top, left: 0, width: MATCH_WIDTH, height: MATCH_HEIGHT }}
+                        data-testid={`bracket-match-${m.id}`}
+                      >
+                        <RGMatchCard match={m} highlightWinner={highlightWinner} />
+                        {/* Connector to next round */}
+                        {colIdx < totalRounds - 1 && (
+                          <Connector
+                            isUpper={i % 2 === 0}
+                            slotHeight={slotHeight}
+                            gap={COLUMN_GAP}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function MatchCard({
+/**
+ * Roland Garros-style match card:
+ * - Light bg with rounded corners
+ * - 2 rows (one per player)
+ * - Checkmark for winner
+ * - Set scores displayed
+ */
+function RGMatchCard({
   match,
   highlightWinner,
 }: {
@@ -137,57 +213,97 @@ function MatchCard({
   const winnerId = match.winner?.id ?? null;
   const p1Win = highlightWinner && isFinished && winnerId === match.player1?.id;
   const p2Win = highlightWinner && isFinished && winnerId === match.player2?.id;
+  const sets = Array.isArray(match.sets) ? match.sets : [];
 
   return (
     <div
-      className={`bg-surface border ${
-        match.status === 'in_progress' ? 'border-primary ring-1 ring-primary' : 'border-border-strong'
-      } w-full h-full grid grid-rows-2`}
+      className={`w-full h-full rounded-xl overflow-hidden shadow-sm border ${
+        match.status === 'in_progress'
+          ? 'border-primary ring-2 ring-primary/30 bg-surface'
+          : 'border-border bg-surface'
+      }`}
     >
-      <Side
+      <PlayerRow
         player={match.player1}
-        score={match.setsP1}
-        winner={p1Win}
-        bye={!match.player1 && match.status !== 'waiting'}
+        sets={sets}
+        playerSide="p1"
+        isWinner={p1Win}
+        isBye={!match.player1 && match.status !== 'waiting'}
+        totalSets={match.setsP1}
       />
-      <div className="border-t border-border" />
-      <Side
+      <div className="border-t border-border/50" />
+      <PlayerRow
         player={match.player2}
-        score={match.setsP2}
-        winner={p2Win}
-        bye={!match.player2 && match.status !== 'waiting'}
+        sets={sets}
+        playerSide="p2"
+        isWinner={p2Win}
+        isBye={!match.player2 && match.status !== 'waiting'}
+        totalSets={match.setsP2}
       />
     </div>
   );
 }
 
-function Side({
+function PlayerRow({
   player,
-  score,
-  winner,
-  bye,
+  sets,
+  playerSide,
+  isWinner,
+  isBye,
+  totalSets,
 }: {
   player?: PlayerLite | null;
-  score: number;
-  winner: boolean;
-  bye: boolean;
+  sets: { p1: number; p2: number }[];
+  playerSide: 'p1' | 'p2';
+  isWinner: boolean;
+  isBye: boolean;
+  totalSets: number;
 }) {
   return (
     <div
-      className={`flex items-center justify-between px-2 ${
-        winner ? 'bg-success-soft text-success font-semibold' : ''
-      } ${bye ? 'text-foreground-subtle italic' : ''}`}
+      className={`flex items-center h-1/2 px-3 gap-2 ${
+        isWinner ? 'bg-success-soft/50' : ''
+      } ${isBye ? 'text-foreground-subtle italic' : ''}`}
     >
-      <span className="truncate text-sm">
-        {player ? `${player.lastName} ${player.firstName}` : bye ? 'Bye' : '—'}
+      {/* Winner check */}
+      {isWinner && (
+        <span className="text-success text-sm flex-shrink-0" aria-label="Vainqueur">&#10003;</span>
+      )}
+      {!isWinner && <span className="w-4 flex-shrink-0" />}
+
+      {/* Player name */}
+      <span className={`truncate text-sm flex-1 ${isWinner ? 'font-bold' : ''}`}>
+        {player ? `${player.lastName} ${player.firstName[0]}.` : isBye ? 'Bye' : '—'}
       </span>
-      <span className="font-mono tabular text-sm">{score}</span>
+
+      {/* Set scores */}
+      {sets.length > 0 ? (
+        <div className="flex items-center gap-1">
+          {sets.map((s, i) => {
+            const score = playerSide === 'p1' ? s.p1 : s.p2;
+            const oppScore = playerSide === 'p1' ? s.p2 : s.p1;
+            const won = score > oppScore;
+            return (
+              <span
+                key={i}
+                className={`text-xs tabular font-mono w-5 text-center ${
+                  won ? 'font-bold' : 'text-foreground-muted'
+                }`}
+              >
+                {score}
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <span className="font-mono tabular text-sm">{totalSets}</span>
+      )}
     </div>
   );
 }
 
 /**
- * Connecteur en L : sort à droite de la card, monte ou descend, puis va à droite.
+ * L-shaped connector between paired matches.
  */
 function Connector({
   isUpper,
@@ -212,44 +328,25 @@ function Connector({
       }}
       aria-hidden="true"
     >
-      {/* Trait horizontal court depuis la card */}
       <line
-        x1={0}
-        y1={0}
-        x2={halfGap}
-        y2={0}
-        stroke="rgb(203 213 225)"
-        strokeWidth="2"
+        x1={0} y1={0} x2={halfGap} y2={0}
+        stroke="rgb(203 213 225)" strokeWidth="2"
       />
-      {/* Trait vertical : monte si match impair (upper), descend sinon */}
       {isUpper ? (
         <line
-          x1={halfGap}
-          y1={0}
-          x2={halfGap}
-          y2={verticalLen}
-          stroke="rgb(203 213 225)"
-          strokeWidth="2"
+          x1={halfGap} y1={0} x2={halfGap} y2={verticalLen}
+          stroke="rgb(203 213 225)" strokeWidth="2"
         />
       ) : (
         <line
-          x1={halfGap}
-          y1={0}
-          x2={halfGap}
-          y2={-verticalLen}
-          stroke="rgb(203 213 225)"
-          strokeWidth="2"
+          x1={halfGap} y1={0} x2={halfGap} y2={-verticalLen}
+          stroke="rgb(203 213 225)" strokeWidth="2"
         />
       )}
-      {/* Trait horizontal vers la prochaine card (uniquement pour upper) */}
       {isUpper && (
         <line
-          x1={halfGap}
-          y1={verticalLen}
-          x2={gap}
-          y2={verticalLen}
-          stroke="rgb(203 213 225)"
-          strokeWidth="2"
+          x1={halfGap} y1={verticalLen} x2={gap} y2={verticalLen}
+          stroke="rgb(203 213 225)" strokeWidth="2"
         />
       )}
     </svg>
