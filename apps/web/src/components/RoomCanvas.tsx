@@ -200,10 +200,10 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
 
       <div
         ref={canvasRef}
-        className="relative bg-bg-alt border border-border-strong overflow-hidden touch-none select-none"
+        className="relative bg-bg-alt border border-border-strong overflow-hidden touch-none select-none mx-auto"
         style={{
           width: '100%',
-          maxWidth: room.width,
+          maxWidth: editable ? room.width : '100%',
           aspectRatio: `${room.width} / ${room.height}`,
         }}
         data-testid="room-canvas-area"

@@ -411,10 +411,14 @@ function separateClubs(pools: Player[][]): void {
               : false;
             if (sourceHasCandidate) continue;
 
-            // Coût = différence de points entre les 2 joueurs × écart de position
+            // Coût hiérarchique :
+            // 1) Préférer FORTEMENT le même slot (P1↔P1, P2↔P2, P3↔P3) pour préserver le seeding.
+            // 2) Parmi les candidats même slot, minimiser l'écart de points.
+            // 3) Tie-break : préférer les pools adjacentes pour minimiser les perturbations.
             const pointsDiff = Math.abs(conflictPlayer.points - candidate.points);
             const slotDiff = Math.abs(conflictIdx - ti);
-            const cost = pointsDiff + slotDiff * 50;
+            const poolDist = Math.abs(pi - pj);
+            const cost = slotDiff * 1_000_000 + pointsDiff * 100 + poolDist;
 
             if (!bestSwap || cost < bestSwap.cost) {
               bestSwap = { targetPool: pj, targetIdx: ti, cost };
@@ -486,8 +490,12 @@ export async function generatePools(bracketId: string, requestedPoolSize?: numbe
     throw new Error('Au moins 2 joueurs nécessaires pour générer les poules');
   }
 
-  // Tri par points décroissants pour le snake seeding
-  const sorted = [...eligible].sort((a, b) => b.points - a.points);
+  // Tri par points décroissants pour le snake seeding ;
+  // tiebreak : lastName alphabétique ascendant (convention FFTT/SPID).
+  const sorted = [...eligible].sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    return (a.lastName ?? '').localeCompare(b.lastName ?? '', 'fr', { sensitivity: 'base' });
+  });
 
   // Détermine la taille de poule
   const totalPlayers = sorted.length;

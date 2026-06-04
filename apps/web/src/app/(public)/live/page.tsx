@@ -127,11 +127,13 @@ export default function LivePage() {
             </button>
           </div>
 
-          <RoomCanvas
-            room={currentRoom}
-            tables={currentRoom.tables}
-            editable={false}
-          />
+          <div className="w-full max-w-[1600px] mx-auto">
+            <RoomCanvas
+              room={currentRoom}
+              tables={currentRoom.tables}
+              editable={false}
+            />
+          </div>
         </div>
       )}
     </div>

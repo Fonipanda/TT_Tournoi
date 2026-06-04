@@ -22,17 +22,41 @@ interface JaMatch {
   version: number;
 }
 
-// ─── Score Pill (colored badge per set) ────────────────────────────────────────
-function ScorePill({ score, won }: { score: number; won: boolean | null }) {
-  const bg = won === null
-    ? 'bg-gray-200 text-gray-600'
-    : won
-      ? 'bg-emerald-500 text-white'
-      : 'bg-red-500 text-white';
+// ─── Score Cell (editable input or readonly badge) ────────────────────────────
+function ScoreCell({
+  value,
+  won,
+  editing,
+  onChange,
+}: {
+  value: number;
+  won: boolean | null;
+  editing: boolean;
+  onChange: (v: number) => void;
+}) {
+  const bg =
+    won === null
+      ? 'bg-gray-200 text-gray-700'
+      : won
+        ? 'bg-emerald-500 text-white'
+        : 'bg-red-500 text-white';
+  if (!editing) {
+    return (
+      <span className={`inline-flex items-center justify-center w-8 h-7 rounded text-xs font-bold ${bg}`}>
+        {value > 0 ? value : '-'}
+      </span>
+    );
+  }
   return (
-    <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold ${bg}`}>
-      {score}
-    </span>
+    <input
+      type="number"
+      min={0}
+      max={99}
+      value={value || ''}
+      onChange={(e) => onChange(Number(e.target.value) || 0)}
+      className={`w-8 h-7 rounded text-xs font-bold text-center tabular border-0 outline-none focus:ring-2 focus:ring-primary ${bg}`}
+      aria-label="Score"
+    />
   );
 }
 
@@ -52,7 +76,7 @@ function MatchCard({
 }) {
   const [sets, setSets] = useState<{ p1: number; p2: number }[]>(
     match.sets.length > 0
-      ? [...match.sets]
+      ? [...match.sets, ...Array.from({ length: Math.max(0, 5 - match.sets.length) }, () => ({ p1: 0, p2: 0 }))].slice(0, 5)
       : Array.from({ length: 5 }, () => ({ p1: 0, p2: 0 })),
   );
   const [editing, setEditing] = useState(match.status !== 'finished');
@@ -110,58 +134,61 @@ function MatchCard({
         </span>
       </div>
 
-      {/* Player 1 row with set pills */}
+      {/* Player 1 row with editable score cells */}
       <div className="flex items-center gap-1.5">
         <span className="font-medium truncate flex-1 text-xs" title={playerName(match.player1)}>
           {playerName(match.player1)}
         </span>
         <div className="flex gap-0.5">
           {sets.map((s, i) => {
-            if (s.p1 === 0 && s.p2 === 0) return null;
-            const won = (s.p1 >= 11 && s.p1 - s.p2 >= 2) ? true
-              : (s.p2 >= 11 && s.p2 - s.p1 >= 2) ? false
-              : null;
-            return <ScorePill key={i} score={s.p1} won={won} />;
+            const won =
+              s.p1 === 0 && s.p2 === 0
+                ? null
+                : s.p1 >= 11 && s.p1 - s.p2 >= 2
+                  ? true
+                  : s.p2 >= 11 && s.p2 - s.p1 >= 2
+                    ? false
+                    : null;
+            return (
+              <ScoreCell
+                key={i}
+                value={s.p1}
+                won={won}
+                editing={editing}
+                onChange={(v) => updateSet(i, 'p1', v)}
+              />
+            );
           })}
         </div>
       </div>
 
-      {/* Player 2 row with set pills */}
+      {/* Player 2 row with editable score cells */}
       <div className="flex items-center gap-1.5">
         <span className="font-medium truncate flex-1 text-xs" title={playerName(match.player2)}>
           {playerName(match.player2)}
         </span>
         <div className="flex gap-0.5">
           {sets.map((s, i) => {
-            if (s.p1 === 0 && s.p2 === 0) return null;
-            const won = (s.p2 >= 11 && s.p2 - s.p1 >= 2) ? true
-              : (s.p1 >= 11 && s.p1 - s.p2 >= 2) ? false
-              : null;
-            return <ScorePill key={i} score={s.p2} won={won} />;
+            const won =
+              s.p1 === 0 && s.p2 === 0
+                ? null
+                : s.p2 >= 11 && s.p2 - s.p1 >= 2
+                  ? true
+                  : s.p1 >= 11 && s.p1 - s.p2 >= 2
+                    ? false
+                    : null;
+            return (
+              <ScoreCell
+                key={i}
+                value={s.p2}
+                won={won}
+                editing={editing}
+                onChange={(v) => updateSet(i, 'p2', v)}
+              />
+            );
           })}
         </div>
       </div>
-
-      {/* Set inputs (compact) */}
-      {editing && (
-        <div className="grid grid-cols-5 gap-1 mt-1">
-          {sets.map((s, i) => (
-            <div key={i} className="flex flex-col items-center gap-0.5">
-              <span className="text-[10px] text-foreground-muted">S{i + 1}</span>
-              <input
-                type="number" min={0} max={99} value={s.p1 || ''}
-                onChange={(e) => updateSet(i, 'p1', Number(e.target.value) || 0)}
-                className="w-8 h-6 text-center text-xs border border-border rounded bg-bg tabular"
-              />
-              <input
-                type="number" min={0} max={99} value={s.p2 || ''}
-                onChange={(e) => updateSet(i, 'p2', Number(e.target.value) || 0)}
-                className="w-8 h-6 text-center text-xs border border-border rounded bg-bg tabular"
-              />
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Actions */}
       <div className="flex gap-1.5 mt-1">
