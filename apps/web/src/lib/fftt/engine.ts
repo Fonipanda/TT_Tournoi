@@ -129,33 +129,20 @@ export function ffttPoolRanking(
     }
   }
 
-  // Tri par: 1) points matchs, 2) quotient sets, 3) quotient points de jeu
-  function sortKey(pid: string): [number, number, number] {
-    const sw = setsW[pid] ?? 0;
-    const sl = setsL[pid] ?? 0;
-    const pw = ptsW[pid] ?? 0;
-    const pl = ptsL[pid] ?? 0;
-    const setsQ = sl > 0 ? sw / sl : sw > 0 ? sw * 100 : 0;
-    const ptsQ = pl > 0 ? pw / pl : pw > 0 ? pw * 100 : 0;
-    return [pts[pid] ?? 0, setsQ, ptsQ];
-  }
+  // Tri initial par points matchs uniquement
+  const ranking = [...playersInPool].sort((a, b) => (pts[b] ?? 0) - (pts[a] ?? 0));
 
-  function compareKeys(a: [number, number, number], b: [number, number, number]): number {
-    if (b[0] !== a[0]) return b[0] - a[0];
-    if (b[1] !== a[1]) return b[1] - a[1];
-    return b[2] - a[2];
-  }
-
-  const ranking = [...playersInPool].sort((a, b) => compareKeys(sortKey(a), sortKey(b)));
-
-  // Départage par confrontation directe pour les paires d'ex-aequo
+  // Départage par groupes d'ex-aequo (même nombre de points)
   let i = 0;
-  while (i < ranking.length - 1) {
+  while (i < ranking.length) {
     let j = i + 1;
-    while (j < ranking.length && compareKeys(sortKey(ranking[j]!), sortKey(ranking[i]!)) === 0) {
+    while (j < ranking.length && (pts[ranking[j]!] ?? 0) === (pts[ranking[i]!] ?? 0)) {
       j++;
     }
-    if (j - i === 2) {
+    const groupSize = j - i;
+
+    if (groupSize === 2) {
+      // 2 ex-aequo → confrontation directe
       const p1 = ranking[i]!;
       const p2 = ranking[i + 1]!;
       const winner = direct[`${p1}|${p2}`];
@@ -163,7 +150,22 @@ export function ffttPoolRanking(
         ranking[i] = p2;
         ranking[i + 1] = p1;
       }
+    } else if (groupSize >= 3) {
+      // 3+ ex-aequo → quotient sets, puis quotient points de jeu
+      const group = ranking.slice(i, j);
+      group.sort((a, b) => {
+        const sqA = (setsL[a] ?? 0) > 0 ? (setsW[a] ?? 0) / (setsL[a] ?? 1) : (setsW[a] ?? 0) * 100;
+        const sqB = (setsL[b] ?? 0) > 0 ? (setsW[b] ?? 0) / (setsL[b] ?? 1) : (setsW[b] ?? 0) * 100;
+        if (sqB !== sqA) return sqB - sqA;
+        const pqA = (ptsL[a] ?? 0) > 0 ? (ptsW[a] ?? 0) / (ptsL[a] ?? 1) : (ptsW[a] ?? 0) * 100;
+        const pqB = (ptsL[b] ?? 0) > 0 ? (ptsW[b] ?? 0) / (ptsL[b] ?? 1) : (ptsW[b] ?? 0) * 100;
+        return pqB - pqA;
+      });
+      for (let k = 0; k < group.length; k++) {
+        ranking[i + k] = group[k]!;
+      }
     }
+
     i = j;
   }
 
@@ -624,6 +626,8 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
     if (remaining === 4) return '8ème de finale';
     if (remaining === 5) return '16ème de finale';
     if (remaining === 6) return '32ème de finale';
+    if (remaining === 7) return '64ème de finale';
+    if (remaining === 8) return '128ème de finale';
     return `Tour ${i + 1}`;
   };
 

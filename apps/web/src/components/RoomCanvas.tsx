@@ -310,22 +310,40 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
                 {/* Lignes blanches sur les bords (lignes de la table) */}
                 <div className="absolute inset-1 border border-white/80" />
 
-                {/* Ligne centrale longitudinale (line de service) */}
-                <div className="absolute left-1/2 top-1 bottom-1 w-px bg-white/60 -translate-x-1/2" />
+                {/* Ligne centrale horizontale (ligne de service) */}
+                <div className="absolute top-1/2 left-1 right-1 h-px bg-white/60 -translate-y-1/2" />
 
-                {/* Filet au milieu (perpendiculaire à la ligne centrale) */}
-                <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-1.5 bg-gradient-to-b from-slate-200 via-white to-slate-300 border-y border-slate-400 shadow-sm" />
-
-                {/* Numéro de table + score */}
-                <div className="relative z-10 w-full h-full flex flex-col items-center justify-center text-white drop-shadow-md">
-                  <p className="font-heading font-bold text-sm leading-tight">T{t.number}</p>
-                  {t.currentMatch && (
-                    <p className="text-xs mt-0.5 tabular bg-black/40 px-1.5 rounded font-medium">
-                      {t.currentMatch.setsP1}-{t.currentMatch.setsP2}
-                    </p>
-                  )}
-                </div>
+                {/* Filet au milieu VERTICAL (perpendiculaire à la ligne de service) */}
+                <div className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-1.5 bg-gradient-to-r from-slate-200 via-white to-slate-300 border-x border-slate-400 shadow-sm" />
               </div>
+
+              {/* Numéro de table sur la bordure haute — toujours horizontal */}
+              <div
+                className="absolute left-0 right-0 flex justify-center pointer-events-none"
+                style={{
+                  top: '2px',
+                  transform: t.rotation ? `rotate(-${t.rotation}deg)` : undefined,
+                }}
+              >
+                <span className="text-white font-heading font-bold text-sm drop-shadow-md bg-black/40 px-1.5 rounded">
+                  T{t.number}
+                </span>
+              </div>
+
+              {/* Score sur la bordure basse — toujours horizontal */}
+              {t.currentMatch && (
+                <div
+                  className="absolute left-0 right-0 flex justify-center pointer-events-none"
+                  style={{
+                    bottom: '2px',
+                    transform: t.rotation ? `rotate(-${t.rotation}deg)` : undefined,
+                  }}
+                >
+                  <span className="text-white text-xs font-medium tabular bg-black/50 px-1.5 rounded">
+                    {t.currentMatch.setsP1}-{t.currentMatch.setsP2}
+                  </span>
+                </div>
+              )}
 
               {/* Player names below the table (visible in live/non-editable mode) */}
               {!editable && t.currentMatch && t.currentMatch.player1 && t.currentMatch.player2 && (
