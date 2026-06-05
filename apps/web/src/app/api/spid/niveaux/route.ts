@@ -41,8 +41,17 @@ export async function GET() {
       const waiting = b.matches.filter((m) => m.status === 'waiting').length;
       const blocked = b.matches.filter((m) => m.status === 'blocked').length;
       const total = b.matches.length;
-      const poolMatches = b.matches.filter((m) => m.poolNumber !== null).length;
-      const elimMatches = total - poolMatches;
+      // Nombre de poules = nb de poolNumber distincts (et non nb de matchs de poule)
+      const poolNumbers = new Set<number>();
+      let poolMatchCount = 0;
+      for (const m of b.matches) {
+        if (m.poolNumber !== null) {
+          poolNumbers.add(m.poolNumber);
+          poolMatchCount++;
+        }
+      }
+      const pools = poolNumbers.size;
+      const elimMatches = total - poolMatchCount;
       return {
         id: b.id,
         name: b.name,
@@ -53,7 +62,8 @@ export async function GET() {
         inProgress,
         waiting,
         blocked,
-        poolMatches,
+        pools,
+        poolMatches: poolMatchCount,
         elimMatches,
         progress: total > 0 ? Math.round((finished / total) * 100) : 0,
       };

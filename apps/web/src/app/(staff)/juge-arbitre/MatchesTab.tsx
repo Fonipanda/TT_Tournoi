@@ -42,7 +42,7 @@ function ScoreCell({
         : 'bg-red-500 text-white';
   if (!editing) {
     return (
-      <span className={`inline-flex items-center justify-center w-8 h-7 rounded text-xs font-bold ${bg}`}>
+      <span className={`inline-flex items-center justify-center w-11 h-8 rounded text-sm font-bold ${bg}`}>
         {value > 0 ? value : '-'}
       </span>
     );
@@ -54,7 +54,7 @@ function ScoreCell({
       max={99}
       value={value || ''}
       onChange={(e) => onChange(Number(e.target.value) || 0)}
-      className={`w-8 h-7 rounded text-xs font-bold text-center tabular border-0 outline-none focus:ring-2 focus:ring-primary ${bg}`}
+      className={`w-11 h-8 rounded text-sm font-bold text-center tabular border-0 outline-none focus:ring-2 focus:ring-primary appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield] ${bg}`}
       aria-label="Score"
     />
   );

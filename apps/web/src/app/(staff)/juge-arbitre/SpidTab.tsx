@@ -24,6 +24,7 @@ interface BracketStat {
   inProgress: number;
   waiting: number;
   blocked: number;
+  pools: number;
   poolMatches: number;
   elimMatches: number;
   progress: number;
@@ -182,7 +183,8 @@ export function SpidTab() {
                   <th className="py-2 pr-3">Tableau</th>
                   <th className="py-2 pr-3 text-center">Inscrits</th>
                   <th className="py-2 pr-3 text-center">Poules</th>
-                  <th className="py-2 pr-3 text-center">Élimination</th>
+                  <th className="py-2 pr-3 text-center" title="Nombre de matchs de poule">Matchs P.</th>
+                  <th className="py-2 pr-3 text-center" title="Nombre de matchs d'élimination">Matchs Élim.</th>
                   <th className="py-2 pr-3 text-center">Faits</th>
                   <th className="py-2 pr-3 text-center">En cours</th>
                   <th className="py-2 pr-3 text-center">En attente</th>
@@ -200,6 +202,7 @@ export function SpidTab() {
                       )}
                     </td>
                     <td className="py-2 pr-3 text-center tabular">{s.registered}</td>
+                    <td className="py-2 pr-3 text-center tabular">{s.pools}</td>
                     <td className="py-2 pr-3 text-center tabular">{s.poolMatches}</td>
                     <td className="py-2 pr-3 text-center tabular">{s.elimMatches}</td>
                     <td className="py-2 pr-3 text-center tabular text-success">{s.finished}</td>
