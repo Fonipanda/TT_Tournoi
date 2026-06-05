@@ -286,51 +286,101 @@ export function ffttPlaceQualifiers(
     }
   }
 
-  // Placement des 2èmes en demi-tableau opposé de leur 1er respectif
-  if (qualifiersPerPool >= 2) {
+  // ─── Placement des 2èmes : seeds (firsts.length+1)..(firsts.length+seconds.length)
+  // Règle FFTT (I.305.3) : chaque 2ème est placé à un seed du groupe des 2èmes
+  // (par tirage au sort dans son tier) ET en demi-tableau opposé de son 1er.
+  // Les positions byes (seeds > firsts+seconds) restent NULL.
+  if (qualifiersPerPool >= 2 && seconds.length > 0) {
     const half = nextPower / 2;
+    const firstsCount = firstPlayers.length;
+    const secondSeedFirst = firstsCount + 1;
+    const secondSeedLast = firstsCount + seconds.length;
+
+    // Construction des tiers de seeds pour les 2èmes (FFTT regroupe par
+    // doublements : 11-12, 13-16, 17-32, etc.) avec mélange dans chaque tier.
+    const tierBoundaries = [2, 4, 8, 16, 32, 64, 128];
+    const secondSeedsShuffled: number[] = [];
+    let lo = firstsCount;
+    for (const upper of tierBoundaries) {
+      if (lo >= secondSeedLast) break;
+      const tierLo = Math.max(lo, firstsCount);
+      const tierHi = Math.min(upper, secondSeedLast);
+      if (tierHi > tierLo) {
+        const seedsInTier = Array.from(
+          { length: tierHi - tierLo },
+          (_, i) => tierLo + 1 + i,
+        );
+        secondSeedsShuffled.push(...shuffle(seedsInTier));
+      }
+      lo = upper;
+    }
+
+    const usedSecondSeeds = new Set<number>();
+    // Pour chaque 2ème (dans l'ordre des poules), placer à un seed compatible
+    // (demi-tableau opposé de son 1er) parmi les seeds restants.
     for (let secIdx = 0; secIdx < seconds.length; secIdx++) {
       const secPid = seconds[secIdx]!;
       const firstPid = firsts[secIdx];
+      let firstInTopHalf: boolean | null = null;
       if (firstPid) {
         const firstPos = ordered.indexOf(firstPid);
-        if (firstPos !== -1) {
-          const targetHalf = firstPos < half ? 1 : 0;
-          const start = targetHalf * half;
-          const end = start + half;
-          let placed = false;
-          for (let p = start; p < end; p++) {
-            if (ordered[p] === null) {
-              ordered[p] = secPid;
-              placed = true;
-              break;
-            }
-          }
-          if (!placed) {
-            for (let p = 0; p < nextPower; p++) {
-              if (ordered[p] === null) {
-                ordered[p] = secPid;
-                break;
-              }
-            }
-          }
-        }
-      } else {
-        for (let p = 0; p < nextPower; p++) {
-          if (ordered[p] === null) {
-            ordered[p] = secPid;
+        if (firstPos !== -1) firstInTopHalf = firstPos < half;
+      }
+
+      // 1er essai : seed dans le demi-tableau opposé
+      let placed = false;
+      if (firstInTopHalf !== null) {
+        for (const seed of secondSeedsShuffled) {
+          if (usedSecondSeeds.has(seed)) continue;
+          const pos = posForSeed.get(seed);
+          if (pos === undefined || pos >= nextPower) continue;
+          const seedInTopHalf = pos < half;
+          if (seedInTopHalf !== firstInTopHalf) {
+            ordered[pos] = secPid;
+            usedSecondSeeds.add(seed);
+            placed = true;
             break;
           }
+        }
+      }
+      // Fallback : n'importe quel seed du groupe des 2èmes encore libre
+      if (!placed) {
+        for (const seed of secondSeedsShuffled) {
+          if (usedSecondSeeds.has(seed)) continue;
+          const pos = posForSeed.get(seed);
+          if (pos === undefined || pos >= nextPower) continue;
+          ordered[pos] = secPid;
+          usedSecondSeeds.add(seed);
+          break;
         }
       }
     }
   }
 
-  // Placement des 3èmes (s'il y en a) dans les positions restantes
-  for (const pid of thirds) {
+  // Placement des 3èmes (s'il y en a) au tier suivant des seeds
+  if (thirds.length > 0) {
+    const usedSeeds = new Set<number>();
+    // Récupère les seeds déjà occupés
     for (let p = 0; p < nextPower; p++) {
-      if (ordered[p] === null) {
-        ordered[p] = pid;
+      if (ordered[p] !== null) {
+        const seed = seedAtPos[p];
+        if (seed !== undefined) usedSeeds.add(seed);
+      }
+    }
+    const thirdSeedFirst = firstPlayers.length + seconds.length + 1;
+    const thirdSeedLast = thirdSeedFirst + thirds.length - 1;
+    const thirdSeeds = Array.from(
+      { length: thirdSeedLast - thirdSeedFirst + 1 },
+      (_, i) => thirdSeedFirst + i,
+    );
+    const shuffledThirdSeeds = shuffle(thirdSeeds);
+    for (const pid of thirds) {
+      for (const seed of shuffledThirdSeeds) {
+        if (usedSeeds.has(seed)) continue;
+        const pos = posForSeed.get(seed);
+        if (pos === undefined || pos >= nextPower) continue;
+        ordered[pos] = pid;
+        usedSeeds.add(seed);
         break;
       }
     }

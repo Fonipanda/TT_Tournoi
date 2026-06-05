@@ -201,6 +201,7 @@ export function BracketTree({ matches, highlightWinner = true }: Props) {
  * - 2 rows (one per player)
  * - Checkmark for winner
  * - Set scores displayed
+ * - Bye matches (auto-finished with one player) → compact single-player display
  */
 function RGMatchCard({
   match,
@@ -211,6 +212,22 @@ function RGMatchCard({
 }) {
   const isFinished = match.status === 'finished';
   const winnerId = match.winner?.id ?? null;
+
+  // Bye = match auto-fini où un seul slot est occupé.
+  // Affichage compact : juste le nom + flèche vers le tour suivant.
+  const isAutoBye =
+    isFinished && winnerId && (!match.player1 || !match.player2);
+  if (isAutoBye && match.winner) {
+    return (
+      <div className="w-full h-full flex items-center gap-2 px-3 rounded-xl bg-surface border border-border/40 text-foreground">
+        <span className="text-foreground-subtle text-xs flex-shrink-0">→</span>
+        <span className="font-medium text-sm truncate flex-1">
+          {match.winner.lastName} {match.winner.firstName[0]}.
+        </span>
+      </div>
+    );
+  }
+
   const p1Win = highlightWinner && isFinished && winnerId === match.player1?.id;
   const p2Win = highlightWinner && isFinished && winnerId === match.player2?.id;
   const sets = Array.isArray(match.sets) ? match.sets : [];
@@ -228,7 +245,6 @@ function RGMatchCard({
         sets={sets}
         playerSide="p1"
         isWinner={p1Win}
-        isBye={!match.player1 && match.status !== 'waiting'}
         totalSets={match.setsP1}
       />
       <div className="border-t border-border/50" />
@@ -237,7 +253,6 @@ function RGMatchCard({
         sets={sets}
         playerSide="p2"
         isWinner={p2Win}
-        isBye={!match.player2 && match.status !== 'waiting'}
         totalSets={match.setsP2}
       />
     </div>
@@ -249,21 +264,19 @@ function PlayerRow({
   sets,
   playerSide,
   isWinner,
-  isBye,
   totalSets,
 }: {
   player?: PlayerLite | null;
   sets: { p1: number; p2: number }[];
   playerSide: 'p1' | 'p2';
   isWinner: boolean;
-  isBye: boolean;
   totalSets: number;
 }) {
   return (
     <div
       className={`flex items-center h-1/2 px-3 gap-2 ${
         isWinner ? 'bg-success-soft/50' : ''
-      } ${isBye ? 'text-foreground-subtle italic' : ''}`}
+      }`}
     >
       {/* Winner check */}
       {isWinner && (
@@ -271,9 +284,9 @@ function PlayerRow({
       )}
       {!isWinner && <span className="w-4 flex-shrink-0" />}
 
-      {/* Player name */}
-      <span className={`truncate text-sm flex-1 ${isWinner ? 'font-bold' : ''}`}>
-        {player ? `${player.lastName} ${player.firstName[0]}.` : isBye ? 'Bye' : '—'}
+      {/* Player name (— if waiting opponent) */}
+      <span className={`truncate text-sm flex-1 ${isWinner ? 'font-bold' : ''} ${!player ? 'text-foreground-subtle italic' : ''}`}>
+        {player ? `${player.lastName} ${player.firstName[0]}.` : '—'}
       </span>
 
       {/* Set scores */}
