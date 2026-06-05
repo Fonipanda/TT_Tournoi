@@ -497,11 +497,13 @@ export async function generatePools(bracketId: string, requestedPoolSize?: numbe
     return (a.lastName ?? '').localeCompare(b.lastName ?? '', 'fr', { sensitivity: 'base' });
   });
 
-  // Détermine la taille de poule
+  // Détermine la taille de poule (2, 3 ou 4 — règle FFTT)
   const totalPlayers = sorted.length;
-  const poolSize = requestedPoolSize && requestedPoolSize >= 2 && requestedPoolSize <= 5
+  const requested = requestedPoolSize && requestedPoolSize >= 2 && requestedPoolSize <= 4
     ? requestedPoolSize
-    : totalPlayers % 4 === 0 ? 4 : totalPlayers % 3 === 0 ? 3 : 4;
+    : null;
+  const poolSize = requested
+    ?? (totalPlayers % 4 === 0 ? 4 : totalPlayers % 3 === 0 ? 3 : 4);
   const numPools = Math.ceil(totalPlayers / poolSize);
 
   // Snake seeding : on alterne sens de remplissage à chaque "tour"
@@ -624,10 +626,26 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
   });
   await prisma.match.deleteMany({ where: { bracketId, poolNumber: null } });
 
-  // Nombre de tours
-  const rounds = Math.ceil(Math.log2(nextPower));
-  const roundName = (i: number, total: number): string => {
-    const remaining = total - i;
+  // ─── Algorithme barrage / tableau principal ──────────────────────────────────
+  // Q = nombre de qualifiés réels ; P = plus grande puissance de 2 ≤ Q.
+  // Si Q == P : pas de barrage, tableau standard.
+  // Si Q  > P : (Q - P) matches de "Barrage" entre les 2*(Q-P) qualifiés les
+  //             moins bien classés, puis tableau principal de P joueurs avec
+  //             (2P - Q) exemptés directs.
+  // Le placement vient de ffttPlaceQualifiers (positions standard FFTT) :
+  //   - paires round-1 où les 2 slots sont remplis → matches de barrage
+  //   - paires où un seul slot est rempli → ce joueur est exempt et passe
+  //     directement au 1er tour du tableau principal.
+  const Q = realPlayers.length;
+  let P = 1;
+  while (P * 2 <= Q) P *= 2;
+  const hasBarrage = Q > P;
+  const mainBracketSize = P;
+  const mainRounds = Math.max(1, Math.log2(mainBracketSize)); // ex: 4 pour P=16
+
+  // Renommage : index 0 = 1er tour du tableau principal (1/8 pour P=16)
+  const mainRoundName = (mainIdx: number): string => {
+    const remaining = mainRounds - mainIdx;
     if (remaining === 1) return 'Finale';
     if (remaining === 2) return 'Demi-finale';
     if (remaining === 3) return 'Quart de finale';
@@ -636,33 +654,130 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
     if (remaining === 6) return '32ème de finale';
     if (remaining === 7) return '64ème de finale';
     if (remaining === 8) return '128ème de finale';
-    return `Tour ${i + 1}`;
+    return `Tour ${mainIdx + 1}`;
   };
 
   let matchesCreated = 0;
+
+  // ─── Cas 1 : pas de barrage (Q est une puissance de 2) ──────────────────────
+  if (!hasBarrage) {
+    // Round 1 = 1er tour du tableau principal, Q/2 matches
+    for (let i = 0; i < nextPower; i += 2) {
+      const a = ordered[i] ?? null;
+      const b = ordered[i + 1] ?? null;
+      if (!a && !b) continue;
+      await prisma.match.create({
+        data: {
+          bracketId,
+          player1Id: a,
+          player2Id: b,
+          roundName: mainRoundName(0),
+          roundNumber: 1,
+          poolMatchOrder: i / 2 + 1,
+        },
+      });
+      matchesCreated++;
+    }
+    // Rounds 2..mainRounds : matches vides à pré-créer pour l'auto-avance
+    for (let mainIdx = 1; mainIdx < mainRounds; mainIdx++) {
+      const roundSize = mainBracketSize / Math.pow(2, mainIdx + 1);
+      for (let k = 0; k < roundSize; k++) {
+        await prisma.match.create({
+          data: {
+            bracketId,
+            player1Id: null,
+            player2Id: null,
+            roundName: mainRoundName(mainIdx),
+            roundNumber: mainIdx + 1,
+            poolMatchOrder: k + 1,
+          },
+        });
+        matchesCreated++;
+      }
+    }
+    return { bracketId, matchesCreated, rounds: mainRounds };
+  }
+
+  // ─── Cas 2 : barrage (Q n'est pas une puissance de 2) ───────────────────────
+  // Étape A : on parcourt les paires round-1 du bracket de taille nextPower
+  //           pour identifier les matches réels (barrage) et les byes (exemptés)
+  interface R1Entry {
+    a: string | null;
+    b: string | null;
+    isReal: boolean; // les 2 slots sont remplis → barrage
+    exemptPlayer: string | null; // si bye, le joueur qui passe direct
+  }
+  const round1: R1Entry[] = [];
   for (let i = 0; i < nextPower; i += 2) {
     const a = ordered[i] ?? null;
     const b = ordered[i + 1] ?? null;
+    const isReal = !!(a && b);
+    round1.push({
+      a,
+      b,
+      isReal,
+      exemptPlayer: isReal ? null : (a ?? b),
+    });
+  }
 
-    // Si aucun joueur dans cette position, on skip
-    if (!a && !b) continue;
-
-    // Si un seul joueur (bye), on crée un match auto-terminé
-    const isBye = (a && !b) || (!a && b);
+  // Étape B : crée les P/2 matches du tableau principal (round 2 d'ensemble)
+  // Chaque match k regroupe les vainqueurs des paires round1[2k] et round1[2k+1].
+  // - Si la paire round1 est un bye : on place directement le joueur exempt
+  // - Si la paire est un match réel (barrage) : slot null (sera rempli par auto-avance)
+  for (let k = 0; k < mainBracketSize / 2; k++) {
+    const ra = round1[2 * k];
+    const rb = round1[2 * k + 1];
+    if (!ra || !rb) continue;
     await prisma.match.create({
       data: {
         bracketId,
-        player1Id: a,
-        player2Id: b,
-        roundName: roundName(0, rounds),
-        roundNumber: 1,
-        ...(isBye
-          ? { status: 'finished', winnerId: a ?? b }
-          : {}),
+        player1Id: ra.isReal ? null : ra.exemptPlayer,
+        player2Id: rb.isReal ? null : rb.exemptPlayer,
+        roundName: mainRoundName(0),
+        roundNumber: 2,
+        poolMatchOrder: k + 1,
       },
     });
     matchesCreated++;
   }
 
-  return { bracketId, matchesCreated, rounds };
+  // Étape C : crée les Q-P matches de Barrage (round 1 d'ensemble).
+  // poolMatchOrder est calculé pour que l'auto-avance pointe vers le bon slot
+  // du match round-2 : nextPos = ceil(myPos/2), slot = (myPos-1)%2
+  // Donc pour barrage_idx r1 (0..nextPower/2-1), poolMatchOrder = r1+1.
+  for (let r1 = 0; r1 < round1.length; r1++) {
+    const entry = round1[r1];
+    if (!entry || !entry.isReal) continue;
+    await prisma.match.create({
+      data: {
+        bracketId,
+        player1Id: entry.a,
+        player2Id: entry.b,
+        roundName: 'Barrage',
+        roundNumber: 1,
+        poolMatchOrder: r1 + 1,
+      },
+    });
+    matchesCreated++;
+  }
+
+  // Étape D : rounds 3..mainRounds+1 (1/4, 1/2, finale) en placeholders
+  for (let mainIdx = 1; mainIdx < mainRounds; mainIdx++) {
+    const roundSize = mainBracketSize / Math.pow(2, mainIdx + 1);
+    for (let k = 0; k < roundSize; k++) {
+      await prisma.match.create({
+        data: {
+          bracketId,
+          player1Id: null,
+          player2Id: null,
+          roundName: mainRoundName(mainIdx),
+          roundNumber: mainIdx + 2,
+          poolMatchOrder: k + 1,
+        },
+      });
+      matchesCreated++;
+    }
+  }
+
+  return { bracketId, matchesCreated, rounds: mainRounds + 1 };
 }

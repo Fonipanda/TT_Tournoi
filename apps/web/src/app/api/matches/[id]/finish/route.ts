@@ -112,6 +112,33 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
       }
 
+      // Auto-avance : si match d'élimination, propager le vainqueur au tour suivant.
+      // Convention de positions (poolMatchOrder utilisé comme position dans le round) :
+      //   round N+1 match k = vainqueur(round N match 2k-1) vs vainqueur(round N match 2k)
+      // → nextPos = ceil(myPos/2) ; slot = (myPos-1) % 2 (0 → player1, 1 → player2)
+      const isElimMatch = current.poolNumber === null && current.poolMatchOrder !== null;
+      if (isElimMatch && body.winnerId) {
+        const myPos = current.poolMatchOrder!;
+        const nextRound = current.roundNumber + 1;
+        const nextPos = Math.ceil(myPos / 2);
+        const slotIsPlayer1 = ((myPos - 1) % 2) === 0;
+        const nextMatch = await tx.match.findFirst({
+          where: {
+            bracketId: current.bracketId,
+            roundNumber: nextRound,
+            poolMatchOrder: nextPos,
+          },
+        });
+        if (nextMatch) {
+          await tx.match.update({
+            where: { id: nextMatch.id },
+            data: slotIsPlayer1
+              ? { player1Id: body.winnerId }
+              : { player2Id: body.winnerId },
+          });
+        }
+      }
+
       // Idempotency
       if (body.optimisticId) {
         await tx.matchEvent.upsert({

@@ -8,16 +8,46 @@ import { QrGenerator } from '@/components/admin/QrGenerator';
 
 const MAX_LOGO_SIZE = 500 * 1024; // 500 Ko
 
+const REGULATION_TEMPLATE = `IX.111 — Règlement du tournoi
+
+- Catégorie du tournoi : {categorie}
+- Date et lieu : {date_lieu}
+- Responsable de l'organisation : {responsable}
+- Juge-arbitre désigné : {juge_arbitre}
+- Nombre de tables et dimensions des aires de jeu : {nb_tables}
+- Marque des balles fournies : {balles}
+- Tableaux organisés : {tableaux}
+- Joueurs autorisés : {joueurs_autorises}
+- Nombre maximum de joueurs par tableau : {max_joueurs}
+- Horaires de début de chaque tableau : {horaires_debut}
+- Horaires prévisionnels des finales : {horaires_finales}
+- Horaire de fin prévisionnelle : {horaire_fin}
+- Date de clôture des engagements : {date_cloture}
+- Montant des engagements : {montant_engagement}
+- Date, heure et lieu du tirage au sort public : {tirage_au_sort}
+- Numéro d'homologation : {homologation}
+- Mode d'attribution challenge / coupe : {challenge}
+
+Variables disponibles : {categorie}, {date_lieu}, {responsable}, {juge_arbitre},
+{nb_tables}, {balles}, {tableaux}, {joueurs_autorises}, {max_joueurs},
+{horaires_debut}, {horaires_finales}, {horaire_fin}, {date_cloture},
+{montant_engagement}, {tirage_au_sort}, {homologation}, {challenge}.`;
+
 export default function AdminParametresPage() {
   const router = useRouter();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [regulation, setRegulation] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [savingRegulation, setSavingRegulation] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
-      .then((j) => setLogoUrl(j.data?.logo ?? null))
+      .then((j) => {
+        setLogoUrl(j.data?.logo ?? null);
+        setRegulation(j.data?.regulation ?? '');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -34,7 +64,6 @@ export default function AdminParametresPage() {
     }
     setUploading(true);
     try {
-      // Convertir en data URL base64
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
@@ -55,7 +84,7 @@ export default function AdminParametresPage() {
     }
   };
 
-  const remove = async () => {
+  const removeLogo = async () => {
     try {
       await apiJson('/api/settings/logo', { method: 'DELETE' });
       setLogoUrl(null);
@@ -66,10 +95,44 @@ export default function AdminParametresPage() {
     }
   };
 
+  const saveRegulation = async () => {
+    setSavingRegulation(true);
+    try {
+      await apiJson('/api/settings/regulation', {
+        method: 'PUT',
+        body: JSON.stringify({ value: regulation }),
+      });
+      toast.success('Règlement enregistré');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setSavingRegulation(false);
+    }
+  };
+
+  const loadTemplate = () => {
+    if (regulation.trim() && !confirm('Remplacer le règlement actuel par le template ?')) return;
+    setRegulation(REGULATION_TEMPLATE);
+  };
+
+  const clearRegulation = async () => {
+    if (!confirm('Supprimer le règlement enregistré ?')) return;
+    try {
+      await apiJson('/api/settings/regulation', { method: 'DELETE' });
+      setRegulation('');
+      toast.success('Règlement supprimé');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    }
+  };
+
   return (
     <div data-testid="admin-parametres" className="space-y-6">
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-6">Paramètres</h1>
 
+      {/* Logo */}
       <div className="card max-w-2xl rounded-2xl">
         <h2 className="font-heading text-xl uppercase tracking-wide mb-3">Logo du site</h2>
         <p className="text-sm text-foreground-muted mb-4">
@@ -102,7 +165,7 @@ export default function AdminParametresPage() {
               </label>
               <button
                 type="button"
-                onClick={remove}
+                onClick={removeLogo}
                 className="text-danger text-sm hover:underline"
               >
                 Supprimer
@@ -121,6 +184,57 @@ export default function AdminParametresPage() {
             />
           </label>
         )}
+      </div>
+
+      {/* Règlement (FFTT IX.111) */}
+      <div className="card max-w-4xl rounded-2xl">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-heading text-xl uppercase tracking-wide">Règlement du tournoi</h2>
+          <span className="text-xs text-foreground-muted">FFTT — Article IX.111</span>
+        </div>
+        <p className="text-sm text-foreground-muted mb-3">
+          Le règlement est affiché publiquement sur la page <code>/reglement</code>. Utilise les
+          variables <code>{'{nom_variable}'}</code> pour insérer dynamiquement les informations du
+          tournoi (responsable, juge-arbitre, dates, etc.).
+        </p>
+
+        <div className="flex gap-2 mb-3">
+          <button
+            type="button"
+            onClick={loadTemplate}
+            className="text-sm px-3 py-1.5 rounded border border-border bg-bg-alt hover:bg-bg-alt/80"
+          >
+            Charger le template FFTT IX.111
+          </button>
+          {regulation && (
+            <button
+              type="button"
+              onClick={clearRegulation}
+              className="text-sm text-danger hover:underline"
+            >
+              Supprimer
+            </button>
+          )}
+        </div>
+
+        <textarea
+          value={regulation}
+          onChange={(e) => setRegulation(e.target.value)}
+          rows={20}
+          placeholder="Saisis le règlement, ou clique sur « Charger le template FFTT IX.111 »…"
+          className="w-full font-mono text-sm border border-border rounded-lg p-3 bg-bg resize-y min-h-[200px]"
+        />
+
+        <div className="flex justify-end mt-3">
+          <button
+            type="button"
+            onClick={saveRegulation}
+            disabled={savingRegulation}
+            className="btn-primary text-sm px-4 py-2 rounded disabled:opacity-50"
+          >
+            {savingRegulation ? 'Enregistrement…' : 'Enregistrer le règlement'}
+          </button>
+        </div>
       </div>
 
       {/* TV Display Interval */}

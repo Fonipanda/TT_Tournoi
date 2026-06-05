@@ -46,7 +46,7 @@ export function PoolSizeModal({ bracket, onClose }: PoolSizeModalProps) {
 
         <label className="block text-sm font-medium mb-2">Taille de poule</label>
         <div className="flex gap-2 mb-4">
-          {[2, 3, 4, 5].map((size) => (
+          {[2, 3, 4].map((size) => (
             <button
               key={size}
               type="button"
