@@ -225,7 +225,16 @@ export function ffttPlaceQualifiers(
   qualifiersPerPool: number,
   byeIds: string[],
 ): (string | null)[] {
-  const sortedStandings = [...poolStandings].sort((a, b) => a.poolName.localeCompare(b.poolName));
+  // Tri NUMÉRIQUE des poules (et non lexicographique, sinon "Poule 10" précède
+  // "Poule 2"). L'ordre des poules reflète l'ordre du snake-seeding : la
+  // poule 1 contient le plus fort 1er, la poule 10 le plus faible 1er.
+  const poolOrder = (name: string): number => {
+    const m = name.match(/(\d+)/);
+    return m ? parseInt(m[1]!, 10) : 0;
+  };
+  const sortedStandings = [...poolStandings].sort(
+    (a, b) => poolOrder(a.poolName) - poolOrder(b.poolName),
+  );
 
   const firsts: string[] = [];
   const seconds: string[] = [];
@@ -566,6 +575,22 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
     where: { bracketId, poolNumber: { not: null } },
   });
 
+  // Charge les joueurs (points + nom) pour le tri par défaut
+  // (utilisé en fallback quand aucun match n'est encore terminé : on classe
+  //  par points FFTT pour ne pas dépendre de l'ordre d'insertion en base).
+  const allPlayerIds = new Set<string>();
+  for (const m of poolMatches) {
+    if (m.player1Id) allPlayerIds.add(m.player1Id);
+    if (m.player2Id) allPlayerIds.add(m.player2Id);
+  }
+  const playersData = allPlayerIds.size > 0
+    ? await prisma.player.findMany({
+        where: { id: { in: [...allPlayerIds] } },
+        select: { id: true, points: true, lastName: true },
+      })
+    : [];
+  const playerById = new Map(playersData.map((p) => [p.id, p]));
+
   // Groupe par poolNumber
   const byPool = new Map<number, Match[]>();
   for (const m of poolMatches) {
@@ -574,14 +599,29 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
     byPool.get(m.poolNumber)!.push(m);
   }
 
-  // Calcule classement de chaque poule
+  // Calcule classement de chaque poule (en parcourant les poules par numéro
+  // croissant pour que les standings soient en ordre naturel).
   const standings: PoolStanding[] = [];
-  for (const [poolNum, matches] of byPool) {
-    const playerIds = new Set<string>();
+  const poolNums = [...byPool.keys()].sort((a, b) => a - b);
+  for (const poolNum of poolNums) {
+    const matches = byPool.get(poolNum)!;
+    const poolPlayerIds = new Set<string>();
     for (const m of matches) {
-      if (m.player1Id) playerIds.add(m.player1Id);
-      if (m.player2Id) playerIds.add(m.player2Id);
+      if (m.player1Id) poolPlayerIds.add(m.player1Id);
+      if (m.player2Id) poolPlayerIds.add(m.player2Id);
     }
+    // Tri par points FFTT décroissants (sert d'ordre stable initial pour
+    // ffttPoolRanking : si aucun match n'est terminé, le ranking final = cet
+    // ordre par points). Tiebreak alphabétique sur lastName.
+    const sortedIds = [...poolPlayerIds].sort((a, b) => {
+      const pa = playerById.get(a)?.points ?? 0;
+      const pb = playerById.get(b)?.points ?? 0;
+      if (pb !== pa) return pb - pa;
+      const la = playerById.get(a)?.lastName ?? '';
+      const lb = playerById.get(b)?.lastName ?? '';
+      return la.localeCompare(lb, 'fr', { sensitivity: 'base' });
+    });
+
     const ranking = ffttPoolRanking(
       matches.map((m) => ({
         player1Id: m.player1Id ?? '',
@@ -591,7 +631,7 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
         setsP1: m.setsP1,
         setsP2: m.setsP2,
       })),
-      [...playerIds],
+      sortedIds,
     );
     standings.push({ poolName: `Poule ${poolNum}`, ranking });
   }
