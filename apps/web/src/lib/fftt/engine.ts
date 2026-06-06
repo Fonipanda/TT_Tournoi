@@ -719,19 +719,10 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
   await prisma.match.deleteMany({ where: { bracketId, poolNumber: null } });
 
   // ─── Génération du tableau d'élimination FFTT/SPID-compatible ─────────────
-  // Convention : le tableau est dimensionné à `nextPower` (plus petite
-  // puissance de 2 ≥ nombre de qualifiés). Les positions vides (joueurs non
-  // attribués) sont gérées en interne : aucun "match-fantôme" n'est créé en
-  // base de données, le terme "bye" ne doit jamais apparaître.
-  //
-  // Exemple : Q = 20 → nextPower = 32, tableau de 32.
-  //   - 1er tour ("1/16ème de finale") : seulement 4 vrais matchs (rangs 13-20)
-  //   - 2e tour ("1/8ème de finale") : 8 matchs ; 12 qualifiés sont placés
-  //     directement (positions vides du 1er tour) + 4 placeholders pour les
-  //     vainqueurs des matchs du 1er tour
-  //   - 1/4, 1/2, Finale : placeholders vides
-  //
-  // Le nom du tour est dérivé de la taille du tableau (nextPower).
+  // Convention : tableau dimensionné à `nextPower`. Round 1 contient
+  // nextPower/2 entrées : matches réels (2 joueurs) ou « passages directs »
+  // (1 joueur, status finished). Le terme "bye" n'apparaît jamais en UI.
+  // Round 2+ : placeholders, remplis progressivement par auto-avance.
   const totalRounds = Math.max(1, Math.log2(nextPower));
   const roundName = (roundIdx: number): string => {
     const remaining = totalRounds - roundIdx;
@@ -748,89 +739,72 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
 
   let matchesCreated = 0;
 
-  // ─── Construction des entrées du 1er tour (sans les créer en base)
-  // Chaque entrée correspond à une paire (positions 2k, 2k+1) du tableau :
-  //   - 2 joueurs : match réel à jouer
-  //   - 1 joueur : ce joueur passe directement au tour suivant
-  //   - 0 joueur : entrée vide (pas d'avancement)
-  type R1Entry =
-    | { kind: 'real'; a: string; b: string }
-    | { kind: 'pass'; winner: string }
-    | { kind: 'empty' };
-  const round1: R1Entry[] = [];
+  // ─── Round 1 : crée TOUTES les entrées (sauf cellules totalement vides)
+  // Une entrée par paire de positions (2k, 2k+1) :
+  //   - 2 joueurs (real) : match à jouer (status waiting)
+  //   - 1 joueur (pass) : status finished + winner = ce joueur (passage direct)
+  //   - 0 joueur : on saute
   for (let i = 0; i < nextPower; i += 2) {
     const a = ordered[i] ?? null;
     const b = ordered[i + 1] ?? null;
-    if (a && b) round1.push({ kind: 'real', a, b });
-    else if (a || b) round1.push({ kind: 'pass', winner: (a ?? b)! });
-    else round1.push({ kind: 'empty' });
-  }
-
-  // ─── Round 2 (1er tour du tableau principal post-byes) : nextPower/4 matchs
-  // Chaque match k regroupe les vainqueurs des entrées round1[2k] et round1[2k+1].
-  //   - kind 'pass' → joueur placé directement (slot rempli)
-  //   - kind 'real' → slot null, auto-avance le remplira au /finish
-  //   - kind 'empty' → slot null
-  const round2Slots: { p1: string | null; p2: string | null }[] = [];
-  for (let k = 0; k < nextPower / 4; k++) {
-    const ra = round1[2 * k];
-    const rb = round1[2 * k + 1];
-    const p1 = ra?.kind === 'pass' ? ra.winner : null;
-    const p2 = rb?.kind === 'pass' ? rb.winner : null;
-    round2Slots.push({ p1, p2 });
-  }
-
-  // Crée les matchs du round 2 en base
-  for (let k = 0; k < round2Slots.length; k++) {
-    const { p1, p2 } = round2Slots[k]!;
+    if (!a && !b) continue;
+    const isPass = (a && !b) || (!a && b);
     await prisma.match.create({
       data: {
         bracketId,
-        player1Id: p1,
-        player2Id: p2,
-        roundName: roundName(1),
-        roundNumber: 2,
-        poolMatchOrder: k + 1,
-      },
-    });
-    matchesCreated++;
-  }
-
-  // ─── Round 1 : seulement les vrais matchs (kind 'real')
-  // poolMatchOrder = position 1-indexée dans le bracket (sparse) ;
-  // permet à l'auto-avance de calculer correctement le slot du round 2.
-  for (let r1Idx = 0; r1Idx < round1.length; r1Idx++) {
-    const entry = round1[r1Idx]!;
-    if (entry.kind !== 'real') continue;
-    await prisma.match.create({
-      data: {
-        bracketId,
-        player1Id: entry.a,
-        player2Id: entry.b,
+        player1Id: a,
+        player2Id: b,
         roundName: roundName(0),
         roundNumber: 1,
-        poolMatchOrder: r1Idx + 1, // position dans le bracket (sparse)
+        poolMatchOrder: i / 2 + 1,
+        ...(isPass
+          ? { status: 'finished', winnerId: a ?? b, endTime: new Date() }
+          : {}),
       },
     });
     matchesCreated++;
   }
 
-  // ─── Rounds 3+ : placeholders vides, l'auto-avance propage les vainqueurs
-  for (let roundIdx = 2; roundIdx < totalRounds; roundIdx++) {
+  // ─── Round 2 .. totalRounds : placeholders avec slots pré-remplis quand
+  // possible (depuis les passages directs du round précédent).
+  let prevRoundFilled: { winner: string | null }[] = [];
+  for (let i = 0; i < nextPower; i += 2) {
+    const a = ordered[i] ?? null;
+    const b = ordered[i + 1] ?? null;
+    if (!a && !b) {
+      prevRoundFilled.push({ winner: null });
+    } else if (a && b) {
+      prevRoundFilled.push({ winner: null }); // match réel : winner inconnu
+    } else {
+      prevRoundFilled.push({ winner: a ?? b }); // passage : winner connu
+    }
+  }
+
+  for (let roundIdx = 1; roundIdx < totalRounds; roundIdx++) {
     const roundSize = nextPower / Math.pow(2, roundIdx + 1);
+    const newFilled: { winner: string | null }[] = [];
     for (let k = 0; k < roundSize; k++) {
+      const prevA = prevRoundFilled[2 * k];
+      const prevB = prevRoundFilled[2 * k + 1];
+      const p1 = prevA?.winner ?? null;
+      const p2 = prevB?.winner ?? null;
       await prisma.match.create({
         data: {
           bracketId,
-          player1Id: null,
-          player2Id: null,
+          player1Id: p1,
+          player2Id: p2,
           roundName: roundName(roundIdx),
           roundNumber: roundIdx + 1,
           poolMatchOrder: k + 1,
         },
       });
       matchesCreated++;
+      // Le winner du round suivant ne peut être propagé que si les 2 slots
+      // sont déjà connus ET identiques (cas dégénéré). Sinon null, à remplir
+      // par l'auto-avance plus tard.
+      newFilled.push({ winner: null });
     }
+    prevRoundFilled = newFilled;
   }
 
   return { bracketId, matchesCreated, rounds: totalRounds };
