@@ -42,6 +42,23 @@ const MATCH_HEIGHT = 80;
 const MATCH_WIDTH = 320;
 const COLUMN_GAP = 56;
 
+/**
+ * Calcule le nom du tour selon la taille du tableau (FFTT).
+ * roundIdx 0-based : 0 = 1er tour. totalRounds = nombre total de tours.
+ */
+function computeRoundLabel(roundIdx: number, totalRounds: number): string {
+  const remaining = totalRounds - roundIdx;
+  if (remaining <= 1) return 'Finale';
+  if (remaining === 2) return 'Demi-finale';
+  if (remaining === 3) return 'Quart de finale';
+  if (remaining === 4) return '8ème de finale';
+  if (remaining === 5) return '16ème de finale';
+  if (remaining === 6) return '32ème de finale';
+  if (remaining === 7) return '64ème de finale';
+  if (remaining === 8) return '128ème de finale';
+  return `Tour ${roundIdx + 1}`;
+}
+
 export function BracketTree({ matches, highlightWinner = true }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeRound, setActiveRound] = useState(0);
@@ -59,7 +76,10 @@ export function BracketTree({ matches, highlightWinner = true }: Props) {
     for (let r = 1; r <= totalRounds; r++) {
       const col = byRound.get(r) ?? [];
       columns.push(col);
-      roundNames.push(col[0]?.roundName ?? `Tour ${r}`);
+      // Toujours dériver le nom du tour depuis le nombre total de tours
+      // (FFTT : 1/16, 1/8, 1/4, 1/2, Finale). On ne fait PAS confiance au
+      // roundName stocké en BDD car il peut être stale ("Tour 1", etc.).
+      roundNames.push(computeRoundLabel(r - 1, totalRounds));
     }
     return { columns, totalRounds, roundNames };
   }, [matches]);
@@ -213,16 +233,19 @@ function RGMatchCard({
   const winnerId = match.winner?.id ?? null;
 
   // Match auto-fini avec un seul joueur (passage direct au tour suivant) :
-  // affichage compact « → NOM », jamais le mot "bye".
+  // affichage compact « → NOM », jamais le mot "bye". Le contenu est centré
+  // verticalement dans le slot (max 36px) pour ne pas écraser visuellement.
   const isPass =
     isFinished && winnerId && (!match.player1 || !match.player2);
   if (isPass && match.winner) {
     return (
-      <div className="w-full h-full flex items-center gap-2 px-3 rounded-xl bg-surface border border-border/40 text-foreground">
-        <span className="text-foreground-subtle text-xs flex-shrink-0">→</span>
-        <span className="font-medium text-sm truncate flex-1">
-          {match.winner.lastName} {match.winner.firstName[0]}.
-        </span>
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-alt/60 border border-border/30 text-foreground" style={{ maxHeight: 36 }}>
+          <span className="text-foreground-subtle text-xs flex-shrink-0">→</span>
+          <span className="font-medium text-sm truncate flex-1">
+            {match.winner.lastName} {match.winner.firstName[0]}.
+          </span>
+        </div>
       </div>
     );
   }
