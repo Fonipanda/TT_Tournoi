@@ -40,12 +40,12 @@ interface Props {
 }
 
 // ─── Layout constants (RG style) ──────────────────────────────────────────────
-const COL_W = 260;
-const COL_GAP = 36;
-const MATCH_H_FULL = 54; // 2-row match (real)
-const MATCH_H_PASS = 26; // 1-row pass
-const LABEL_H = 30;
-const BASE_GAP = 6;
+const COL_W = 280;
+const COL_GAP = 56;
+const MATCH_H_FULL = 64; // 2-row match (real)
+const MATCH_H_PASS = 32; // 1-row pass
+const LABEL_H = 36;
+const BASE_GAP = 16;
 
 function computeRoundLabel(roundIdx: number, totalRounds: number): string {
   const remaining = totalRounds - roundIdx;
