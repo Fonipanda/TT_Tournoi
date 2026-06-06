@@ -311,16 +311,18 @@ export function ffttPlaceQualifiers(
   }
 
   // ─── Tier 2 : 2èmes (random + contrainte demi-tableau opposé)
+  // baseSeed = nb de seeds déjà occupés par le tier 1 (byes + 1ers).
   if (qualifiersPerPool >= 2 && validSeconds > 0) {
     placeFFTTSecondaryTier(
-      seconds, firsts, byeIds.length, ordered, posForSeed, nextPower, half,
+      seconds, firsts, byeIds.length + N, ordered, posForSeed, nextPower, half,
     );
   }
 
   // ─── Tier 3 : 3èmes (random + contrainte demi-tableau opposé du 2ème)
+  // baseSeed = nb de seeds occupés par tiers 1 et 2 (byes + 1ers + 2èmes).
   if (qualifiersPerPool >= 3 && validThirds > 0) {
     placeFFTTSecondaryTier(
-      thirds, seconds, byeIds.length + N, ordered, posForSeed, nextPower, half,
+      thirds, seconds, byeIds.length + 2 * N, ordered, posForSeed, nextPower, half,
     );
   }
 
