@@ -40,12 +40,12 @@ interface Props {
 }
 
 // ─── Layout constants (RG style) ──────────────────────────────────────────────
-const COL_W = 240;
-const COL_GAP = 40;
-const MATCH_H_FULL = 60; // 2-row match (real)
-const MATCH_H_PASS = 30; // 1-row pass
-const LABEL_H = 32;
-const BASE_GAP = 8;
+const COL_W = 260;
+const COL_GAP = 36;
+const MATCH_H_FULL = 54; // 2-row match (real)
+const MATCH_H_PASS = 26; // 1-row pass
+const LABEL_H = 30;
+const BASE_GAP = 6;
 
 function computeRoundLabel(roundIdx: number, totalRounds: number): string {
   const remaining = totalRounds - roundIdx;
@@ -252,15 +252,33 @@ function RGMatchCell({
   const winnerId = match.winner?.id ?? null;
   const isPass = isPassMatch(match);
 
+  // Calcul des numéros de position FFTT (1..nextPower) pour le 1er tour.
+  // poolMatchOrder = numéro de paire dans le round. Position du slot p1 = 2k-1,
+  // position du slot p2 = 2k (k = poolMatchOrder).
+  const isFirstRound = match.roundNumber === 1;
+  const k = match.poolMatchOrder ?? 0;
+  const posP1 = isFirstRound && k > 0 ? 2 * k - 1 : null;
+  const posP2 = isFirstRound && k > 0 ? 2 * k : null;
+
   if (isPass && match.winner) {
-    // Cellule passage : 1 seule ligne, coins arrondis complets
+    // Cellule passage : 1 seule ligne, numéro de position en gauche
+    const passPos = match.player1 ? posP1 : posP2;
     return (
-      <div className="rounded-lg border border-border/40 bg-bg-alt/40 px-2.5 py-1.5 flex items-center gap-2 h-full">
+      <div className="rounded-md border border-border/40 bg-bg-alt/30 px-2 py-1 flex items-center gap-1.5 h-full">
+        {passPos !== null && (
+          <span className="text-[10px] tabular text-foreground-subtle font-mono w-5 text-right flex-shrink-0">
+            {passPos}
+          </span>
+        )}
         <PlayerAvatar player={match.winner} />
-        <span className="text-[11px] text-foreground-subtle flex-shrink-0">→</span>
-        <span className="text-sm font-medium truncate flex-1 text-foreground">
+        <span className="text-[13px] font-medium truncate flex-1 text-foreground">
           {match.winner.lastName} {match.winner.firstName[0]}.
         </span>
+        {match.winner.club && (
+          <span className="text-[10px] text-foreground-subtle flex-shrink-0">
+            {match.winner.club.split(' ')[0]?.slice(0, 4)}
+          </span>
+        )}
       </div>
     );
   }
@@ -272,7 +290,7 @@ function RGMatchCell({
 
   return (
     <div
-      className={`rounded-lg overflow-hidden border ${
+      className={`rounded-md overflow-hidden border ${
         inProgress ? 'border-primary ring-1 ring-primary/30' : 'border-border/50'
       }`}
     >
@@ -283,6 +301,7 @@ function RGMatchCell({
         isWinner={p1Win}
         totalSets={match.setsP1}
         position="top"
+        seedPos={posP1}
       />
       <PlayerRow
         player={match.player2}
@@ -291,6 +310,7 @@ function RGMatchCell({
         isWinner={p2Win}
         totalSets={match.setsP2}
         position="bot"
+        seedPos={posP2}
       />
     </div>
   );
@@ -324,6 +344,7 @@ function PlayerRow({
   isWinner,
   totalSets,
   position,
+  seedPos,
 }: {
   player?: PlayerLite | null;
   sets: { p1: number; p2: number }[];
@@ -331,6 +352,7 @@ function PlayerRow({
   isWinner: boolean;
   totalSets: number;
   position: 'top' | 'bot';
+  seedPos?: number | null;
 }) {
   // Toujours 5 colonnes de scores (placeholder · si non joué)
   const cells = Array.from({ length: 5 }, (_, i) => sets[i]);
@@ -338,11 +360,16 @@ function PlayerRow({
 
   return (
     <div
-      className={`flex items-center gap-1.5 px-2.5 py-1 bg-surface ${
+      className={`flex items-center gap-1.5 px-2 py-0.5 bg-surface ${
         position === 'top' ? 'border-b border-border/30' : ''
       } ${isWinner ? 'bg-success-soft/40' : ''}`}
       style={{ height: MATCH_H_FULL / 2 }}
     >
+      {seedPos !== null && seedPos !== undefined && (
+        <span className="text-[10px] tabular text-foreground-subtle font-mono w-5 text-right flex-shrink-0">
+          {seedPos}
+        </span>
+      )}
       <PlayerAvatar player={player} />
       {isWinner ? (
         <span className="text-success text-xs flex-shrink-0">✓</span>
@@ -350,13 +377,19 @@ function PlayerRow({
         <span className="w-3 flex-shrink-0" />
       )}
       <span
-        className={`truncate text-sm flex-1 ${
-          isWinner ? 'font-semibold text-foreground' : player ? 'text-foreground-muted' : 'italic text-foreground-subtle'
+        className={`truncate text-[13px] flex-1 ${
+          isWinner
+            ? 'font-semibold text-foreground'
+            : player
+              ? 'text-foreground-muted'
+              : 'italic text-foreground-subtle'
         }`}
       >
         {player ? `${player.lastName} ${player.firstName[0]}.` : '—'}
         {club && (
-          <span className="text-[10px] text-foreground-subtle ml-1">({club})</span>
+          <span className="text-[10px] text-foreground-subtle ml-1">
+            ({club})
+          </span>
         )}
       </span>
       <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -365,7 +398,7 @@ function PlayerRow({
             return (
               <span
                 key={i}
-                className="font-mono text-[11px] tabular w-3.5 text-center text-foreground-subtle/30"
+                className="font-mono text-[10px] tabular w-3 text-center text-foreground-subtle/30"
               >
                 ·
               </span>
@@ -377,7 +410,7 @@ function PlayerRow({
           return (
             <span
               key={i}
-              className={`font-mono text-[11px] tabular w-3.5 text-center ${
+              className={`font-mono text-[10px] tabular w-3 text-center ${
                 won ? 'font-bold text-foreground' : 'text-foreground-muted'
               }`}
             >
@@ -387,7 +420,7 @@ function PlayerRow({
         })}
       </div>
       <span
-        className={`font-mono tabular text-sm w-4 text-center flex-shrink-0 ${
+        className={`font-mono tabular text-[12px] w-3 text-center flex-shrink-0 ${
           isWinner ? 'font-bold text-foreground' : 'text-foreground-subtle'
         }`}
       >
