@@ -151,6 +151,7 @@ export default async function ProgressionDetailPage({ params }: Params) {
               id: m.id,
               roundNumber: m.roundNumber,
               roundName: m.roundName,
+              poolMatchOrder: m.poolMatchOrder,
               player1: m.player1,
               player2: m.player2,
               winner: m.winner,
