@@ -216,18 +216,22 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 /**
- * Place les qualifiés de poules + les bye_players dans un tableau d'élimination.
- * Retourne la liste ordonnée des player IDs aux positions du bracket
- * (positions vides supprimées).
+ * Place les qualifiés de poules + les bye_players dans un tableau d'élimination
+ * selon le schéma déterministe :
+ *   - Tier 1 (1ers + byeIds) → seeds 1..N+byeIds.length (pool i → seed i)
+ *   - Tier 2 (2èmes) → seeds N+1..2N par paires de pools (1,2)→(2N-1, 2N),
+ *     (3,4)→(2N-3, 2N-2), ... ; pool seul (N impair) → seed N+1
+ *   - Tier 3 (3èmes) → seeds 2N+1..3N selon la même logique
+ *   - Positions vides : seeds 3N+1..nextPower (jamais affichées comme "bye")
+ *
+ * La taille du tableau (`nextPower`) est la plus petite puissance de 2 ≥ Q.
  */
 export function ffttPlaceQualifiers(
   poolStandings: PoolStanding[],
   qualifiersPerPool: number,
   byeIds: string[],
 ): (string | null)[] {
-  // Tri NUMÉRIQUE des poules (et non lexicographique, sinon "Poule 10" précède
-  // "Poule 2"). L'ordre des poules reflète l'ordre du snake-seeding : la
-  // poule 1 contient le plus fort 1er, la poule 10 le plus faible 1er.
+  // Tri NUMÉRIQUE des poules (sinon "Poule 10" précède "Poule 2")
   const poolOrder = (name: string): number => {
     const m = name.match(/(\d+)/);
     return m ? parseInt(m[1]!, 10) : 0;
@@ -235,159 +239,107 @@ export function ffttPlaceQualifiers(
   const sortedStandings = [...poolStandings].sort(
     (a, b) => poolOrder(a.poolName) - poolOrder(b.poolName),
   );
+  const N = sortedStandings.length;
 
-  const firsts: string[] = [];
-  const seconds: string[] = [];
-  const thirds: string[] = [];
+  const firsts: (string | null)[] = sortedStandings.map((s) => s.ranking[0] ?? null);
+  const seconds: (string | null)[] = qualifiersPerPool >= 2
+    ? sortedStandings.map((s) => s.ranking[1] ?? null)
+    : [];
+  const thirds: (string | null)[] = qualifiersPerPool >= 3
+    ? sortedStandings.map((s) => s.ranking[2] ?? null)
+    : [];
 
-  for (const ps of sortedStandings) {
-    if (ps.ranking[0]) firsts.push(ps.ranking[0]);
-    if (ps.ranking[1] && qualifiersPerPool >= 2) seconds.push(ps.ranking[1]);
-    if (ps.ranking[2] && qualifiersPerPool >= 3) thirds.push(ps.ranking[2]);
+  // Comptage des qualifiés réels (pour dimensionner le tableau)
+  const validFirsts = firsts.filter((x) => x !== null).length;
+  const validSeconds = seconds.filter((x) => x !== null).length;
+  const validThirds = thirds.filter((x) => x !== null).length;
+  const totalQ = byeIds.length + validFirsts + validSeconds + validThirds;
+  if (totalQ < 2) {
+    return [...byeIds, ...firsts, ...seconds, ...thirds].filter((x) => x !== null) as string[];
   }
 
-  const allQualified = [...byeIds, ...firsts, ...seconds, ...thirds];
-  const n = allQualified.length;
-  if (n < 2) return allQualified;
-
+  // Taille du tableau = plus petite puissance de 2 ≥ Q
   let nextPower = 1;
-  while (nextPower < n) nextPower *= 2;
+  while (nextPower < totalQ) nextPower *= 2;
+  if (nextPower < 2) nextPower = 2;
 
   const seedAtPos = ffttSeedingPositions(nextPower);
   const posForSeed = new Map<number, number>();
-  for (let i = 0; i < seedAtPos.length; i++) {
-    posForSeed.set(seedAtPos[i]!, i);
-  }
+  for (let i = 0; i < seedAtPos.length; i++) posForSeed.set(seedAtPos[i]!, i);
 
   const ordered: (string | null)[] = new Array(nextPower).fill(null);
 
-  // Mélange par groupes de seeds (1-2 fixes, 3-4 random, 5-8 random, etc.)
-  const allSeeds = Array.from({ length: byeIds.length + firsts.length }, (_, i) => i + 1);
-  const seedGroups: Pair[] = [
-    [0, 2], [2, 4], [4, 8], [8, 16], [16, 32], [32, 64],
-  ];
-  const shuffledSeeds: number[] = [];
-  for (const [start, end] of seedGroups) {
-    const group = allSeeds.filter((s) => s > start && s <= end);
-    if (start === 0) {
-      shuffledSeeds.push(...group);
-    } else {
-      shuffledSeeds.push(...shuffle(group));
-    }
-  }
-  const placedSeeds = shuffledSeeds.slice(0, byeIds.length + firsts.length);
+  const placeAtSeed = (player: string | null | undefined, seed: number) => {
+    if (!player || seed > nextPower) return;
+    const pos = posForSeed.get(seed);
+    if (pos !== undefined && pos < nextPower) ordered[pos] = player;
+  };
 
-  const firstPlayers = [...byeIds, ...firsts];
-  for (let idx = 0; idx < placedSeeds.length; idx++) {
-    const seedNum = placedSeeds[idx]!;
-    if (idx < firstPlayers.length && seedNum <= nextPower) {
-      const pos = posForSeed.get(seedNum) ?? idx;
-      if (pos < nextPower) ordered[pos] = firstPlayers[idx]!;
-    }
+  // ─── Tier 1 : byeIds + 1ers de poule → seeds 1..(byeIds.length + N)
+  // Pool i → seed (byeIds.length + i). Les byeIds occupent les meilleurs seeds.
+  for (let i = 0; i < byeIds.length; i++) {
+    placeAtSeed(byeIds[i], i + 1);
+  }
+  for (let i = 0; i < N; i++) {
+    placeAtSeed(firsts[i], byeIds.length + i + 1);
   }
 
-  // ─── Placement des 2èmes : seeds (firsts.length+1)..(firsts.length+seconds.length)
-  // Règle FFTT (I.305.3) : chaque 2ème est placé à un seed du groupe des 2èmes
-  // (par tirage au sort dans son tier) ET en demi-tableau opposé de son 1er.
-  // Les positions byes (seeds > firsts+seconds) restent NULL.
-  if (qualifiersPerPool >= 2 && seconds.length > 0) {
-    const half = nextPower / 2;
-    const firstsCount = firstPlayers.length;
-    const secondSeedFirst = firstsCount + 1;
-    const secondSeedLast = firstsCount + seconds.length;
-
-    // Construction des tiers de seeds pour les 2èmes (FFTT regroupe par
-    // doublements : 11-12, 13-16, 17-32, etc.) avec mélange dans chaque tier.
-    const tierBoundaries = [2, 4, 8, 16, 32, 64, 128];
-    const secondSeedsShuffled: number[] = [];
-    let lo = firstsCount;
-    for (const upper of tierBoundaries) {
-      if (lo >= secondSeedLast) break;
-      const tierLo = Math.max(lo, firstsCount);
-      const tierHi = Math.min(upper, secondSeedLast);
-      if (tierHi > tierLo) {
-        const seedsInTier = Array.from(
-          { length: tierHi - tierLo },
-          (_, i) => tierLo + 1 + i,
-        );
-        secondSeedsShuffled.push(...shuffle(seedsInTier));
-      }
-      lo = upper;
-    }
-
-    const usedSecondSeeds = new Set<number>();
-    // Pour chaque 2ème (dans l'ordre des poules), placer à un seed compatible
-    // (demi-tableau opposé de son 1er) parmi les seeds restants.
-    for (let secIdx = 0; secIdx < seconds.length; secIdx++) {
-      const secPid = seconds[secIdx]!;
-      const firstPid = firsts[secIdx];
-      let firstInTopHalf: boolean | null = null;
-      if (firstPid) {
-        const firstPos = ordered.indexOf(firstPid);
-        if (firstPos !== -1) firstInTopHalf = firstPos < half;
-      }
-
-      // 1er essai : seed dans le demi-tableau opposé
-      let placed = false;
-      if (firstInTopHalf !== null) {
-        for (const seed of secondSeedsShuffled) {
-          if (usedSecondSeeds.has(seed)) continue;
-          const pos = posForSeed.get(seed);
-          if (pos === undefined || pos >= nextPower) continue;
-          const seedInTopHalf = pos < half;
-          if (seedInTopHalf !== firstInTopHalf) {
-            ordered[pos] = secPid;
-            usedSecondSeeds.add(seed);
-            placed = true;
-            break;
-          }
-        }
-      }
-      // Fallback : n'importe quel seed du groupe des 2èmes encore libre
-      if (!placed) {
-        for (const seed of secondSeedsShuffled) {
-          if (usedSecondSeeds.has(seed)) continue;
-          const pos = posForSeed.get(seed);
-          if (pos === undefined || pos >= nextPower) continue;
-          ordered[pos] = secPid;
-          usedSecondSeeds.add(seed);
-          break;
-        }
-      }
-    }
+  // ─── Tier 2 : 2èmes par paires inversées
+  // Pour chaque paire de pools (2k-1, 2k) : seeds (2N+1-2k, 2N+2-2k)
+  // Pool seul (N impair) : seed N+1 (= base+1 où base = N pour le tier 2)
+  if (qualifiersPerPool >= 2 && validSeconds > 0) {
+    placeTierByPoolPairs(seconds, byeIds.length + N, posForSeed, ordered, nextPower);
   }
 
-  // Placement des 3èmes (s'il y en a) au tier suivant des seeds
-  if (thirds.length > 0) {
-    const usedSeeds = new Set<number>();
-    // Récupère les seeds déjà occupés
-    for (let p = 0; p < nextPower; p++) {
-      if (ordered[p] !== null) {
-        const seed = seedAtPos[p];
-        if (seed !== undefined) usedSeeds.add(seed);
-      }
-    }
-    const thirdSeedFirst = firstPlayers.length + seconds.length + 1;
-    const thirdSeedLast = thirdSeedFirst + thirds.length - 1;
-    const thirdSeeds = Array.from(
-      { length: thirdSeedLast - thirdSeedFirst + 1 },
-      (_, i) => thirdSeedFirst + i,
-    );
-    const shuffledThirdSeeds = shuffle(thirdSeeds);
-    for (const pid of thirds) {
-      for (const seed of shuffledThirdSeeds) {
-        if (usedSeeds.has(seed)) continue;
-        const pos = posForSeed.get(seed);
-        if (pos === undefined || pos >= nextPower) continue;
-        ordered[pos] = pid;
-        usedSeeds.add(seed);
-        break;
-      }
-    }
+  // ─── Tier 3 : 3èmes (mêmes règles, au tier suivant)
+  if (qualifiersPerPool >= 3 && validThirds > 0) {
+    placeTierByPoolPairs(thirds, byeIds.length + 2 * N, posForSeed, ordered, nextPower);
   }
 
-  // Retourne le tableau COMPLET avec positions (nulls = byes)
   return ordered;
+}
+
+/**
+ * Place les joueurs d'un tier (2èmes, 3èmes…) selon le schéma déterministe :
+ *   - Pour chaque paire de pools (2k-1, 2k) : seeds (base+2N+1-2k, base+2N+2-2k)
+ *   - Pool seul (N impair) : seed (base+1)
+ *
+ * @param players Liste des joueurs (un par poule, dans l'ordre des poules)
+ * @param baseSeeds Nombre de seeds déjà utilisés par les tiers supérieurs
+ *                  (ex: byeIds.length + N pour le tier des 2èmes)
+ */
+function placeTierByPoolPairs(
+  players: (string | null)[],
+  baseSeeds: number,
+  posForSeed: Map<number, number>,
+  ordered: (string | null)[],
+  nextPower: number,
+): void {
+  const N = players.length;
+  const maxSeed = baseSeeds + N;
+  const numPairs = Math.floor(N / 2);
+
+  const placeAt = (player: string | null | undefined, seed: number) => {
+    if (!player || seed > nextPower) return;
+    const pos = posForSeed.get(seed);
+    if (pos !== undefined && pos < nextPower) ordered[pos] = player;
+  };
+
+  for (let k = 1; k <= numPairs; k++) {
+    const poolAIdx = 2 * k - 2; // 0-indexed
+    const poolBIdx = 2 * k - 1;
+    const seedA = maxSeed + 1 - 2 * k;
+    const seedB = maxSeed + 2 - 2 * k;
+    placeAt(players[poolAIdx], seedA);
+    placeAt(players[poolBIdx], seedB);
+  }
+
+  // Lone last pool si N impair
+  if (N % 2 === 1) {
+    const lastPlayer = players[N - 1];
+    const lastSeed = baseSeeds + 1;
+    placeAt(lastPlayer, lastSeed);
+  }
 }
 
 // =============================================================================
@@ -717,17 +669,19 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
   await prisma.match.deleteMany({ where: { bracketId, poolNumber: null } });
 
   // ─── Génération du tableau d'élimination FFTT/SPID-compatible ─────────────
-  // Convention SPID/OTC : le tableau est dimensionné à `nextPower` (plus
-  // petite puissance de 2 ≥ nombre de qualifiés). Q joueurs, (nextPower − Q)
-  // positions vides → byes auto-finis dans la grille standard.
+  // Convention : le tableau est dimensionné à `nextPower` (plus petite
+  // puissance de 2 ≥ nombre de qualifiés). Les positions vides (joueurs non
+  // attribués) sont gérées en interne : aucun "match-fantôme" n'est créé en
+  // base de données, le terme "bye" ne doit jamais apparaître.
   //
-  // Exemple : Q = 20 → nextPower = 32, tableau de 32 → 1er tour = "1/16ème
-  // de finale" avec 16 entrées (12 byes + 4 vrais matchs entre les rangs
-  // 13-20). Les 12 byes auto-avancent vers le 2e tour ("1/8ème de finale"),
-  // qui contient 8 matchs.
+  // Exemple : Q = 20 → nextPower = 32, tableau de 32.
+  //   - 1er tour ("1/16ème de finale") : seulement 4 vrais matchs (rangs 13-20)
+  //   - 2e tour ("1/8ème de finale") : 8 matchs ; 12 qualifiés sont placés
+  //     directement (positions vides du 1er tour) + 4 placeholders pour les
+  //     vainqueurs des matchs du 1er tour
+  //   - 1/4, 1/2, Finale : placeholders vides
   //
-  // Le nom du tour est dérivé de la taille du tableau (nextPower) selon la
-  // table FFTT (Finale, Demi, 1/4, 1/8, 1/16, 1/32, ...).
+  // Le nom du tour est dérivé de la taille du tableau (nextPower).
   const totalRounds = Math.max(1, Math.log2(nextPower));
   const roundName = (roundIdx: number): string => {
     const remaining = totalRounds - roundIdx;
@@ -744,87 +698,89 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
 
   let matchesCreated = 0;
 
-  // ─── Round 1 (1/16ème, 1/8ème… selon nextPower) : nextPower/2 entrées ────
-  // Une entrée par paire (positions 2k, 2k+1) :
-  //   - 2 joueurs présents → match réel (Barrage / 1er tour à jouer)
-  //   - 1 seul joueur → bye, auto-fini, le joueur passe au tour suivant
-  //   - 0 joueur → on saute (ne devrait pas arriver après ffttPlaceQualifiers)
+  // ─── Construction des entrées du 1er tour (sans les créer en base)
+  // Chaque entrée correspond à une paire (positions 2k, 2k+1) du tableau :
+  //   - 2 joueurs : match réel à jouer
+  //   - 1 joueur : ce joueur passe directement au tour suivant
+  //   - 0 joueur : entrée vide (pas d'avancement)
+  type R1Entry =
+    | { kind: 'real'; a: string; b: string }
+    | { kind: 'pass'; winner: string }
+    | { kind: 'empty' };
+  const round1: R1Entry[] = [];
   for (let i = 0; i < nextPower; i += 2) {
     const a = ordered[i] ?? null;
     const b = ordered[i + 1] ?? null;
-    if (!a && !b) continue;
-    const isBye = (a && !b) || (!a && b);
+    if (a && b) round1.push({ kind: 'real', a, b });
+    else if (a || b) round1.push({ kind: 'pass', winner: (a ?? b)! });
+    else round1.push({ kind: 'empty' });
+  }
+
+  // ─── Round 2 (1er tour du tableau principal post-byes) : nextPower/4 matchs
+  // Chaque match k regroupe les vainqueurs des entrées round1[2k] et round1[2k+1].
+  //   - kind 'pass' → joueur placé directement (slot rempli)
+  //   - kind 'real' → slot null, auto-avance le remplira au /finish
+  //   - kind 'empty' → slot null
+  const round2Slots: { p1: string | null; p2: string | null }[] = [];
+  for (let k = 0; k < nextPower / 4; k++) {
+    const ra = round1[2 * k];
+    const rb = round1[2 * k + 1];
+    const p1 = ra?.kind === 'pass' ? ra.winner : null;
+    const p2 = rb?.kind === 'pass' ? rb.winner : null;
+    round2Slots.push({ p1, p2 });
+  }
+
+  // Crée les matchs du round 2 en base
+  for (let k = 0; k < round2Slots.length; k++) {
+    const { p1, p2 } = round2Slots[k]!;
     await prisma.match.create({
       data: {
         bracketId,
-        player1Id: a,
-        player2Id: b,
-        roundName: roundName(0),
-        roundNumber: 1,
-        poolMatchOrder: i / 2 + 1, // position 1-indexée pour l'auto-avance
-        ...(isBye
-          ? { status: 'finished', winnerId: a ?? b, endTime: new Date() }
-          : {}),
+        player1Id: p1,
+        player2Id: p2,
+        roundName: roundName(1),
+        roundNumber: 2,
+        poolMatchOrder: k + 1,
       },
     });
     matchesCreated++;
   }
 
-  // ─── Round 2 .. totalRounds : pré-créer les placeholders et y propager
-  // immédiatement les vainqueurs des byes du round précédent. Les slots
-  // restants en null sont remplis ensuite par l'auto-avance dans /finish
-  // quand l'utilisateur saisit les résultats des matchs réels.
-  // Position de slot dans le round suivant :
-  //   nextPos = ceil(myPos / 2) ; slotIsP1 = (myPos - 1) % 2 === 0
-  let prevRoundFilled: { position: number; winner: string | null }[] = [];
-  for (let i = 0; i < nextPower; i += 2) {
-    const a = ordered[i] ?? null;
-    const b = ordered[i + 1] ?? null;
-    if (!a && !b) {
-      prevRoundFilled.push({ position: i / 2 + 1, winner: null });
-    } else {
-      const isBye = (a && !b) || (!a && b);
-      prevRoundFilled.push({
-        position: i / 2 + 1,
-        winner: isBye ? (a ?? b) : null, // null = match réel, slot rempli plus tard
-      });
-    }
+  // ─── Round 1 : seulement les vrais matchs (kind 'real')
+  // poolMatchOrder = position 1-indexée dans le bracket (sparse) ;
+  // permet à l'auto-avance de calculer correctement le slot du round 2.
+  for (let r1Idx = 0; r1Idx < round1.length; r1Idx++) {
+    const entry = round1[r1Idx]!;
+    if (entry.kind !== 'real') continue;
+    await prisma.match.create({
+      data: {
+        bracketId,
+        player1Id: entry.a,
+        player2Id: entry.b,
+        roundName: roundName(0),
+        roundNumber: 1,
+        poolMatchOrder: r1Idx + 1, // position dans le bracket (sparse)
+      },
+    });
+    matchesCreated++;
   }
 
-  for (let roundIdx = 1; roundIdx < totalRounds; roundIdx++) {
+  // ─── Rounds 3+ : placeholders vides, l'auto-avance propage les vainqueurs
+  for (let roundIdx = 2; roundIdx < totalRounds; roundIdx++) {
     const roundSize = nextPower / Math.pow(2, roundIdx + 1);
-    const newFilled: { position: number; winner: string | null }[] = [];
     for (let k = 0; k < roundSize; k++) {
-      const prevA = prevRoundFilled[2 * k];
-      const prevB = prevRoundFilled[2 * k + 1];
-      const p1 = prevA?.winner ?? null;
-      const p2 = prevB?.winner ?? null;
-      // Si les 2 slots sont nulls (deux matchs réels du tour précédent qui
-      // se rejoignent), on crée tout de même le placeholder en attendant.
-      // Si les 2 slots ont un joueur (deux byes qui se rejoignent), on
-      // pourrait considérer ce match comme un vrai 1er tour ; on le laisse
-      // à l'utilisateur (status waiting).
-      // Cas particulier : si 1 joueur + 1 null, on garde le joueur dans le
-      // slot, l'autre attend l'auto-avance d'un match réel ; le match reste
-      // en waiting (statut par défaut).
       await prisma.match.create({
         data: {
           bracketId,
-          player1Id: p1,
-          player2Id: p2,
+          player1Id: null,
+          player2Id: null,
           roundName: roundName(roundIdx),
           roundNumber: roundIdx + 1,
           poolMatchOrder: k + 1,
         },
       });
       matchesCreated++;
-      // Pour le round suivant : ne propage le vainqueur QUE si les 2 joueurs
-      // sont déjà connus ET identiques (cas dégénéré poste double-bye).
-      // Pour la sécurité, on ne propage rien plus loin ; auto-avance gérera
-      // la cascade au fur et à mesure que les matchs sont joués.
-      newFilled.push({ position: k + 1, winner: null });
     }
-    prevRoundFilled = newFilled;
   }
 
   return { bracketId, matchesCreated, rounds: totalRounds };
