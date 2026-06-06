@@ -39,8 +39,8 @@ interface Props {
 }
 
 const MATCH_HEIGHT = 80;
-const MATCH_WIDTH = 260;
-const COLUMN_GAP = 48;
+const MATCH_WIDTH = 320;
+const COLUMN_GAP = 56;
 
 export function BracketTree({ matches, highlightWinner = true }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -197,11 +197,10 @@ export function BracketTree({ matches, highlightWinner = true }: Props) {
 
 /**
  * Roland Garros-style match card:
- * - Light bg with rounded corners
- * - 2 rows (one per player)
- * - Checkmark for winner
- * - Set scores displayed
- * - Bye matches (auto-finished with one player) → compact single-player display
+ * - Avatar (cercle initiale + couleur), nom, indicateur seed, checkmark
+ * - 5 colonnes de sets en colonne fixe (monospace)
+ * - Total sets en colonne séparée à droite
+ * - Vainqueur : nom en gras + ligne fond clair + ✓
  */
 function RGMatchCard({
   match,
@@ -213,11 +212,11 @@ function RGMatchCard({
   const isFinished = match.status === 'finished';
   const winnerId = match.winner?.id ?? null;
 
-  // Bye = match auto-fini où un seul slot est occupé.
-  // Affichage compact : juste le nom + flèche vers le tour suivant.
-  const isAutoBye =
+  // Match auto-fini avec un seul joueur (passage direct au tour suivant) :
+  // affichage compact « → NOM », jamais le mot "bye".
+  const isPass =
     isFinished && winnerId && (!match.player1 || !match.player2);
-  if (isAutoBye && match.winner) {
+  if (isPass && match.winner) {
     return (
       <div className="w-full h-full flex items-center gap-2 px-3 rounded-xl bg-surface border border-border/40 text-foreground">
         <span className="text-foreground-subtle text-xs flex-shrink-0">→</span>
@@ -234,10 +233,10 @@ function RGMatchCard({
 
   return (
     <div
-      className={`w-full h-full rounded-xl overflow-hidden shadow-sm border ${
+      className={`w-full h-full rounded-xl overflow-hidden shadow-sm border bg-surface ${
         match.status === 'in_progress'
-          ? 'border-primary ring-2 ring-primary/30 bg-surface'
-          : 'border-border bg-surface'
+          ? 'border-primary ring-2 ring-primary/30'
+          : 'border-border'
       }`}
     >
       <PlayerRow
@@ -247,7 +246,7 @@ function RGMatchCard({
         isWinner={p1Win}
         totalSets={match.setsP1}
       />
-      <div className="border-t border-border/50" />
+      <div className="border-t border-border/40" />
       <PlayerRow
         player={match.player2}
         sets={sets}
@@ -256,6 +255,23 @@ function RGMatchCard({
         totalSets={match.setsP2}
       />
     </div>
+  );
+}
+
+/** Petite pastille initiale style Roland Garros (avatar de remplacement). */
+function PlayerAvatar({ player }: { player?: PlayerLite | null }) {
+  if (!player) {
+    return (
+      <span className="inline-flex w-5 h-5 rounded-full bg-bg-alt border border-border/60 flex-shrink-0" />
+    );
+  }
+  const initial = (player.lastName?.[0] ?? '?').toUpperCase();
+  const palette = ['bg-primary/20 text-primary', 'bg-warning/20 text-warning', 'bg-success/20 text-success', 'bg-foreground/10 text-foreground'];
+  const color = palette[initial.charCodeAt(0) % palette.length] ?? palette[0]!;
+  return (
+    <span className={`inline-flex w-5 h-5 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 ${color}`}>
+      {initial}
+    </span>
   );
 }
 
@@ -272,45 +288,76 @@ function PlayerRow({
   isWinner: boolean;
   totalSets: number;
 }) {
+  // Toujours afficher 5 colonnes de sets (style RG), avec vide pour les sets non joués
+  const fixedSets = Array.from({ length: 5 }, (_, i) => sets[i]);
+
   return (
     <div
-      className={`flex items-center h-1/2 px-3 gap-2 ${
-        isWinner ? 'bg-success-soft/50' : ''
+      className={`flex items-center h-1/2 px-2.5 gap-1.5 ${
+        isWinner ? 'bg-success-soft/40' : ''
       }`}
     >
-      {/* Winner check */}
-      {isWinner && (
-        <span className="text-success text-sm flex-shrink-0" aria-label="Vainqueur">&#10003;</span>
-      )}
-      {!isWinner && <span className="w-4 flex-shrink-0" />}
+      {/* Avatar */}
+      <PlayerAvatar player={player} />
 
-      {/* Player name (— if waiting opponent) */}
-      <span className={`truncate text-sm flex-1 ${isWinner ? 'font-bold' : ''} ${!player ? 'text-foreground-subtle italic' : ''}`}>
+      {/* Checkmark vainqueur */}
+      {isWinner ? (
+        <span className="text-success text-sm flex-shrink-0" aria-label="Vainqueur">&#10003;</span>
+      ) : (
+        <span className="w-4 flex-shrink-0" />
+      )}
+
+      {/* Nom du joueur (italique grisé si en attente) */}
+      <span
+        className={`truncate text-sm flex-1 ${isWinner ? 'font-bold' : ''} ${
+          !player ? 'text-foreground-subtle italic' : ''
+        }`}
+      >
         {player ? `${player.lastName} ${player.firstName[0]}.` : '—'}
+        {player?.club && (
+          <span className="text-[10px] text-foreground-muted ml-1">
+            ({player.club.split(' ')[0]?.slice(0, 4)})
+          </span>
+        )}
       </span>
 
-      {/* Set scores */}
-      {sets.length > 0 ? (
-        <div className="flex items-center gap-1">
-          {sets.map((s, i) => {
-            const score = playerSide === 'p1' ? s.p1 : s.p2;
-            const oppScore = playerSide === 'p1' ? s.p2 : s.p1;
-            const won = score > oppScore;
+      {/* Scores des sets — 5 colonnes monospace fixes */}
+      <div className="flex items-center gap-0.5 flex-shrink-0">
+        {fixedSets.map((s, i) => {
+          if (!s || (s.p1 === 0 && s.p2 === 0)) {
             return (
               <span
                 key={i}
-                className={`text-xs tabular font-mono w-5 text-center ${
-                  won ? 'font-bold' : 'text-foreground-muted'
-                }`}
+                className="font-mono text-[11px] tabular w-4 text-center text-foreground-subtle/40"
               >
-                {score}
+                ·
               </span>
             );
-          })}
-        </div>
-      ) : (
-        <span className="font-mono tabular text-sm">{totalSets}</span>
-      )}
+          }
+          const score = playerSide === 'p1' ? s.p1 : s.p2;
+          const oppScore = playerSide === 'p1' ? s.p2 : s.p1;
+          const won = score > oppScore;
+          return (
+            <span
+              key={i}
+              className={`font-mono text-[11px] tabular w-4 text-center ${
+                won ? 'font-bold text-foreground' : 'text-foreground-muted'
+              }`}
+            >
+              {score}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Total sets gagnés (gros chiffre à droite) */}
+      <span
+        className={`font-mono tabular text-sm w-4 text-center flex-shrink-0 ${
+          isWinner ? 'font-bold text-foreground' : 'text-foreground-muted'
+        }`}
+      >
+        {totalSets || ''}
+      </span>
     </div>
   );
 }

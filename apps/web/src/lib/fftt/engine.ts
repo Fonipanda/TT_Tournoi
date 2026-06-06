@@ -217,21 +217,31 @@ function shuffle<T>(arr: T[]): T[] {
 
 /**
  * Place les qualifiés de poules + les bye_players dans un tableau d'élimination
- * selon le schéma déterministe :
- *   - Tier 1 (1ers + byeIds) → seeds 1..N+byeIds.length (pool i → seed i)
- *   - Tier 2 (2èmes) → seeds N+1..2N par paires de pools (1,2)→(2N-1, 2N),
- *     (3,4)→(2N-3, 2N-2), ... ; pool seul (N impair) → seed N+1
- *   - Tier 3 (3èmes) → seeds 2N+1..3N selon la même logique
- *   - Positions vides : seeds 3N+1..nextPower (jamais affichées comme "bye")
+ * selon l'algorithme FFTT/SPID **random-within-tier** :
+ *
+ *   - Tier 1 (1ers de poule + byeIds) → seeds 1..N+byeIds.length
+ *     - Seeds 1, 2 sont FIXES (pool 1 → seed 1, pool 2 → seed 2 — ne peuvent
+ *       se rencontrer qu'en finale).
+ *     - Seeds suivants regroupés par tiers de puissance de 2 (3-4, 5-8, 9-16,
+ *       17-32, ...). Au sein d'un tier, l'assignation pool→seed est ALÉATOIRE.
+ *
+ *   - Tier 2 (2èmes de poule) → seeds N+1..2N
+ *     - Random parmi les seeds disponibles, AVEC la contrainte FFTT I.305.3 :
+ *       chaque 2ème doit être dans le DEMI-TABLEAU OPPOSÉ de son 1er respectif.
+ *
+ *   - Tier 3 (3èmes) → seeds 2N+1..3N (random, contrainte demi-tableau).
+ *
+ *   - Positions vides : seeds 3N+1..nextPower (gérées en interne, jamais
+ *     affichées comme "bye").
  *
  * La taille du tableau (`nextPower`) est la plus petite puissance de 2 ≥ Q.
+ * Chaque génération produit un tirage différent (Math.random).
  */
 export function ffttPlaceQualifiers(
   poolStandings: PoolStanding[],
   qualifiersPerPool: number,
   byeIds: string[],
 ): (string | null)[] {
-  // Tri NUMÉRIQUE des poules (sinon "Poule 10" précède "Poule 2")
   const poolOrder = (name: string): number => {
     const m = name.match(/(\d+)/);
     return m ? parseInt(m[1]!, 10) : 0;
@@ -249,7 +259,6 @@ export function ffttPlaceQualifiers(
     ? sortedStandings.map((s) => s.ranking[2] ?? null)
     : [];
 
-  // Comptage des qualifiés réels (pour dimensionner le tableau)
   const validFirsts = firsts.filter((x) => x !== null).length;
   const validSeconds = seconds.filter((x) => x !== null).length;
   const validThirds = thirds.filter((x) => x !== null).length;
@@ -258,7 +267,6 @@ export function ffttPlaceQualifiers(
     return [...byeIds, ...firsts, ...seconds, ...thirds].filter((x) => x !== null) as string[];
   }
 
-  // Taille du tableau = plus petite puissance de 2 ≥ Q
   let nextPower = 1;
   while (nextPower < totalQ) nextPower *= 2;
   if (nextPower < 2) nextPower = 2;
@@ -275,70 +283,112 @@ export function ffttPlaceQualifiers(
     if (pos !== undefined && pos < nextPower) ordered[pos] = player;
   };
 
-  // ─── Tier 1 : byeIds + 1ers de poule → seeds 1..(byeIds.length + N)
-  // Pool i → seed (byeIds.length + i). Les byeIds occupent les meilleurs seeds.
-  for (let i = 0; i < byeIds.length; i++) {
-    placeAtSeed(byeIds[i], i + 1);
-  }
-  for (let i = 0; i < N; i++) {
-    placeAtSeed(firsts[i], byeIds.length + i + 1);
+  const half = nextPower / 2;
+
+  // ─── Tier 1 : byeIds + 1ers de poule (random-within-tier)
+  // Les "1er-like" players sont placés aux seeds 1..F (F = byeIds.length + N).
+  // Tiers (en bornes seed) : [1], [2], [3-4], [5-8], [9-16], [17-32], ...
+  // Au sein d'un tier, l'assignation pool→seed est shuffled.
+  const playersFor1stTier: string[] = [
+    ...byeIds,
+    ...firsts.filter((x) => x !== null) as string[],
+  ];
+  const tierBoundaries = [1, 2, 4, 8, 16, 32, 64, 128];
+  let processed = 0;
+  for (const upper of tierBoundaries) {
+    if (processed >= playersFor1stTier.length) break;
+    const tierEnd = Math.min(upper, playersFor1stTier.length);
+    const tierStart = processed + 1; // 1-indexé
+    const tierSize = tierEnd - tierStart + 1;
+    if (tierSize <= 0) continue;
+    const playersInTier = playersFor1stTier.slice(tierStart - 1, tierEnd);
+    const seedsInTier = Array.from({ length: tierSize }, (_, i) => tierStart + i);
+    const shuffledSeeds = tierSize > 1 ? shuffle(seedsInTier) : seedsInTier;
+    for (let i = 0; i < tierSize; i++) {
+      placeAtSeed(playersInTier[i], shuffledSeeds[i]!);
+    }
+    processed = tierEnd;
   }
 
-  // ─── Tier 2 : 2èmes par paires inversées
-  // Pour chaque paire de pools (2k-1, 2k) : seeds (2N+1-2k, 2N+2-2k)
-  // Pool seul (N impair) : seed N+1 (= base+1 où base = N pour le tier 2)
+  // ─── Tier 2 : 2èmes (random + contrainte demi-tableau opposé)
   if (qualifiersPerPool >= 2 && validSeconds > 0) {
-    placeTierByPoolPairs(seconds, byeIds.length + N, posForSeed, ordered, nextPower);
+    placeFFTTSecondaryTier(
+      seconds, firsts, byeIds.length, ordered, posForSeed, nextPower, half,
+    );
   }
 
-  // ─── Tier 3 : 3èmes (mêmes règles, au tier suivant)
+  // ─── Tier 3 : 3èmes (random + contrainte demi-tableau opposé du 2ème)
   if (qualifiersPerPool >= 3 && validThirds > 0) {
-    placeTierByPoolPairs(thirds, byeIds.length + 2 * N, posForSeed, ordered, nextPower);
+    placeFFTTSecondaryTier(
+      thirds, seconds, byeIds.length + N, ordered, posForSeed, nextPower, half,
+    );
   }
 
   return ordered;
 }
 
 /**
- * Place les joueurs d'un tier (2èmes, 3èmes…) selon le schéma déterministe :
- *   - Pour chaque paire de pools (2k-1, 2k) : seeds (base+2N+1-2k, base+2N+2-2k)
- *   - Pool seul (N impair) : seed (base+1)
+ * Place les joueurs d'un tier secondaire (2èmes ou 3èmes) :
+ *   - Random parmi les seeds disponibles dans le tier
+ *   - Contrainte demi-tableau opposé de leur "parent" (1er pour les 2èmes,
+ *     2ème pour les 3èmes)
+ *   - Tier grouping FFTT pour fairness (seeds groupés par puissance de 2)
  *
- * @param players Liste des joueurs (un par poule, dans l'ordre des poules)
- * @param baseSeeds Nombre de seeds déjà utilisés par les tiers supérieurs
- *                  (ex: byeIds.length + N pour le tier des 2èmes)
+ * @param tierPlayers Joueurs du tier (un par poule, ordre des poules)
+ * @param parentPlayers Joueurs du tier parent (référence pour le demi-tableau)
+ * @param baseSeed Seed de départ – 1 (= nb de seeds occupés par tiers supérieurs)
  */
-function placeTierByPoolPairs(
-  players: (string | null)[],
-  baseSeeds: number,
-  posForSeed: Map<number, number>,
+function placeFFTTSecondaryTier(
+  tierPlayers: (string | null)[],
+  parentPlayers: (string | null)[],
+  baseSeed: number,
   ordered: (string | null)[],
+  posForSeed: Map<number, number>,
   nextPower: number,
+  half: number,
 ): void {
-  const N = players.length;
-  const maxSeed = baseSeeds + N;
-  const numPairs = Math.floor(N / 2);
+  const N = tierPlayers.length;
+  const allTierSeeds = Array.from({ length: N }, (_, i) => baseSeed + i + 1);
 
-  const placeAt = (player: string | null | undefined, seed: number) => {
-    if (!player || seed > nextPower) return;
+  // Sépare les seeds du tier en 2 sous-pools : top/bottom half
+  const seedsTopHalf: number[] = [];
+  const seedsBottomHalf: number[] = [];
+  for (const s of allTierSeeds) {
+    const pos = posForSeed.get(s);
+    if (pos === undefined || pos >= nextPower) continue;
+    if (pos < half) seedsTopHalf.push(s);
+    else seedsBottomHalf.push(s);
+  }
+  const topQueue = shuffle(seedsTopHalf);
+  const bottomQueue = shuffle(seedsBottomHalf);
+
+  // Pour chaque joueur du tier (ordre des poules), trouve un seed dans le
+  // demi-tableau opposé de son parent.
+  for (let i = 0; i < N; i++) {
+    const player = tierPlayers[i];
+    const parent = parentPlayers[i];
+    if (!player) continue;
+
+    let inTopHalf: boolean | null = null;
+    if (parent) {
+      const parentPos = ordered.indexOf(parent);
+      if (parentPos !== -1) inTopHalf = parentPos < half;
+    }
+
+    let queue: number[];
+    if (inTopHalf === true) queue = bottomQueue; // parent en haut → joueur en bas
+    else if (inTopHalf === false) queue = topQueue;
+    else queue = topQueue.length > 0 ? topQueue : bottomQueue;
+
+    if (queue.length === 0) {
+      // Fallback : prendre n'importe quel seed restant
+      queue = topQueue.length > 0 ? topQueue : bottomQueue;
+    }
+    if (queue.length === 0) continue;
+
+    const seed = queue.shift()!;
     const pos = posForSeed.get(seed);
     if (pos !== undefined && pos < nextPower) ordered[pos] = player;
-  };
-
-  for (let k = 1; k <= numPairs; k++) {
-    const poolAIdx = 2 * k - 2; // 0-indexed
-    const poolBIdx = 2 * k - 1;
-    const seedA = maxSeed + 1 - 2 * k;
-    const seedB = maxSeed + 2 - 2 * k;
-    placeAt(players[poolAIdx], seedA);
-    placeAt(players[poolBIdx], seedB);
-  }
-
-  // Lone last pool si N impair
-  if (N % 2 === 1) {
-    const lastPlayer = players[N - 1];
-    const lastSeed = baseSeeds + 1;
-    placeAt(lastPlayer, lastSeed);
   }
 }
 
