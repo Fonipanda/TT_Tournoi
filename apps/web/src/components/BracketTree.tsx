@@ -42,10 +42,9 @@ interface Props {
 // ─── Layout constants (RG style) ──────────────────────────────────────────────
 const COL_W = 280;
 const COL_GAP = 56;
-const MATCH_H_FULL = 64; // 2-row match (real)
-const MATCH_H_PASS = 32; // 1-row pass
+const MATCH_H = 64; // toutes les cellules : 2 lignes (player ou vide)
 const LABEL_H = 36;
-const BASE_GAP = 16;
+const BASE_GAP = 10;
 
 function computeRoundLabel(roundIdx: number, totalRounds: number): string {
   const remaining = totalRounds - roundIdx;
@@ -68,9 +67,11 @@ function isPassMatch(m: BracketTreeMatch): boolean {
   );
 }
 
-function matchHeight(m: BracketTreeMatch | undefined): number {
-  if (!m) return MATCH_H_FULL;
-  return isPassMatch(m) ? MATCH_H_PASS : MATCH_H_FULL;
+// Toutes les cellules ont la même hauteur (2 lignes) — pour les "passages
+// directs" (1 joueur), la 2e ligne est laissée vide (jamais "bye"). Cela
+// donne le rendu FFTT/SPID où toutes les positions du tableau sont visibles.
+function matchHeight(_m: BracketTreeMatch | undefined): number {
+  return MATCH_H;
 }
 
 export function BracketTree({ matches, highlightWinner = true }: Props) {
@@ -131,8 +132,8 @@ export function BracketTree({ matches, highlightWinner = true }: Props) {
     const lastRound = centers[centers.length - 1] ?? [];
     const lastY = lastRound.length > 0 ? lastRound[lastRound.length - 1]! : LABEL_H;
     const totalH = Math.max(
-      lastY + MATCH_H_FULL / 2 + 16,
-      (r1Centers[r1Centers.length - 1] ?? 0) + MATCH_H_FULL / 2 + 16,
+      lastY + MATCH_H / 2 + 16,
+      (r1Centers[r1Centers.length - 1] ?? 0) + MATCH_H / 2 + 16,
     );
     const totalW = totalRounds * (COL_W + COL_GAP) - COL_GAP;
 
@@ -240,7 +241,7 @@ export function BracketTree({ matches, highlightWinner = true }: Props) {
   );
 }
 
-/** Cellule de match (RG style) : 1 ou 2 lignes selon match réel ou passage. */
+/** Cellule de match (RG style) : toujours 2 lignes (player ou vide). */
 function RGMatchCell({
   match,
   highlightWinner,
@@ -253,40 +254,22 @@ function RGMatchCell({
   const isPass = isPassMatch(match);
 
   // Calcul des numéros de position FFTT (1..nextPower) pour le 1er tour.
-  // poolMatchOrder = numéro de paire dans le round. Position du slot p1 = 2k-1,
-  // position du slot p2 = 2k (k = poolMatchOrder).
   const isFirstRound = match.roundNumber === 1;
   const k = match.poolMatchOrder ?? 0;
   const posP1 = isFirstRound && k > 0 ? 2 * k - 1 : null;
   const posP2 = isFirstRound && k > 0 ? 2 * k : null;
 
-  if (isPass && match.winner) {
-    // Cellule passage : 1 seule ligne, numéro de position en gauche
-    const passPos = match.player1 ? posP1 : posP2;
-    return (
-      <div className="rounded-md border border-border/40 bg-bg-alt/30 px-2 py-1 flex items-center gap-1.5 h-full">
-        {passPos !== null && (
-          <span className="text-[10px] tabular text-foreground-subtle font-mono w-5 text-right flex-shrink-0">
-            {passPos}
-          </span>
-        )}
-        <PlayerAvatar player={match.winner} />
-        <span className="text-[13px] font-medium truncate flex-1 text-foreground">
-          {match.winner.lastName} {match.winner.firstName[0]}.
-        </span>
-        {match.winner.club && (
-          <span className="text-[10px] text-foreground-subtle flex-shrink-0">
-            {match.winner.club.split(' ')[0]?.slice(0, 4)}
-          </span>
-        )}
-      </div>
-    );
-  }
-
   const p1Win = highlightWinner && isFinished && winnerId === match.player1?.id;
   const p2Win = highlightWinner && isFinished && winnerId === match.player2?.id;
   const sets = Array.isArray(match.sets) ? match.sets : [];
   const inProgress = match.status === 'in_progress';
+
+  // Pour les passages directs : le joueur reste dans SA ligne d'origine
+  // (top si player1 set, bottom si player2 set). L'autre ligne est vide.
+  const isP1Empty = isPass && !match.player1;
+  const isP2Empty = isPass && !match.player2;
+  const p1IsWinner = isPass ? !!match.player1 : p1Win;
+  const p2IsWinner = isPass ? !!match.player2 : p2Win;
 
   return (
     <div
@@ -298,19 +281,21 @@ function RGMatchCell({
         player={match.player1}
         sets={sets}
         side="p1"
-        isWinner={p1Win}
-        totalSets={match.setsP1}
+        isWinner={p1IsWinner}
+        totalSets={isPass ? 0 : match.setsP1}
         position="top"
         seedPos={posP1}
+        emptySlot={isP1Empty}
       />
       <PlayerRow
         player={match.player2}
         sets={sets}
         side="p2"
-        isWinner={p2Win}
-        totalSets={match.setsP2}
+        isWinner={p2IsWinner}
+        totalSets={isPass ? 0 : match.setsP2}
         position="bot"
         seedPos={posP2}
+        emptySlot={isP2Empty}
       />
     </div>
   );
@@ -345,6 +330,7 @@ function PlayerRow({
   totalSets,
   position,
   seedPos,
+  emptySlot,
 }: {
   player?: PlayerLite | null;
   sets: { p1: number; p2: number }[];
@@ -353,17 +339,38 @@ function PlayerRow({
   totalSets: number;
   position: 'top' | 'bot';
   seedPos?: number | null;
+  emptySlot?: boolean;
 }) {
   // Toujours 5 colonnes de scores (placeholder · si non joué)
   const cells = Array.from({ length: 5 }, (_, i) => sets[i]);
   const club = player?.club?.split(' ')[0]?.slice(0, 4);
+
+  // Slot vide (passage direct, opposant inexistant) : ligne complètement vide,
+  // juste le numéro de position en gauche. Jamais le mot "bye".
+  if (emptySlot) {
+    return (
+      <div
+        className={`flex items-center gap-1.5 px-2 py-0.5 bg-bg-alt/20 ${
+          position === 'top' ? 'border-b border-border/30' : ''
+        }`}
+        style={{ height: MATCH_H / 2 }}
+      >
+        {seedPos !== null && seedPos !== undefined && (
+          <span className="text-[10px] tabular text-foreground-subtle/40 font-mono w-5 text-right flex-shrink-0">
+            {seedPos}
+          </span>
+        )}
+        <span className="flex-1" />
+      </div>
+    );
+  }
 
   return (
     <div
       className={`flex items-center gap-1.5 px-2 py-0.5 bg-surface ${
         position === 'top' ? 'border-b border-border/30' : ''
       } ${isWinner ? 'bg-success-soft/40' : ''}`}
-      style={{ height: MATCH_H_FULL / 2 }}
+      style={{ height: MATCH_H / 2 }}
     >
       {seedPos !== null && seedPos !== undefined && (
         <span className="text-[10px] tabular text-foreground-subtle font-mono w-5 text-right flex-shrink-0">
