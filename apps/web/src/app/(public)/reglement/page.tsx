@@ -22,6 +22,20 @@ async function loadRegulation(): Promise<string> {
     const setting = await prisma.siteSetting.findUnique({ where: { key: 'regulation' } });
     if (!setting?.value?.trim()) return DEFAULT_FALLBACK;
 
+    // 1) Charge les variables saisies manuellement par l'admin
+    const varsSetting = await prisma.siteSetting.findUnique({
+      where: { key: 'regulation_vars' },
+    });
+    let userVars: Record<string, string> = {};
+    if (varsSetting?.value) {
+      try {
+        userVars = JSON.parse(varsSetting.value) as Record<string, string>;
+      } catch {
+        /* ignore parse error */
+      }
+    }
+
+    // 2) Auto-interpolation depuis les données du tournoi actif (fallback)
     const tournament = await prisma.tournament.findFirst({
       where: { isActive: true },
       include: {
@@ -33,38 +47,39 @@ async function loadRegulation(): Promise<string> {
     });
 
     let text = setting.value;
+    const replacements: Record<string, string> = {
+      categorie: '', date_lieu: '', responsable: '', juge_arbitre: '',
+      nb_tables: '', balles: '', tableaux: '', joueurs_autorises: '',
+      max_joueurs: '', horaires_debut: '', horaires_finales: '',
+      horaire_fin: '', date_cloture: '', montant_engagement: '',
+      tirage_au_sort: '', homologation: '', challenge: '',
+    };
+
+    // Auto-fill depuis le tournoi
     if (tournament) {
-      const tableaux = tournament.brackets.map((b) => b.name).join(', ');
-      const horaires_debut = tournament.brackets
+      replacements.categorie = 'Tournoi homologué FFTT';
+      replacements.date_lieu = `${tournament.date || ''} — ${tournament.location || ''}`.replace(/^ — | — $/g, '');
+      replacements.responsable = tournament.contact || '';
+      replacements.tableaux = tournament.brackets.map((b) => b.name).join(', ');
+      replacements.horaires_debut = tournament.brackets
         .map((b) => `${b.name}: ${b.day ?? ''} ${b.startTime ?? ''}`.trim())
         .filter(Boolean)
         .join(' ; ');
-      const max_joueurs = Math.max(0, ...tournament.brackets.map((b) => b.maxPlayers));
-      const fees = tournament.brackets.map((b) => `${b.name}: ${Number(b.entryFee).toFixed(2)}€`).join(' ; ');
+      replacements.max_joueurs = String(Math.max(0, ...tournament.brackets.map((b) => b.maxPlayers)));
+      replacements.horaire_fin = tournament.hours || '';
+      replacements.montant_engagement = tournament.brackets
+        .map((b) => `${b.name}: ${Number(b.entryFee).toFixed(2)}€`)
+        .join(' ; ');
+    }
 
-      const replacements: Record<string, string> = {
-        categorie: 'Tournoi homologué FFTT',
-        date_lieu: `${tournament.date || ''} — ${tournament.location || ''}`.replace(/^ — | — $/g, ''),
-        responsable: tournament.contact || '',
-        juge_arbitre: '',
-        nb_tables: '',
-        balles: '',
-        tableaux,
-        joueurs_autorises: '',
-        max_joueurs: String(max_joueurs),
-        horaires_debut,
-        horaires_finales: '',
-        horaire_fin: tournament.hours || '',
-        date_cloture: '',
-        montant_engagement: fees,
-        tirage_au_sort: '',
-        homologation: '',
-        challenge: '',
-      };
+    // 3) Les valeurs saisies à la main par l'admin ÉCRASENT les fallbacks auto
+    for (const [k, v] of Object.entries(userVars)) {
+      if (v && v.trim()) replacements[k] = v;
+    }
 
-      for (const [k, v] of Object.entries(replacements)) {
-        text = text.replaceAll(`{${k}}`, v);
-      }
+    // 4) Substitution des {variables}
+    for (const [k, v] of Object.entries(replacements)) {
+      text = text.replaceAll(`{${k}}`, v);
     }
     return text;
   } catch {

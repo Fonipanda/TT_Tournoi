@@ -1,6 +1,7 @@
 import { prisma } from '@tt/db';
 import Link from 'next/link';
 import { BracketTree, type BracketTreeMatch } from '@/components/BracketTree';
+import { ProgressionToggle } from '@/components/ProgressionToggle';
 import { serialize } from '@/lib/serialize';
 
 export const dynamic = 'force-dynamic';
@@ -75,94 +76,106 @@ export default async function ProgressionDetailPage({ params }: Params) {
         {bracket.matches.filter((m) => m.status === 'finished').length}/{bracket.matches.length} matches terminés
       </p>
 
-      {/* Poules */}
-      {pools.size > 0 && (
-        <section className="mb-10">
-          <h2 className="font-heading text-xl uppercase tracking-wide mb-4">Poules</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {[...pools.entries()].sort((a, b) => a[0] - b[0]).map(([num, matches]) => {
-              const standings = computePoolStandings(matches);
-              return (
-                <div key={num} className="card rounded-2xl" data-testid={`pool-${num}`}>
-                  <h3 className="font-heading text-lg uppercase tracking-wide mb-3 text-primary">
-                    Poule {num}
-                  </h3>
-                  {/* Classement */}
-                  <table className="w-full text-xs mb-3">
-                    <thead>
-                      <tr className="border-b border-border text-foreground-muted">
-                        <th className="text-left py-1">#</th>
-                        <th className="text-left py-1">Joueur</th>
-                        <th className="text-center py-1">V</th>
-                        <th className="text-center py-1">D</th>
-                        <th className="text-center py-1">Pts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {standings.map((s, idx) => (
-                        <tr key={s.player?.id ?? idx} className="border-b border-border/50">
-                          <td className="py-1 font-medium">{idx + 1}</td>
-                          <td className="py-1 truncate max-w-[120px]">
-                            {s.player?.lastName} {s.player?.firstName?.[0]}.
-                          </td>
-                          <td className="py-1 text-center font-medium text-success">{s.v}</td>
-                          <td className="py-1 text-center text-danger">{s.d}</td>
-                          <td className="py-1 text-center font-bold tabular">{s.pts}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {/* Matches */}
-                  <div className="space-y-1">
-                    {matches.map((m) => (
-                      <div
-                        key={m.id}
-                        className={`flex items-center text-xs p-1.5 rounded ${
-                          m.status === 'finished' ? 'bg-bg-alt/50' : ''
-                        }`}
-                      >
-                        <span className={`flex-1 truncate ${m.winnerId === m.player1Id ? 'font-bold' : ''}`}>
-                          {m.player1?.lastName ?? '?'}
-                        </span>
-                        <span className="mx-2 font-mono tabular">
-                          {m.status === 'finished' ? `${m.setsP1}-${m.setsP2}` : 'vs'}
-                        </span>
-                        <span className={`flex-1 truncate text-right ${m.winnerId === m.player2Id ? 'font-bold' : ''}`}>
-                          {m.player2?.lastName ?? '?'}
-                        </span>
+      {/* Toggle Poules / Tableau final */}
+      <ProgressionToggle
+        poolsContent={
+          pools.size > 0 ? (
+            <section className="mb-10">
+              <h2 className="font-heading text-xl uppercase tracking-wide mb-4">Poules</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {[...pools.entries()].sort((a, b) => a[0] - b[0]).map(([num, matches]) => {
+                  const standings = computePoolStandings(matches);
+                  return (
+                    <div key={num} className="card rounded-2xl" data-testid={`pool-${num}`}>
+                      <h3 className="font-heading text-lg uppercase tracking-wide mb-3 text-primary">
+                        Poule {num}
+                      </h3>
+                      {/* Classement */}
+                      <table className="w-full text-xs mb-3">
+                        <thead>
+                          <tr className="border-b border-border text-foreground-muted">
+                            <th className="text-left py-1">#</th>
+                            <th className="text-left py-1">Joueur</th>
+                            <th className="text-center py-1">V</th>
+                            <th className="text-center py-1">D</th>
+                            <th className="text-center py-1">Pts</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {standings.map((s, idx) => (
+                            <tr key={s.player?.id ?? idx} className="border-b border-border/50">
+                              <td className="py-1 font-medium">{idx + 1}</td>
+                              <td className="py-1 truncate max-w-[120px]">
+                                {s.player?.lastName} {s.player?.firstName?.[0]}.
+                              </td>
+                              <td className="py-1 text-center font-medium text-success">{s.v}</td>
+                              <td className="py-1 text-center text-danger">{s.d}</td>
+                              <td className="py-1 text-center font-bold tabular">{s.pts}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {/* Matches */}
+                      <div className="space-y-1">
+                        {matches.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`flex items-center text-xs p-1.5 rounded ${
+                              m.status === 'finished' ? 'bg-bg-alt/50' : ''
+                            }`}
+                          >
+                            <span className={`flex-1 truncate ${m.winnerId === m.player1Id ? 'font-bold' : ''}`}>
+                              {m.player1?.lastName ?? '?'}
+                            </span>
+                            <span className="mx-2 font-mono tabular">
+                              {m.status === 'finished' ? `${m.setsP1}-${m.setsP2}` : 'vs'}
+                            </span>
+                            <span className={`flex-1 truncate text-right ${m.winnerId === m.player2Id ? 'font-bold' : ''}`}>
+                              {m.player2?.lastName ?? '?'}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* Tableau final */}
-      {elimMatches.length > 0 && (
-        <section>
-          <h2 className="font-heading text-xl uppercase tracking-wide mb-4">
-            Tableau final
-          </h2>
-          <BracketTree
-            matches={elimMatches.map<BracketTreeMatch>((m) => ({
-              id: m.id,
-              roundNumber: m.roundNumber,
-              roundName: m.roundName,
-              poolMatchOrder: m.poolMatchOrder,
-              player1: m.player1,
-              player2: m.player2,
-              winner: m.winner,
-              status: m.status,
-              setsP1: m.setsP1,
-              setsP2: m.setsP2,
-              sets: m.sets as any,
-            }))}
-          />
-        </section>
-      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : (
+            <p className="text-foreground-muted text-center py-8">
+              Aucune poule générée pour ce tableau.
+            </p>
+          )
+        }
+        bracketContent={
+          elimMatches.length > 0 ? (
+            <section>
+              <h2 className="font-heading text-xl uppercase tracking-wide mb-4">
+                Tableau final
+              </h2>
+              <BracketTree
+                matches={elimMatches.map<BracketTreeMatch>((m) => ({
+                  id: m.id,
+                  roundNumber: m.roundNumber,
+                  roundName: m.roundName,
+                  poolMatchOrder: m.poolMatchOrder,
+                  player1: m.player1,
+                  player2: m.player2,
+                  winner: m.winner,
+                  status: m.status,
+                  setsP1: m.setsP1,
+                  setsP2: m.setsP2,
+                  sets: m.sets as any,
+                }))}
+              />
+            </section>
+          ) : (
+            <p className="text-foreground-muted text-center py-8">
+              Tableau final non encore généré.
+            </p>
+          )
+        }
+      />
     </div>
   );
 }

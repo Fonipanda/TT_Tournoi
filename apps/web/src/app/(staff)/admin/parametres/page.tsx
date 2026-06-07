@@ -166,13 +166,38 @@ Variables utilisables dans ce template :
 {horaires_finales}, {horaire_fin}, {date_cloture}, {montant_engagement},
 {tirage_au_sort}, {homologation}, {challenge}`;
 
+// Liste des variables du règlement avec leurs labels
+const REGULATION_VARS = [
+  { key: 'categorie', label: 'Catégorie du tournoi', placeholder: 'Ex: Tournoi national homologué' },
+  { key: 'date_lieu', label: 'Date et lieu', placeholder: 'Ex: 23 mai 2026 à Chelles' },
+  { key: 'responsable', label: "Responsable de l'organisation", placeholder: 'Nom + contact' },
+  { key: 'juge_arbitre', label: 'Juge-arbitre désigné', placeholder: 'Nom du JA' },
+  { key: 'nb_tables', label: 'Nombre de tables et dimensions des aires', placeholder: 'Ex: 26 tables sur 13×20m par aire' },
+  { key: 'balles', label: 'Marque des balles fournies', placeholder: 'Ex: Cornilleau ABS Evolution ***' },
+  { key: 'tableaux', label: 'Tableaux organisés', placeholder: 'Ex: A (≤599), B (≤1099), C (≤899)' },
+  { key: 'joueurs_autorises', label: 'Joueurs autorisés', placeholder: 'Ex: licenciés FFTT 2025-2026' },
+  { key: 'max_joueurs', label: 'Nombre max de joueurs par tableau', placeholder: 'Ex: 64' },
+  { key: 'horaires_debut', label: 'Horaires de début de chaque tableau', placeholder: 'Ex: A 9h, B 10h, C 14h' },
+  { key: 'horaires_finales', label: 'Horaires prévisionnels des finales', placeholder: 'Ex: 18h30 à 20h' },
+  { key: 'horaire_fin', label: 'Horaire de fin prévisionnelle', placeholder: 'Ex: 22h30' },
+  { key: 'date_cloture', label: 'Date de clôture des engagements', placeholder: 'Ex: 20 mai 2026 à 23h59' },
+  { key: 'montant_engagement', label: 'Montant des engagements', placeholder: 'Ex: 9€ (1 tab.) / 16€ (2 tab.)' },
+  { key: 'tirage_au_sort', label: "Date, heure et lieu du tirage au sort public", placeholder: 'Ex: 22 mai 2026, 18h, salle Chelles' },
+  { key: 'homologation', label: "Numéro d'homologation", placeholder: 'Ex: 2026-FFTT-XXXX' },
+  { key: 'challenge', label: 'Mode attribution challenge / coupe', placeholder: 'Ex: vainqueur tableau A' },
+] as const;
+
+type RegulationVarsMap = Record<string, string>;
+
 export default function AdminParametresPage() {
   const router = useRouter();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [regulation, setRegulation] = useState<string>('');
+  const [regulationVars, setRegulationVars] = useState<RegulationVarsMap>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [savingRegulation, setSavingRegulation] = useState(false);
+  const [savingVars, setSavingVars] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -180,6 +205,11 @@ export default function AdminParametresPage() {
       .then((j) => {
         setLogoUrl(j.data?.logo ?? null);
         setRegulation(j.data?.regulation ?? '');
+        try {
+          setRegulationVars(j.data?.regulation_vars ? JSON.parse(j.data.regulation_vars) : {});
+        } catch {
+          setRegulationVars({});
+        }
       })
       .finally(() => setLoading(false));
   }, []);
@@ -261,33 +291,72 @@ export default function AdminParametresPage() {
     }
   };
 
+  const saveVars = async () => {
+    setSavingVars(true);
+    try {
+      await apiJson('/api/settings/regulation_vars', {
+        method: 'PUT',
+        body: JSON.stringify({ value: JSON.stringify(regulationVars) }),
+      });
+      toast.success('Variables enregistrées');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setSavingVars(false);
+    }
+  };
+
   return (
     <div data-testid="admin-parametres" className="space-y-6">
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-6">Paramètres</h1>
 
-      {/* Logo */}
-      <div className="card max-w-2xl rounded-2xl">
-        <h2 className="font-heading text-xl uppercase tracking-wide mb-3">Logo du site</h2>
-        <p className="text-sm text-foreground-muted mb-4">
-          Remplace le texte « TT Tournoi » dans l'en-tête. Max 500 Ko, formats PNG/JPEG/SVG/WebP.
-          Le logo s'adapte automatiquement (max 40px de hauteur).
-        </p>
+      {/* Layout 2 colonnes : (Logo + Règlement) à gauche · (TV + QR) à droite */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ─── Colonne gauche ─── */}
+        <div className="space-y-6">
+          {/* Logo */}
+          <div className="card rounded-2xl">
+            <h2 className="font-heading text-xl uppercase tracking-wide mb-3">Logo du site</h2>
+            <p className="text-sm text-foreground-muted mb-4">
+              Remplace le texte « TT Tournoi » dans l'en-tête. Max 500 Ko, formats PNG/JPEG/SVG/WebP.
+            </p>
 
-        {loading ? (
-          <p className="text-foreground-muted">Chargement…</p>
-        ) : logoUrl ? (
-          <div className="space-y-3">
-            <div className="card bg-bg-alt">
-              <p className="text-xs uppercase tracking-widest text-foreground-muted mb-2">
-                Aperçu
-              </p>
-              <div className="flex items-center justify-center bg-surface p-4 border border-border">
-                <img src={logoUrl} alt="Logo actuel" className="max-h-16 w-auto object-contain" />
+            {loading ? (
+              <p className="text-foreground-muted">Chargement…</p>
+            ) : logoUrl ? (
+              <div className="space-y-3">
+                <div className="card bg-bg-alt">
+                  <p className="text-xs uppercase tracking-widest text-foreground-muted mb-2">
+                    Aperçu
+                  </p>
+                  <div className="flex items-center justify-center bg-surface p-4 border border-border">
+                    <img src={logoUrl} alt="Logo actuel" className="max-h-16 w-auto object-contain" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <label className="btn-secondary text-sm cursor-pointer">
+                    Remplacer
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                      onChange={onFile}
+                      disabled={uploading}
+                      className="hidden"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={removeLogo}
+                    className="text-danger text-sm hover:underline"
+                  >
+                    Supprimer
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <label className="btn-secondary text-sm cursor-pointer">
-                Remplacer
+            ) : (
+              <label className="btn-primary text-sm cursor-pointer inline-block">
+                {uploading ? 'Upload…' : 'Choisir un logo'}
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/svg+xml,image/webp"
@@ -296,85 +365,103 @@ export default function AdminParametresPage() {
                   className="hidden"
                 />
               </label>
+            )}
+          </div>
+
+          {/* Règlement */}
+          <div className="card rounded-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-heading text-xl uppercase tracking-wide">Règlement du tournoi</h2>
+              <span className="text-xs text-foreground-muted">FFTT — Art. IX.111</span>
+            </div>
+            <p className="text-sm text-foreground-muted mb-3">
+              Affiché publiquement sur <code>/reglement</code>. Utilise les variables{' '}
+              <code>{'{nom_variable}'}</code> ; remplis les champs ci-dessous pour les
+              substituer automatiquement.
+            </p>
+
+            <div className="flex gap-2 mb-3 flex-wrap">
               <button
                 type="button"
-                onClick={removeLogo}
-                className="text-danger text-sm hover:underline"
+                onClick={loadTemplate}
+                className="text-sm px-3 py-1.5 rounded border border-border bg-bg-alt hover:bg-bg-alt/80"
               >
-                Supprimer
+                Charger le template FFTT IX.111
+              </button>
+              {regulation && (
+                <button
+                  type="button"
+                  onClick={clearRegulation}
+                  className="text-sm text-danger hover:underline"
+                >
+                  Supprimer
+                </button>
+              )}
+            </div>
+
+            {/* Champs des variables */}
+            <details className="mb-3 border border-border rounded-lg overflow-hidden" open>
+              <summary className="cursor-pointer bg-bg-alt/50 px-3 py-2 text-sm font-medium">
+                Variables du règlement (17 champs)
+              </summary>
+              <div className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
+                {REGULATION_VARS.map((v) => (
+                  <div key={v.key} className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-foreground-muted">
+                      <code className="bg-bg-alt/50 px-1 rounded text-[10px]">{`{${v.key}}`}</code>{' '}
+                      {v.label}
+                    </label>
+                    <input
+                      type="text"
+                      value={regulationVars[v.key] ?? ''}
+                      onChange={(e) =>
+                        setRegulationVars((prev) => ({ ...prev, [v.key]: e.target.value }))
+                      }
+                      placeholder={v.placeholder}
+                      className="w-full text-sm border border-border rounded px-2 py-1 bg-bg"
+                    />
+                  </div>
+                ))}
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={saveVars}
+                    disabled={savingVars}
+                    className="btn-primary text-xs px-3 py-1.5 rounded disabled:opacity-50"
+                  >
+                    {savingVars ? 'Enregistrement…' : 'Enregistrer les variables'}
+                  </button>
+                </div>
+              </div>
+            </details>
+
+            <textarea
+              value={regulation}
+              onChange={(e) => setRegulation(e.target.value)}
+              rows={14}
+              placeholder="Saisis le règlement, ou clique sur « Charger le template »…"
+              className="w-full font-mono text-xs border border-border rounded-lg p-3 bg-bg resize-y min-h-[200px]"
+            />
+
+            <div className="flex justify-end mt-3">
+              <button
+                type="button"
+                onClick={saveRegulation}
+                disabled={savingRegulation}
+                className="btn-primary text-sm px-4 py-2 rounded disabled:opacity-50"
+              >
+                {savingRegulation ? 'Enregistrement…' : 'Enregistrer le règlement'}
               </button>
             </div>
           </div>
-        ) : (
-          <label className="btn-primary text-sm cursor-pointer inline-block">
-            {uploading ? 'Upload…' : 'Choisir un logo'}
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/svg+xml,image/webp"
-              onChange={onFile}
-              disabled={uploading}
-              className="hidden"
-            />
-          </label>
-        )}
-      </div>
-
-      {/* Règlement (FFTT IX.111) */}
-      <div className="card max-w-4xl rounded-2xl">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-heading text-xl uppercase tracking-wide">Règlement du tournoi</h2>
-          <span className="text-xs text-foreground-muted">FFTT — Article IX.111</span>
-        </div>
-        <p className="text-sm text-foreground-muted mb-3">
-          Le règlement est affiché publiquement sur la page <code>/reglement</code>. Utilise les
-          variables <code>{'{nom_variable}'}</code> pour insérer dynamiquement les informations du
-          tournoi (responsable, juge-arbitre, dates, etc.).
-        </p>
-
-        <div className="flex gap-2 mb-3">
-          <button
-            type="button"
-            onClick={loadTemplate}
-            className="text-sm px-3 py-1.5 rounded border border-border bg-bg-alt hover:bg-bg-alt/80"
-          >
-            Charger le template FFTT IX.111
-          </button>
-          {regulation && (
-            <button
-              type="button"
-              onClick={clearRegulation}
-              className="text-sm text-danger hover:underline"
-            >
-              Supprimer
-            </button>
-          )}
         </div>
 
-        <textarea
-          value={regulation}
-          onChange={(e) => setRegulation(e.target.value)}
-          rows={20}
-          placeholder="Saisis le règlement, ou clique sur « Charger le template FFTT IX.111 »…"
-          className="w-full font-mono text-sm border border-border rounded-lg p-3 bg-bg resize-y min-h-[200px]"
-        />
-
-        <div className="flex justify-end mt-3">
-          <button
-            type="button"
-            onClick={saveRegulation}
-            disabled={savingRegulation}
-            className="btn-primary text-sm px-4 py-2 rounded disabled:opacity-50"
-          >
-            {savingRegulation ? 'Enregistrement…' : 'Enregistrer le règlement'}
-          </button>
+        {/* ─── Colonne droite ─── */}
+        <div className="space-y-6">
+          <TvIntervalSlider />
+          <QrGenerator initialLogoUrl={logoUrl} />
         </div>
       </div>
-
-      {/* TV Display Interval */}
-      <TvIntervalSlider />
-
-      {/* QR Code Generator */}
-      <QrGenerator initialLogoUrl={logoUrl} />
     </div>
   );
 }
@@ -395,7 +482,7 @@ function TvIntervalSlider() {
   };
 
   return (
-    <div className="card max-w-2xl rounded-2xl">
+    <div className="card rounded-2xl">
       <h2 className="font-heading text-xl uppercase tracking-wide mb-3">Mode TV</h2>
       <p className="text-sm text-foreground-muted mb-4">
         Temps d'affichage de chaque salle en mode TV (alternance automatique).
