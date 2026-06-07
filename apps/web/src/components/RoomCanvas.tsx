@@ -328,7 +328,7 @@ export function RoomCanvas({ room, tables: initialTables, editable = false }: Pr
                 }}
               >
                 <span className="text-white font-heading font-bold text-sm drop-shadow-md bg-black/40 px-1.5 rounded">
-                  T{t.number}
+                  {t.number}
                 </span>
               </div>
 

@@ -492,7 +492,7 @@ export function BracketRegistrationsPage({
                         <option value="">Attrib. table…</option>
                         {availableTables.map((t) => (
                           <option key={t.id} value={t.id}>
-                            T{t.number} ({t.room.name})
+                            {t.number} ({t.room.name})
                           </option>
                         ))}
                       </select>
@@ -625,7 +625,7 @@ export function BracketRegistrationsPage({
                             <td className="py-2 text-center">
                               {m.table ? (
                                 <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded">
-                                  T{m.table.number}
+                                  {m.table.number}
                                 </span>
                               ) : m.status !== 'finished' && m.player1 && m.player2 && availableTables.length > 0 ? (
                                 <select
@@ -639,7 +639,7 @@ export function BracketRegistrationsPage({
                                   <option value="">Table…</option>
                                   {availableTables.map((t) => (
                                     <option key={t.id} value={t.id}>
-                                      T{t.number} ({t.room.name})
+                                      {t.number} ({t.room.name})
                                     </option>
                                   ))}
                                 </select>

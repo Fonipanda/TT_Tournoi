@@ -115,7 +115,7 @@ function MatchCard({
         </span>
         {match.table && (
           <span className="bg-primary/10 text-primary font-bold text-xs px-1.5 py-0.5 rounded">
-            T{match.table.number}
+            {match.table.number}
           </span>
         )}
       </div>

@@ -252,7 +252,7 @@ export function RoomList({
                   } hover:opacity-80`}
                   data-testid={`table-${t.number}`}
                 >
-                  T{t.number}
+                  {t.number}
                 </button>
               ))}
               {r.tables.length === 0 && (
