@@ -8,30 +8,163 @@ import { QrGenerator } from '@/components/admin/QrGenerator';
 
 const MAX_LOGO_SIZE = 500 * 1024; // 500 Ko
 
-const REGULATION_TEMPLATE = `IX.111 — Règlement du tournoi
+const REGULATION_TEMPLATE = `RÈGLEMENT DU TOURNOI
 
-- Catégorie du tournoi : {categorie}
-- Date et lieu : {date_lieu}
-- Responsable de l'organisation : {responsable}
-- Juge-arbitre désigné : {juge_arbitre}
-- Nombre de tables et dimensions des aires de jeu : {nb_tables}
-- Marque des balles fournies : {balles}
-- Tableaux organisés : {tableaux}
-- Joueurs autorisés : {joueurs_autorises}
-- Nombre maximum de joueurs par tableau : {max_joueurs}
-- Horaires de début de chaque tableau : {horaires_debut}
-- Horaires prévisionnels des finales : {horaires_finales}
-- Horaire de fin prévisionnelle : {horaire_fin}
-- Date de clôture des engagements : {date_cloture}
-- Montant des engagements : {montant_engagement}
-- Date, heure et lieu du tirage au sort public : {tirage_au_sort}
-- Numéro d'homologation : {homologation}
-- Mode d'attribution challenge / coupe : {challenge}
+(Établi conformément à l'article IX.111 du Règlement Sportif FFTT)
 
-Variables disponibles : {categorie}, {date_lieu}, {responsable}, {juge_arbitre},
-{nb_tables}, {balles}, {tableaux}, {joueurs_autorises}, {max_joueurs},
-{horaires_debut}, {horaires_finales}, {horaire_fin}, {date_cloture},
-{montant_engagement}, {tirage_au_sort}, {homologation}, {challenge}.`;
+═══════════════════════════════════════════════════════════════════
+INFORMATIONS GÉNÉRALES
+═══════════════════════════════════════════════════════════════════
+
+• Catégorie du tournoi : {categorie}
+• Date et lieu : {date_lieu}
+• Numéro d'homologation FFTT : {homologation}
+• Responsable de l'organisation : {responsable}
+• Juge-arbitre désigné : {juge_arbitre}
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 1 — JUGE-ARBITRAGE
+═══════════════════════════════════════════════════════════════════
+
+Le juge-arbitre {juge_arbitre} est seul habilité à statuer sur tout litige
+ou point non prévu au présent règlement. Ses décisions sont sans appel.
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 2 — MATÉRIEL ET AIRES DE JEU
+═══════════════════════════════════════════════════════════════════
+
+• {nb_tables}
+• Balles utilisées : {balles}
+  Balles fournies par l'organisation, plastique blanche homologuée FFTT.
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 3 — TABLEAUX ORGANISÉS
+═══════════════════════════════════════════════════════════════════
+
+Tableaux : {tableaux}
+
+Joueurs autorisés : {joueurs_autorises}
+
+Nombre maximum de joueurs par tableau : {max_joueurs}
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 4 — CONDITIONS DE PARTICIPATION
+═══════════════════════════════════════════════════════════════════
+
+Tout joueur doit présenter sa licence FFTT 2025-2026 valide ainsi qu'un
+certificat médical conforme à la réglementation en vigueur.
+
+Les joueurs étrangers doivent être affiliés à leur fédération nationale et
+fournir une attestation de non-suspension.
+
+Sur-classement : les benjamins et catégories supérieures sont autorisés
+à s'inscrire dans les tableaux séniors selon les règlements FFTT.
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 5 — DROITS D'ENGAGEMENT
+═══════════════════════════════════════════════════════════════════
+
+Montant des engagements : {montant_engagement}
+
+Date de clôture des engagements : {date_cloture}
+
+Mode de paiement : carte bancaire en ligne, ou espèces / chèque
+à l'ordre de l'organisateur sur place.
+
+Les inscriptions sont fermes et définitives. Tout remboursement n'est
+possible que sur présentation d'un certificat médical.
+
+En cas d'annulation d'un tableau (moins de 12 inscrits), les droits
+correspondants sont intégralement remboursés.
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 6 — DÉROULEMENT SPORTIF
+═══════════════════════════════════════════════════════════════════
+
+Le tournoi se déroule conformément aux règlements sportifs de la FFTT.
+
+Format des matches : meilleur des 5 manches de 11 points.
+
+Format des tableaux :
+  • Phase de poules : poules de 3 ou 4 joueurs (2 qualifiés par poule)
+  • Phase finale : élimination directe avec tirage par blocs FFTT
+    (article I.305) — protection des têtes de série
+
+Tenue sportive obligatoire (chaussures de salle propres, short / jupe,
+maillot de club).
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 7 — HORAIRES
+═══════════════════════════════════════════════════════════════════
+
+Horaires de début de chaque tableau : {horaires_debut}
+
+Horaires prévisionnels des finales : {horaires_finales}
+
+Horaire de fin prévisionnelle : {horaire_fin}
+
+Le tournoi se déroule sans interruption. Une buvette est disponible sur
+place pendant toute la durée de la compétition.
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 8 — POINTAGE ET FORFAIT
+═══════════════════════════════════════════════════════════════════
+
+Le pointage est obligatoire avant le début de chaque tableau.
+Tout joueur non pointé à l'horaire indiqué est considéré comme forfait
+et peut être remplacé par un joueur de la liste d'attente sans
+remboursement de son engagement.
+
+Forfait en cours de match : un joueur absent est déclaré forfait après
+5 minutes d'attente suivant le 2ᵉ appel par micro.
+
+Les forfaits non excusés entraînent l'application de l'article IV.202
+des Règlements administratifs FFTT (perte des points de classement
+correspondants).
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 9 — TIRAGE AU SORT PUBLIC
+═══════════════════════════════════════════════════════════════════
+
+Date, heure et lieu : {tirage_au_sort}
+
+Le tirage au sort est public et a lieu 15 minutes après la fin du
+pointage. Les poules sont tirées au sort après le démarrage des tableaux.
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 10 — RÉCOMPENSES
+═══════════════════════════════════════════════════════════════════
+
+Les récompenses (médailles, lots, dotation financière) sont remises
+à l'issue de chaque tableau au vainqueur, finaliste et demi-finalistes.
+
+Mode d'attribution challenge / coupe : {challenge}
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 11 — RESPONSABILITÉS
+═══════════════════════════════════════════════════════════════════
+
+L'organisation décline toute responsabilité en cas d'accident, perte ou
+vol survenu pendant la compétition. Les joueurs participent sous leur
+propre responsabilité.
+
+L'organisation se réserve le droit de modifier le présent règlement
+en cas de force majeure.
+
+═══════════════════════════════════════════════════════════════════
+ARTICLE 12 — ACCEPTATION DU RÈGLEMENT
+═══════════════════════════════════════════════════════════════════
+
+L'inscription au tournoi vaut acceptation pleine et entière du présent
+règlement. Tout cas non prévu sera tranché par le juge-arbitre.
+
+═══════════════════════════════════════════════════════════════════
+
+Variables utilisables dans ce template :
+{categorie}, {date_lieu}, {responsable}, {juge_arbitre}, {nb_tables},
+{balles}, {tableaux}, {joueurs_autorises}, {max_joueurs}, {horaires_debut},
+{horaires_finales}, {horaire_fin}, {date_cloture}, {montant_engagement},
+{tirage_au_sort}, {homologation}, {challenge}`;
 
 export default function AdminParametresPage() {
   const router = useRouter();
