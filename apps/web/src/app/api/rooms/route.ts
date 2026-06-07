@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const where = tournamentId ? { tournamentId, isActive: true } : { isActive: true };
   const rooms = await prisma.room.findMany({
     where,
-    orderBy: { name: 'asc' },
+    orderBy: { createdAt: 'asc' }, // 1ère créée = salle principale
     include: {
       tables: {
         orderBy: { number: 'asc' },
