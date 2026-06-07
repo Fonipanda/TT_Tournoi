@@ -127,12 +127,25 @@ export default function LivePage() {
             </button>
           </div>
 
-          <div className="w-full max-w-[1600px] mx-auto">
-            <RoomCanvas
-              room={currentRoom}
-              tables={currentRoom.tables}
-              editable={false}
-            />
+          {/* Wrapper : la salle s'adapte automatiquement à l'espace dispo
+              sans déborder en hauteur ni en largeur. Le RoomCanvas conserve
+              son aspect-ratio mais respecte un maxHeight basé sur la viewport. */}
+          <div
+            className="w-full mx-auto flex items-center justify-center"
+            style={{ maxHeight: 'calc(100vh - 220px)' }}
+          >
+            <div
+              className="w-full"
+              style={{
+                maxWidth: 'min(100%, calc((100vh - 220px) * ' + (currentRoom.width / currentRoom.height) + '))',
+              }}
+            >
+              <RoomCanvas
+                room={currentRoom}
+                tables={currentRoom.tables}
+                editable={false}
+              />
+            </div>
           </div>
         </div>
       )}

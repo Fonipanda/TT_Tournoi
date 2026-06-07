@@ -223,7 +223,10 @@ export function MatchesTab() {
         fetch('/api/matches?status=waiting', { cache: 'no-store' }),
       ]);
       const [j1, j2] = await Promise.all([r1.json(), r2.json()]);
-      setMatches([...(j1.data ?? []), ...(j2.data ?? [])]);
+      // N'affiche QUE les matchs avec une table attribuée (le juge-arbitre
+      // n'a pas à voir les matchs en attente de table).
+      const allMatches = [...(j1.data ?? []), ...(j2.data ?? [])] as JaMatch[];
+      setMatches(allMatches.filter((m) => m.table != null));
     } catch {
       /* offline */
     } finally {

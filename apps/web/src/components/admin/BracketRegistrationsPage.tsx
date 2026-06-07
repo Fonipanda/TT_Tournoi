@@ -557,64 +557,105 @@ export function BracketRegistrationsPage({
         </div>
       )}
 
-      {/* Elimination matches */}
+      {/* Elimination matches — groupés par tour */}
       {elimMatches.length > 0 && (
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-6">
           <h2 className="font-heading text-xl uppercase tracking-wide">Élimination directe</h2>
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs uppercase tracking-widest text-foreground-muted">
-                <tr className="border-b border-border">
-                  <th className="text-left py-2">Tour</th>
-                  <th className="text-left py-2">Joueur 1</th>
-                  <th className="text-left py-2">Joueur 2</th>
-                  <th className="text-center py-2">Score</th>
-                  <th className="text-center py-2">Table</th>
-                </tr>
-              </thead>
-              <tbody>
-                {elimMatches.map((m) => (
-                  <tr key={m.id} className="border-b border-border hover:bg-bg-alt">
-                    <td className="py-2 text-foreground-muted">{m.roundName}</td>
-                    <td className={`py-2 ${m.winnerId === m.player1?.id ? 'font-bold' : ''}`}>
-                      {m.player1 ? `${m.player1.lastName} ${m.player1.firstName}` : 'TBD'}
-                    </td>
-                    <td className={`py-2 ${m.winnerId === m.player2?.id ? 'font-bold' : ''}`}>
-                      {m.player2 ? `${m.player2.lastName} ${m.player2.firstName}` : 'TBD'}
-                    </td>
-                    <td className="py-2 text-center tabular">
-                      {m.setsP1 != null ? `${m.setsP1}-${m.setsP2}` : '—'}
-                    </td>
-                    <td className="py-2 text-center">
-                      {m.table ? (
-                        <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded">
-                          T{m.table.number}
-                        </span>
-                      ) : m.status !== 'finished' && availableTables.length > 0 ? (
-                        <select
-                          className="text-xs border border-border rounded px-1 py-0.5 bg-bg"
-                          value=""
-                          disabled={busy === `table-${m.id}`}
-                          onChange={(e) => {
-                            if (e.target.value) assignMatchTable(m.id, e.target.value, m);
-                          }}
-                        >
-                          <option value="">Table…</option>
-                          {availableTables.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              T{t.number} ({t.room.name})
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-foreground-muted">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {(() => {
+            // Groupe les matchs par roundNumber, trie chaque groupe par poolMatchOrder
+            const byRound = new Map<number, typeof elimMatches>();
+            for (const m of elimMatches) {
+              const r = m.roundNumber || 1;
+              if (!byRound.has(r)) byRound.set(r, []);
+              byRound.get(r)!.push(m);
+            }
+            for (const arr of byRound.values()) {
+              arr.sort((a, b) => (a.poolMatchOrder ?? 0) - (b.poolMatchOrder ?? 0));
+            }
+            const totalRounds = byRound.size > 0 ? Math.max(...byRound.keys()) : 0;
+            const roundLabel = (idx: number): string => {
+              const remaining = totalRounds - idx;
+              if (remaining <= 1) return 'Finale';
+              if (remaining === 2) return 'Demi-finale';
+              if (remaining === 3) return 'Quart de finale';
+              if (remaining === 4) return '8ème de finale';
+              if (remaining === 5) return '16ème de finale';
+              if (remaining === 6) return '32ème de finale';
+              if (remaining === 7) return '64ème de finale';
+              if (remaining === 8) return '128ème de finale';
+              return `Tour ${idx + 1}`;
+            };
+            const sortedRounds = [...byRound.keys()].sort((a, b) => a - b);
+            return sortedRounds.map((roundNum) => {
+              const matches = byRound.get(roundNum)!;
+              return (
+                <div key={roundNum} className="space-y-2">
+                  <h3 className="font-heading text-sm uppercase tracking-widest text-foreground-muted">
+                    {roundLabel(roundNum - 1)}
+                    <span className="ml-2 text-xs text-foreground-subtle">
+                      · {matches.length} match{matches.length > 1 ? 's' : ''}
+                    </span>
+                  </h3>
+                  <div className="card overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-xs uppercase tracking-widest text-foreground-muted">
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 w-12">#</th>
+                          <th className="text-left py-2">Joueur 1</th>
+                          <th className="text-left py-2">Joueur 2</th>
+                          <th className="text-center py-2">Score</th>
+                          <th className="text-center py-2 w-40">Table</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {matches.map((m) => (
+                          <tr key={m.id} className="border-b border-border hover:bg-bg-alt">
+                            <td className="py-2 text-foreground-subtle font-mono text-xs">
+                              {m.poolMatchOrder ?? '—'}
+                            </td>
+                            <td className={`py-2 ${m.winnerId === m.player1?.id ? 'font-bold' : ''}`}>
+                              {m.player1 ? `${m.player1.lastName} ${m.player1.firstName}` : '—'}
+                            </td>
+                            <td className={`py-2 ${m.winnerId === m.player2?.id ? 'font-bold' : ''}`}>
+                              {m.player2 ? `${m.player2.lastName} ${m.player2.firstName}` : '—'}
+                            </td>
+                            <td className="py-2 text-center tabular">
+                              {m.setsP1 != null ? `${m.setsP1}-${m.setsP2}` : '—'}
+                            </td>
+                            <td className="py-2 text-center">
+                              {m.table ? (
+                                <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded">
+                                  T{m.table.number}
+                                </span>
+                              ) : m.status !== 'finished' && m.player1 && m.player2 && availableTables.length > 0 ? (
+                                <select
+                                  className="text-xs border border-border rounded px-1 py-0.5 bg-bg"
+                                  value=""
+                                  disabled={busy === `table-${m.id}`}
+                                  onChange={(e) => {
+                                    if (e.target.value) assignMatchTable(m.id, e.target.value, m);
+                                  }}
+                                >
+                                  <option value="">Table…</option>
+                                  {availableTables.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                      T{t.number} ({t.room.name})
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="text-foreground-muted">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
 
