@@ -17,10 +17,37 @@ export default function LivePage() {
 
   const refresh = useCallback(async () => {
     try {
-      const r = await fetch('/api/rooms', { cache: 'no-store' });
+      // cache-busting via querystring + cache: 'no-store' pour bypass SW cache
+      const r = await fetch(`/api/rooms?_t=${Date.now()}`, { cache: 'no-store' });
       const j = await r.json();
+      const fetched = (j.data ?? []) as Array<{
+        id: string;
+        name: string;
+        width: number;
+        height: number;
+        entranceMarkers: unknown;
+        buvetteMarkers: unknown;
+        wcMarkers: unknown;
+        arrowMarkers: unknown;
+        tables: Array<{
+          id: string;
+          number: number;
+          x: number;
+          y: number;
+          rotation: number;
+          status: 'free' | 'occupied' | 'maintenance';
+          currentMatch?: {
+            player1?: { lastName: string; firstName: string } | null;
+            player2?: { lastName: string; firstName: string } | null;
+            setsP1: number;
+            setsP2: number;
+          } | null;
+        }>;
+      }>;
+      // Filtre : on n'affiche que les salles avec au moins 1 table
+      const filtered = fetched.filter((room) => (room.tables ?? []).length > 0);
       setRooms(
-        (j.data ?? []).map((room: any) => ({
+        filtered.map((room) => ({
           id: room.id,
           name: room.name,
           width: room.width,
@@ -29,7 +56,7 @@ export default function LivePage() {
           buvetteMarkers: room.buvetteMarkers,
           wcMarkers: room.wcMarkers,
           arrowMarkers: room.arrowMarkers,
-          tables: (room.tables ?? []).map((t: any) => ({
+          tables: (room.tables ?? []).map((t) => ({
             id: t.id,
             number: t.number,
             x: t.x,
@@ -57,6 +84,13 @@ export default function LivePage() {
     const id = setInterval(refresh, 30_000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // Clamp currentRoomIndex when rooms array changes (avoids stale out-of-bounds)
+  useEffect(() => {
+    if (rooms.length > 0 && currentRoomIndex >= rooms.length) {
+      setCurrentRoomIndex(0);
+    }
+  }, [rooms.length, currentRoomIndex]);
 
   const onLive = useCallback(
     (event: LiveEvent) => {
@@ -115,6 +149,9 @@ export default function LivePage() {
               <span className="text-foreground-muted text-sm ml-2">
                 ({currentRoomIndex + 1}/{rooms.length})
               </span>
+              <span className="text-foreground-subtle text-xs ml-2">
+                · {currentRoom.tables.length} tables
+              </span>
             </span>
             <button
               type="button"
@@ -132,12 +169,13 @@ export default function LivePage() {
               son aspect-ratio mais respecte un maxHeight basé sur la viewport. */}
           <div
             className="w-full mx-auto flex items-center justify-center"
-            style={{ maxHeight: 'calc(100vh - 220px)' }}
+            style={{ maxHeight: 'calc(100vh - 240px)' }}
           >
             <div
               className="w-full"
+              key={currentRoom.id /* force re-mount on room change */}
               style={{
-                maxWidth: 'min(100%, calc((100vh - 220px) * ' + (currentRoom.width / currentRoom.height) + '))',
+                maxWidth: 'min(100%, calc((100vh - 240px) * ' + (currentRoom.width / currentRoom.height) + '))',
               }}
             >
               <RoomCanvas
