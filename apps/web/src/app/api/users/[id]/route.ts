@@ -6,14 +6,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@tt/db';
-import { hashPassword } from '@tt/auth/password';
-import { errorResponse, requireRole } from '@/lib/auth/server';
+import { hashPassword, isPasswordStrong, PASSWORD_POLICY_MESSAGE } from '@tt/auth/password';
+import { errorResponse, requireRole, revokeAllUserRefreshTokens } from '@/lib/auth/server';
 
 interface Params { params: Promise<{ id: string }> }
 
 const UpdateSchema = z.object({
   email: z.string().email().or(z.literal('')).optional(),
-  password: z.string().min(6).optional(),
+  password: z.string().max(128).refine(isPasswordStrong, PASSWORD_POLICY_MESSAGE).optional(),
   role: z.enum(['admin', 'juge_arbitre', 'player']).optional(),
   isActive: z.boolean().optional(),
   passwordNeedsReset: z.boolean().optional(),
@@ -34,6 +34,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body.email === '') data.email = null;
 
     const updated = await prisma.userAccount.update({ where: { id }, data });
+
+    // Changement de mot de passe ou désactivation → on coupe les sessions.
+    if (body.password || body.isActive === false) {
+      await revokeAllUserRefreshTokens(id);
+    }
+
     return NextResponse.json({
       id: updated.id,
       username: updated.username,

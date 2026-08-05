@@ -4,6 +4,8 @@ import { useState, Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { TextField } from '@/components/ui/fields';
+import { PasswordField } from '@/components/ui/password-field';
+import { isPasswordStrong, PASSWORD_POLICY_MESSAGE } from '@tt/auth/password-policy';
 import { toast, ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 
@@ -26,6 +28,13 @@ function RegisterForm() {
     email: '',
     phone: '',
   });
+
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+
+  const passwordsMatch = password === passwordConfirm;
+  const canSubmit =
+    !submitting && isPasswordStrong(password) && passwordsMatch && passwordConfirm.length > 0;
 
   const update = <K extends keyof typeof form>(key: K, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -72,10 +81,20 @@ function RegisterForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isPasswordStrong(password)) {
+      setError(PASSWORD_POLICY_MESSAGE);
+      return;
+    }
+    if (!passwordsMatch) {
+      setError('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
-      const res = await apiPost<{ user: { role: string } }>('/api/auth/register', form);
+      await apiPost<{ user: { role: string } }>('/api/auth/register', { ...form, password });
       toast.success('Compte créé · Sélectionne tes tableaux');
       // Toujours rediriger vers /inscription pour que le joueur choisisse ses tableaux
       router.push('/inscription');
@@ -182,6 +201,28 @@ function RegisterForm() {
             helper="Format international (+33...)"
           />
 
+          <PasswordField
+            data-testid="password"
+            label="Mot de passe"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            showChecklist
+          />
+
+          <PasswordField
+            data-testid="password-confirm"
+            label="Confirmer le mot de passe"
+            value={passwordConfirm}
+            onChange={setPasswordConfirm}
+            autoComplete="new-password"
+            error={
+              passwordConfirm.length > 0 && !passwordsMatch
+                ? 'Les deux mots de passe ne correspondent pas.'
+                : null
+            }
+          />
+
           {error && (
             <p className="text-danger text-sm" data-testid="register-error">
               {error}
@@ -190,7 +231,7 @@ function RegisterForm() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={!canSubmit}
             className="btn-primary w-full disabled:opacity-50"
             data-testid="submit-register"
           >

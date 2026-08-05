@@ -15,7 +15,7 @@ const REFRESH_COOKIE = 'tt_refresh';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Bypass : assets statiques, API auth (login/refresh public), API health
+  // Bypass : assets statiques, API auth publiques, API health
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/icons') ||
@@ -24,6 +24,9 @@ export async function middleware(req: NextRequest) {
     pathname === '/sw.js' ||
     pathname.startsWith('/api/auth/login') ||
     pathname.startsWith('/api/auth/refresh') ||
+    pathname.startsWith('/api/auth/register') ||
+    pathname.startsWith('/api/auth/forgot-password') ||
+    pathname.startsWith('/api/auth/reset-password') ||
     pathname.startsWith('/api/health')
   ) {
     return NextResponse.next();

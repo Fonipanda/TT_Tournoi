@@ -170,6 +170,11 @@ async function main() {
 
   // ---------------------------------------------------------------------------
   // Comptes : admin + juge-arbitre
+  //
+  // ATTENTION — identifiants de DÉVELOPPEMENT uniquement.
+  // En production, créer/réinitialiser le compte avec un mot de passe conforme
+  // à la politique (12 car. + maj/min/chiffre/spécial) :
+  //   node infra/scripts/create-admin.mjs admin '<MotDePasseFort>'
   // ---------------------------------------------------------------------------
   await prisma.userAccount.upsert({
     where: { username: 'admin' },
@@ -178,7 +183,7 @@ async function main() {
       username: 'admin',
       email: 'admin@chellestt.fr',
       passwordHash: await hashPassword('Admin123!'),
-      passwordNeedsReset: true, // forcer le reset au premier login
+      passwordNeedsReset: false,
       role: 'admin',
     },
   });
@@ -190,7 +195,7 @@ async function main() {
       username: 'ja',
       email: 'ja@chellestt.fr',
       passwordHash: await hashPassword('Ja123!'),
-      passwordNeedsReset: true,
+      passwordNeedsReset: false,
       role: 'juge_arbitre',
     },
   });

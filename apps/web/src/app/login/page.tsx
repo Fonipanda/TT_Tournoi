@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { PasswordField } from '@/components/ui/password-field';
 
 function LoginForm() {
   const router = useRouter();
@@ -38,30 +39,13 @@ function LoginForm() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          identifier,
-          password: mode === 'admin' ? password : undefined,
-          mode,
-        }),
+        body: JSON.stringify({ identifier, password, mode }),
       });
       const data = await res.json();
       if (!res.ok) {
-        // Joueur sans compte → rediriger vers /register avec licence pré-remplie
-        if (
-          mode === 'player' &&
-          (data.code === 'not_registered' || data.code === 'fftt_error') &&
-          /^\d{6,10}$/.test(identifier)
-        ) {
-          router.push(`/register?licence=${identifier}&reason=not_registered`);
-          return;
-        }
-        // Joueur sans inscription active → message + lien /inscription
-        if (mode === 'player' && data.code === 'no_registration') {
-          setError(
-            data.error ?? "Vous n'êtes inscrit à aucun tournoi actif.",
-          );
-          return;
-        }
+        // L'API renvoie volontairement une erreur générique : elle ne révèle
+        // pas si le compte existe. Le lien « Créer un compte » ci-dessous
+        // couvre le cas du joueur qui ne s'est jamais inscrit.
         setError(data.error ?? 'Erreur de connexion');
         return;
       }
@@ -137,20 +121,14 @@ function LoginForm() {
               placeholder={mode === 'admin' ? 'admin' : '7711100001'}
             />
           </div>
-          {mode === 'admin' && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Mot de passe</label>
-              <input
-                data-testid="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input"
-                autoComplete="current-password"
-              />
-            </div>
-          )}
+
+          <PasswordField
+            data-testid="password"
+            label="Mot de passe"
+            value={password}
+            onChange={setPassword}
+            autoComplete="current-password"
+          />
 
           <button
             type="submit"
@@ -162,8 +140,31 @@ function LoginForm() {
           </button>
         </form>
 
-        <div className="mt-4 text-center">
-          <Link href="/" className="text-sm text-primary hover:underline">
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <Link
+            href="/mot-de-passe-oublie"
+            className="text-sm text-primary hover:underline"
+            data-testid="forgot-password-link"
+          >
+            Mot de passe oublié ?
+          </Link>
+          {mode === 'player' && (
+            <p className="text-sm text-foreground-muted">
+              Pas encore de compte ?{' '}
+              <Link
+                href={
+                  /^\d{6,10}$/.test(identifier)
+                    ? `/register?licence=${identifier}`
+                    : '/register'
+                }
+                className="text-primary underline"
+                data-testid="register-link"
+              >
+                Créer un compte
+              </Link>
+            </p>
+          )}
+          <Link href="/" className="text-sm text-foreground-muted hover:underline">
             ← Retour à l'accueil
           </Link>
         </div>

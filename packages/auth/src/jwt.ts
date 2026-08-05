@@ -37,12 +37,19 @@ function getRefreshSecret(): Uint8Array {
   return encodeSecret(process.env.JWT_REFRESH_SECRET ?? '');
 }
 
+/**
+ * Durées de vie par défaut — volontairement courtes.
+ * Surchargeables via JWT_ACCESS_TTL / JWT_REFRESH_TTL.
+ */
+export const DEFAULT_ACCESS_TTL = '15m';
+export const DEFAULT_REFRESH_TTL = '7d';
+
 function getAccessTtl(): string {
-  return process.env.JWT_ACCESS_TTL || '365d';
+  return process.env.JWT_ACCESS_TTL || DEFAULT_ACCESS_TTL;
 }
 
 function getRefreshTtl(): string {
-  return process.env.JWT_REFRESH_TTL || '365d';
+  return process.env.JWT_REFRESH_TTL || DEFAULT_REFRESH_TTL;
 }
 
 // -----------------------------------------------------------------------------

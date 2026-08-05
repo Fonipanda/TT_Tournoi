@@ -1,8 +1,11 @@
 /**
- * Auth flow E2E — login admin, accès dashboard, logout.
+ * Auth flow E2E — login admin, accès dashboard, logout, mot de passe oublié.
  *
- * Dépend du seed : compte 'admin' / 'Admin123!' (passwordNeedsReset=true).
+ * Dépend du seed : compte 'admin' / 'Admin123!'.
  * Si le password a déjà été reset, mettre la valeur réelle dans E2E_ADMIN_PASS.
+ *
+ * Les routes d'auth sont rate-limitées : lancer le serveur de test avec
+ * RATE_LIMIT_DISABLED=true pour éviter les faux négatifs en cas de retry.
  */
 
 import { test, expect } from '@playwright/test';
@@ -60,5 +63,50 @@ test.describe('Auth — admin', () => {
     // Vérifier que les cookies sont supprimés
     const cookiesAfter = await context.cookies();
     expect(cookiesAfter.find((c) => c.name === 'tt_access')).toBeUndefined();
+  });
+});
+
+test.describe('Auth — mot de passe oublié', () => {
+  test('le lien est présent sur la page de connexion', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByTestId('forgot-password-link').click();
+    await expect(page).toHaveURL(/\/mot-de-passe-oublie/);
+  });
+
+  test('la demande renvoie toujours une confirmation neutre', async ({ page }) => {
+    await page.goto('/mot-de-passe-oublie');
+    await page.getByTestId('email').fill('inexistant@exemple.fr');
+    await page.getByTestId('submit-forgot').click();
+    // Même réponse que le compte existe ou non (anti-énumération)
+    await expect(page.getByTestId('forgot-sent')).toBeVisible();
+  });
+
+  test('un token invalide affiche un message explicite', async ({ page }) => {
+    await page.goto('/reinitialiser-mot-de-passe?token=token-bidon-qui-nexiste-pas');
+    await expect(page.getByTestId('reset-invalid')).toBeVisible();
+  });
+});
+
+test.describe('Auth — politique de mot de passe', () => {
+  test("l'inscription refuse un mot de passe trop faible", async ({ page }) => {
+    await page.goto('/register');
+    await page.getByTestId('password').fill('faible1');
+
+    // La checklist signale les règles non respectées
+    await expect(page.getByTestId('rule-length')).toHaveAttribute('data-ok', 'false');
+    await expect(page.getByTestId('rule-uppercase')).toHaveAttribute('data-ok', 'false');
+    await expect(page.getByTestId('rule-special')).toHaveAttribute('data-ok', 'false');
+
+    // Le bouton reste désactivé
+    await expect(page.getByTestId('submit-register')).toBeDisabled();
+  });
+
+  test('un mot de passe conforme valide toutes les règles', async ({ page }) => {
+    await page.goto('/register');
+    await page.getByTestId('password').fill('CorrectHorse9!Battery');
+
+    for (const rule of ['length', 'uppercase', 'lowercase', 'digit', 'special']) {
+      await expect(page.getByTestId(`rule-${rule}`)).toHaveAttribute('data-ok', 'true');
+    }
   });
 });

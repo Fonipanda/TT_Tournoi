@@ -6,7 +6,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@tt/db';
-import { hashPassword } from '@tt/auth/password';
+import { hashPassword, isPasswordStrong, PASSWORD_POLICY_MESSAGE } from '@tt/auth/password';
 import { errorResponse, requireRole, HttpError } from '@/lib/auth/server';
 
 export async function GET() {
@@ -37,7 +37,7 @@ export async function GET() {
 const CreateSchema = z.object({
   username: z.string().min(3).regex(/^[a-zA-Z0-9_-]+$/),
   email: z.string().email().optional().or(z.literal('')),
-  password: z.string().min(6),
+  password: z.string().max(128).refine(isPasswordStrong, PASSWORD_POLICY_MESSAGE),
   role: z.enum(['admin', 'juge_arbitre', 'player']),
   playerId: z.string().uuid().nullable().optional(),
 });

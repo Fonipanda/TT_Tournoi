@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./jwt": "./src/jwt.ts",
     "./password": "./src/password.ts",
+    "./password-policy": "./src/password-policy.ts",
     "./rbac": "./src/rbac.ts"
   },
   "scripts": {

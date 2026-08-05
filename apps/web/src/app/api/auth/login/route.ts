@@ -1,60 +1,75 @@
 /**
  * POST /api/auth/login
  *
- * Body : { identifier: string, password?: string, licence?: string }
+ * Body : { identifier: string, password: string, mode?: 'admin' | 'player' }
  *  - identifier = username | email | licence FFTT
- *  - password requis pour admin / juge_arbitre
- *  - licence : si pas de compte trouvé et identifier est numérique, tente
- *    une autocréation joueur via FFTT lookup (logique du dépôt B)
+ *  - password TOUJOURS requis (staff comme joueurs)
+ *
+ * Protections :
+ *  - rate limiting par IP et par identifiant (anti brute-force)
+ *  - message d'erreur unique + vérification à blanc (anti-énumération)
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@tt/db';
-import { verifyPassword } from '@tt/auth/password';
+import { verifyPassword, fakeVerifyPassword } from '@tt/auth/password';
 import { issueTokens, setAuthCookies, errorResponse, HttpError } from '@/lib/auth/server';
+import { clientIp, enforceRateLimits, resetRateLimit } from '@/lib/rate-limit';
 import type { LoginResponse } from '@tt/types';
 
 const LoginSchema = z.object({
-  identifier: z.string().min(1, 'Identifiant requis'),
-  password: z.string().optional(),
+  identifier: z.string().min(1, 'Identifiant requis').max(255),
+  password: z.string().min(1, 'Mot de passe requis').max(128),
   mode: z.enum(['admin', 'player']).optional(),
 });
 
+const INVALID_CREDENTIALS = 'Identifiant ou mot de passe incorrect.';
+
 export async function POST(req: NextRequest) {
   try {
-    const body = LoginSchema.parse(await req.json());
-    const identifier = body.identifier.trim();
+    const ip = clientIp(req);
+    const parsed = LoginSchema.safeParse(await req.json());
 
-    // Cas 1 : login par licence FFTT (player mode, pas de password)
-    if (body.mode === 'player' && /^\d{6,10}$/.test(identifier)) {
-      return await loginByLicence(identifier, req);
+    const identifierKey = parsed.success
+      ? parsed.data.identifier.trim().toLowerCase()
+      : 'invalid';
+
+    const limited = await enforceRateLimits([
+      { key: `login:ip:${ip}`, limit: 20, windowSec: 900 },
+      { key: `login:id:${identifierKey}`, limit: 5, windowSec: 900 },
+    ]);
+    if (limited) return limited;
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Identifiant et mot de passe requis', code: 'validation' },
+        { status: 400 },
+      );
     }
 
-    // Cas 2 : login admin/JA par username + password
-    if (!body.password) {
-      throw new HttpError(400, 'Mot de passe requis', 'password_required');
+    const identifier = parsed.data.identifier.trim();
+    const { password } = parsed.data;
+
+    const user = await findAccount(identifier);
+
+    // Compte inconnu, désactivé ou sans mot de passe utilisable : on effectue
+    // quand même un calcul argon2 pour égaliser le temps de réponse, puis on
+    // renvoie l'erreur générique (pas d'énumération de comptes).
+    if (!user || !user.isActive || !user.passwordHash) {
+      await fakeVerifyPassword(password);
+      throw new HttpError(401, INVALID_CREDENTIALS, 'invalid_credentials');
     }
 
-    const user = await prisma.userAccount.findFirst({
-      where: {
-        OR: [{ username: identifier }, { email: identifier }],
-        isActive: true,
-      },
-    });
-
-    if (!user || !user.passwordHash) {
-      throw new HttpError(401, 'Identifiants invalides', 'invalid_credentials');
-    }
-
-    const ok = await verifyPassword(body.password, user.passwordHash);
+    const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) {
-      throw new HttpError(401, 'Identifiants invalides', 'invalid_credentials');
+      throw new HttpError(401, INVALID_CREDENTIALS, 'invalid_credentials');
     }
+
+    // Authentification réussie → compteur anti brute-force remis à zéro.
+    await resetRateLimit(`login:id:${identifierKey}`);
 
     const ua = req.headers.get('user-agent') ?? undefined;
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined;
-
     const { accessToken, refreshToken } = await issueTokens({
       userId: user.id,
       role: user.role,
@@ -87,57 +102,25 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Login par licence FFTT — vérifie SEULEMENT que le joueur existe en BD locale
- * et qu'il a une inscription active. PAS d'autocréation : si non trouvé,
- * renvoie 404 → le frontend redirige vers /register.
+ * Résout un compte à partir d'un username, d'un email ou d'un numéro de
+ * licence FFTT. Retourne `null` si aucun compte ne correspond.
  */
-async function loginByLicence(licence: string, req: NextRequest) {
-  const player = await prisma.player.findUnique({ where: { licenseNumber: licence } });
-
-  if (!player) {
-    throw new HttpError(
-      404,
-      "Aucun compte trouvé avec cette licence. Veuillez créer votre compte.",
-      'not_registered',
-    );
-  }
-
-  const account = await prisma.userAccount.findUnique({ where: { playerId: player.id } });
-  if (!account) {
-    throw new HttpError(
-      404,
-      "Aucun compte trouvé avec cette licence. Veuillez créer votre compte.",
-      'not_registered',
-    );
-  }
-
-  if (!account.isActive) {
-    throw new HttpError(403, 'Compte désactivé', 'account_disabled');
-  }
-
-  // Note : on ne vérifie plus l'inscription au tournoi ici.
-  // Le joueur peut se connecter même sans inscription, et choisir des tableaux
-  // sur la page /inscription.
-
-  const ua = req.headers.get('user-agent') ?? undefined;
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined;
-  const { accessToken, refreshToken } = await issueTokens({
-    userId: account.id,
-    role: 'player',
-    username: account.username,
-    playerId: player.id,
-    userAgent: ua,
-    ip,
-  });
-  await setAuthCookies(accessToken, refreshToken);
-
-  const res: LoginResponse = {
-    user: {
-      id: account.id,
-      username: account.username,
-      role: 'player',
-      playerId: player.id,
+async function findAccount(identifier: string) {
+  const direct = await prisma.userAccount.findFirst({
+    where: {
+      OR: [{ username: identifier }, { email: { equals: identifier, mode: 'insensitive' } }],
     },
-  };
-  return NextResponse.json(res);
+  });
+  if (direct) return direct;
+
+  // Licence FFTT → compte du joueur correspondant
+  if (/^\d{6,10}$/.test(identifier)) {
+    const player = await prisma.player.findUnique({
+      where: { licenseNumber: identifier },
+      select: { account: true },
+    });
+    return player?.account ?? null;
+  }
+
+  return null;
 }

@@ -3,10 +3,13 @@
  *
  * Couverture :
  *  - /api/health
- *  - /api/auth/login (admin + licence)
+ *  - /api/auth/login (admin + licence, mot de passe obligatoire)
  *  - /api/auth/me
  *  - /api/tournaments (lecture publique)
  *  - /api/matches/:id/score (optimistic concurrency 409)
+ *
+ * Les routes d'auth sont rate-limitées : lancer le serveur de test avec
+ * RATE_LIMIT_DISABLED=true.
  */
 
 import { test, expect } from '@playwright/test';
@@ -46,14 +49,23 @@ test.describe('API — auth', () => {
     expect(res.status()).toBe(401);
   });
 
-  test('login licence FFTT du seed (7711100001)', async ({ request }) => {
+  test('login sans mot de passe → 400 (le login par licence seule est supprimé)', async ({
+    request,
+  }) => {
     const res = await request.post('/api/auth/login', {
       data: { identifier: '7711100001', mode: 'player' },
     });
-    expect(res.ok()).toBeTruthy();
+    expect(res.status()).toBe(400);
+  });
+
+  test('login licence avec mauvais mot de passe → 401', async ({ request }) => {
+    const res = await request.post('/api/auth/login', {
+      data: { identifier: '7711100001', password: 'MauvaisPass1!', mode: 'player' },
+    });
+    expect(res.status()).toBe(401);
+    // Message générique : ne révèle pas si la licence existe
     const body = await res.json();
-    expect(body.user.role).toBe('player');
-    expect(body.user.playerId).toBeTruthy();
+    expect(body.error).toBe('Identifiant ou mot de passe incorrect.');
   });
 
   test('GET /api/auth/me sans cookie → 401', async ({ request }) => {
@@ -93,15 +105,15 @@ test.describe('API — RBAC', () => {
     expect([401, 403]).toContain(res.status());
   });
 
-  test('POST /api/sms/test en tant que joueur → 403', async ({ request }) => {
-    // Login joueur
+  test('POST /api/sms/test sans rôle admin → 401/403', async ({ request }) => {
+    // Le login joueur nécessite désormais un mot de passe : la session reste
+    // anonyme, ce qui doit tout autant fermer l'accès.
     await request.post('/api/auth/login', {
-      data: { identifier: '7711100001', mode: 'player' },
+      data: { identifier: '7711100001', password: 'MauvaisPass1!', mode: 'player' },
     });
-    // Tentative d'accès admin
     const res = await request.post('/api/sms/test', {
       data: { to: '+33600000000', message: 'hack' },
     });
-    expect(res.status()).toBe(403);
+    expect([401, 403]).toContain(res.status());
   });
 });

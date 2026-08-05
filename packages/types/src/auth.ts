@@ -34,11 +34,19 @@ export interface AuthenticatedUser {
 export interface LoginInput {
   /** username, email ou licence FFTT */
   identifier: string;
-  password?: string;
-  /** Pour login licence FFTT (sans password si auto-creation) */
-  licence?: string;
+  /** Toujours requis : le login sans mot de passe n'est plus supporté. */
+  password: string;
   /** Hint optionnel : 'admin' | 'player' */
   mode?: 'admin' | 'player';
+}
+
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface ResetPasswordInput {
+  token: string;
+  password: string;
 }
 
 export interface LoginResponse {

@@ -197,8 +197,9 @@ model UserAccount {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  player        Player?        @relation(fields: [playerId], references: [id], onDelete: SetNull)
-  refreshTokens RefreshToken[]
+  player             Player?              @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  refreshTokens      RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([role, isActive])
 }
@@ -217,6 +218,23 @@ model RefreshToken {
 
   @@index([userId, expiresAt])
   @@index([revokedAt])
+}
+
+/// Jeton de réinitialisation de mot de passe envoyé par email.
+/// Seul le hash sha256 est stocké : le token brut n'existe que dans l'email.
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique // hash sha256 du token envoyé par email
+  expiresAt DateTime
+  usedAt    DateTime?
+  requestIp String?
+  createdAt DateTime  @default(now())
+
+  user UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
 }
 
 // -----------------------------------------------------------------------------

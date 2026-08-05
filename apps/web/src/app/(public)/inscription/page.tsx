@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TextField } from '@/components/ui/fields';
+import { PasswordField } from '@/components/ui/password-field';
 import { toast, ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 import { PaymentModal } from '@/components/PaymentModal';
@@ -34,6 +35,7 @@ export default function InscriptionPage() {
   // États
   const [step, setStep] = useState<'check' | 'pick'>('check');
   const [licence, setLicence] = useState('');
+  const [licencePassword, setLicencePassword] = useState('');
   const [checking, setChecking] = useState(false);
   const [me, setMe] = useState<{ playerId: string | null } | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
@@ -89,6 +91,7 @@ export default function InscriptionPage() {
     try {
       const res = await apiPost<{ user: { playerId: string } }>('/api/auth/login-player', {
         licence,
+        password: licencePassword,
       });
       setMe(res.user);
       await loadBrackets(res.user.playerId);
@@ -184,7 +187,7 @@ export default function InscriptionPage() {
           Inscription au tournoi
         </h1>
         <p className="text-center text-foreground-muted text-sm mb-6">
-          Saisis ton numéro de licence FFTT pour t'inscrire.
+          Saisis ton numéro de licence FFTT et ton mot de passe pour t'inscrire.
         </p>
 
         <div className="card rounded-2xl">
@@ -200,6 +203,14 @@ export default function InscriptionPage() {
               autoFocus
             />
 
+            <PasswordField
+              data-testid="licence-password"
+              label="Mot de passe"
+              value={licencePassword}
+              onChange={setLicencePassword}
+              autoComplete="current-password"
+            />
+
             {error && (
               <div className="card border-danger bg-danger-soft text-danger text-sm rounded-xl px-3 py-2">
                 ⚠ {error}
@@ -208,7 +219,7 @@ export default function InscriptionPage() {
 
             <button
               type="submit"
-              disabled={checking || !licence}
+              disabled={checking || !licence || !licencePassword}
               className="btn-primary w-full disabled:opacity-50 rounded-full"
               data-testid="check-licence"
             >
@@ -220,6 +231,11 @@ export default function InscriptionPage() {
             Pas encore de compte ?{' '}
             <Link href="/register" className="text-primary underline">
               Créer un compte
+            </Link>
+          </p>
+          <p className="text-xs text-foreground-muted text-center mt-1">
+            <Link href="/mot-de-passe-oublie" className="text-primary underline">
+              Mot de passe oublié ?
             </Link>
           </p>
         </div>

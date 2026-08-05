@@ -5,6 +5,7 @@
  * Importe argon2/Prisma → NE PAS utiliser dans le middleware (Edge).
  */
 
+import { randomUUID } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import {
@@ -12,9 +13,8 @@ import {
   verifyRefreshToken,
   signAccessToken,
   signRefreshToken,
-  isJwtExpired,
 } from '@tt/auth/jwt';
-import { hashRefreshToken, generateRefreshTokenString } from '@tt/auth/password';
+import { hashToken, hashRefreshToken } from '@tt/auth/password';
 import { ForbiddenError, UnauthorizedError, hasRole } from '@tt/auth/rbac';
 import type { AuthenticatedUser, Role } from '@tt/types';
 import { prisma } from '@tt/db';
@@ -24,26 +24,33 @@ export const REFRESH_COOKIE = 'tt_refresh';
 
 const isProd = process.env.NODE_ENV === 'production';
 
+const ACCESS_COOKIE_MAX_AGE = 15 * 60; // 15 min
+const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 3600; // 7 j
+
+const ACCESS_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: isProd,
+  path: '/',
+  maxAge: ACCESS_COOKIE_MAX_AGE,
+} as const;
+
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: isProd,
+  path: '/',
+  maxAge: REFRESH_COOKIE_MAX_AGE,
+} as const;
+
 // -----------------------------------------------------------------------------
 // Cookies
 // -----------------------------------------------------------------------------
 
 export async function setAuthCookies(accessToken: string, refreshToken: string): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.set(ACCESS_COOKIE, accessToken, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: isProd,
-    path: '/',
-    maxAge: 15 * 60, // 15 min
-  });
-  cookieStore.set(REFRESH_COOKIE, refreshToken, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: isProd,
-    path: '/',
-    maxAge: 7 * 24 * 3600, // 7 j
-  });
+  cookieStore.set(ACCESS_COOKIE, accessToken, ACCESS_COOKIE_OPTIONS);
+  cookieStore.set(REFRESH_COOKIE, refreshToken, REFRESH_COOKIE_OPTIONS);
 }
 
 export async function clearAuthCookies(): Promise<void> {
@@ -76,35 +83,30 @@ export async function issueTokens(input: IssueTokensInput): Promise<{
     playerId: input.playerId,
   });
 
-  const { token: refreshRaw, hash } = generateRefreshTokenString();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+  // Le `jti` est généré en amont pour pouvoir signer le JWT AVANT l'insertion,
+  // et donc stocker le hash du token réellement remis au client (permet la
+  // détection de réutilisation en plus de la révocation par jti).
+  const jti = randomUUID();
+  const refreshJwt = await signRefreshToken({ sub: input.userId, jti });
+  const expiresAt = new Date(Date.now() + REFRESH_COOKIE_MAX_AGE * 1000);
 
-  const dbToken = await prisma.refreshToken.create({
+  await prisma.refreshToken.create({
     data: {
+      id: jti,
       userId: input.userId,
-      tokenHash: hash,
+      tokenHash: hashToken(refreshJwt),
       userAgent: input.userAgent ?? null,
       ip: input.ip ?? null,
       expiresAt,
     },
   });
 
-  // Le refresh JWT contient { sub, jti } — pas le token brut
-  const refreshJwt = await signRefreshToken({ sub: input.userId, jti: dbToken.id });
-
-  // On envoie au client le JWT signé (pas le refreshRaw — il est seulement
-  // gardé côté DB sous forme de hash pour révocation)
-  // NOTE: simplification : ici on signe directement le refresh JWT et c'est
-  // le `jti` qui sert de clef de révocation (pas besoin de gérer 2 secrets).
-  // Le refreshRaw n'est PAS utilisé côté client → on le brûle.
-  void refreshRaw;
-
   return { accessToken: access, refreshToken: refreshJwt };
 }
 
 export async function revokeRefreshTokenById(jti: string): Promise<void> {
-  await prisma.refreshToken.update({
-    where: { id: jti },
+  await prisma.refreshToken.updateMany({
+    where: { id: jti, revokedAt: null },
     data: { revokedAt: new Date() },
   });
 }
@@ -139,7 +141,11 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
 
 /**
  * Tente de rafraîchir l'access token depuis le refresh JWT en cookie.
- * Retourne null si refresh invalide / révoqué / expiré.
+ * Retourne null si refresh invalide / révoqué / expiré / réutilisé.
+ *
+ * Applique la rotation : le refresh présenté est révoqué et remplacé par un
+ * nouveau. Si un refresh déjà révoqué est présenté (rejeu d'un token volé),
+ * TOUTES les sessions de l'utilisateur sont invalidées.
  */
 export async function tryRefreshTokens(): Promise<{ user: AuthenticatedUser } | null> {
   const cookieStore = await cookies();
@@ -149,38 +155,44 @@ export async function tryRefreshTokens(): Promise<{ user: AuthenticatedUser } | 
   let claims;
   try {
     claims = await verifyRefreshToken(refreshToken);
-  } catch (e) {
-    if (isJwtExpired(e)) return null;
+  } catch {
     return null;
   }
 
   if (!claims.jti) return null;
 
-  // Vérifier que le refresh n'a pas été révoqué côté DB
   const dbToken = await prisma.refreshToken.findUnique({
     where: { id: claims.jti },
     include: { user: true },
   });
-  if (!dbToken || dbToken.revokedAt || dbToken.expiresAt < new Date()) {
+  if (!dbToken) return null;
+
+  // Le token présenté doit être exactement celui qui a été émis.
+  if (dbToken.tokenHash !== hashToken(refreshToken)) return null;
+
+  // Rejeu d'un refresh déjà révoqué → compromission probable : on coupe tout.
+  if (dbToken.revokedAt) {
+    console.warn(`[auth] Réutilisation d'un refresh token révoqué (user ${dbToken.userId})`);
+    await revokeAllUserRefreshTokens(dbToken.userId);
     return null;
   }
 
+  if (dbToken.expiresAt < new Date()) return null;
   if (!dbToken.user.isActive) return null;
 
-  // Émettre un nouvel access (rotation possible plus tard)
-  const access = await signAccessToken({
-    sub: dbToken.user.id,
+  // Rotation : l'ancien refresh est révoqué, un nouveau couple est émis.
+  await revokeRefreshTokenById(dbToken.id);
+  const { accessToken, refreshToken: nextRefresh } = await issueTokens({
+    userId: dbToken.user.id,
     role: dbToken.user.role,
     username: dbToken.user.username,
     playerId: dbToken.user.playerId,
+    userAgent: dbToken.userAgent ?? undefined,
+    ip: dbToken.ip ?? undefined,
   });
-  cookieStore.set(ACCESS_COOKIE, access, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: isProd,
-    path: '/',
-    maxAge: 15 * 60,
-  });
+
+  cookieStore.set(ACCESS_COOKIE, accessToken, ACCESS_COOKIE_OPTIONS);
+  cookieStore.set(REFRESH_COOKIE, nextRefresh, REFRESH_COOKIE_OPTIONS);
 
   return {
     user: {

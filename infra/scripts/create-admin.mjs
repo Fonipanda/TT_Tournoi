@@ -76,6 +76,23 @@ if (!['admin', 'juge_arbitre', 'player'].includes(role)) {
   process.exit(1);
 }
 
+// Politique appliquée par l'application : 12 car. + majuscule + minuscule +
+// chiffre + caractère spécial. Ce script n'échoue pas (il doit rester capable
+// de rétablir un accès), mais il avertit.
+const policyOk =
+  password.length >= 12 &&
+  /[A-Z]/.test(password) &&
+  /[a-z]/.test(password) &&
+  /[0-9]/.test(password) &&
+  /[^A-Za-z0-9]/.test(password);
+if (!policyOk) {
+  console.warn(
+    '⚠  Ce mot de passe ne respecte pas la politique de l\'application\n' +
+      '   (12 caractères min., majuscule, minuscule, chiffre, caractère spécial).\n' +
+      '   À réserver au développement.',
+  );
+}
+
 (async () => {
   const prisma = new PrismaClient();
   try {
