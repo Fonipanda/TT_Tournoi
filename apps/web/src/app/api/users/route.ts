@@ -63,6 +63,9 @@ export async function POST(req: NextRequest) {
         role: body.role,
         playerId: body.playerId || null,
         passwordNeedsReset: false,
+        // Compte créé par un administrateur : l'adresse est considérée comme
+        // vérifiée, aucun lien d'activation n'est envoyé.
+        emailVerifiedAt: new Date(),
       },
     });
     return NextResponse.json({

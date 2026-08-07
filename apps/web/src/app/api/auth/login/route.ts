@@ -16,6 +16,7 @@ import { prisma } from '@tt/db';
 import { verifyPassword, fakeVerifyPassword } from '@tt/auth/password';
 import { issueTokens, setAuthCookies, errorResponse, HttpError } from '@/lib/auth/server';
 import { clientIp, enforceRateLimits, resetRateLimit } from '@/lib/rate-limit';
+import { isEmailVerificationRequired } from '@/lib/auth/email-verification';
 import type { LoginResponse } from '@tt/types';
 
 const LoginSchema = z.object({
@@ -64,6 +65,21 @@ export async function POST(req: NextRequest) {
     const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) {
       throw new HttpError(401, INVALID_CREDENTIALS, 'invalid_credentials');
+    }
+
+    // Compte non activé : le mot de passe est bon mais l'adresse email n'a
+    // jamais été confirmée. On le dit explicitement — l'identité est déjà
+    // prouvée par le mot de passe, il n'y a donc pas de fuite d'information.
+    //
+    // Un compte sans adresse email (comptes techniques, comptes migrés) ne
+    // peut structurellement pas être activé par lien : on ne le bloque pas,
+    // sinon il serait définitivement inaccessible.
+    if (isEmailVerificationRequired() && user.email && !user.emailVerifiedAt) {
+      throw new HttpError(
+        403,
+        "Ton adresse email n'est pas encore confirmée. Ouvre le lien reçu par email pour activer ton compte.",
+        'email_not_verified',
+      );
     }
 
     // Authentification réussie → compteur anti brute-force remis à zéro.

@@ -185,6 +185,42 @@ export async function sendPasswordResetEmail(
   });
 }
 
+/** Email d'activation de compte (confirmation de l'adresse). */
+export async function sendEmailVerificationEmail(
+  to: string,
+  verifyUrl: string,
+  displayName?: string,
+  expiryHours = 48,
+): Promise<MailResult> {
+  const hello = displayName ? `Bonjour ${displayName},` : 'Bonjour,';
+  const text = [
+    hello,
+    '',
+    'Bienvenue sur TT Tournoi ! Il ne reste qu\'une étape : confirmer ton adresse email.',
+    `Ouvre ce lien pour activer ton compte (valable ${expiryHours} heures) :`,
+    verifyUrl,
+    '',
+    "Tant que ton adresse n'est pas confirmée, la connexion reste bloquée.",
+    "Si tu n'es pas à l'origine de cette inscription, ignore simplement cet email.",
+  ].join('\n');
+
+  const html = layout(
+    'Confirme ton adresse email',
+    `<p style="margin:0 0 16px;font-size:15px;">${escapeHtml(hello)}</p>
+     <p style="margin:0 0 24px;font-size:15px;">Bienvenue sur TT&nbsp;Tournoi ! Il ne reste qu'une étape : confirmer ton adresse email pour activer ton compte.</p>
+     <p style="margin:0 0 24px;">
+       <a href="${escapeHtml(verifyUrl)}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:9999px;font-weight:600;font-size:15px;">
+         Activer mon compte
+       </a>
+     </p>
+     <p style="margin:0 0 8px;font-size:13px;color:#57534e;">Ce lien est valable ${expiryHours} heures et ne peut servir qu'une seule fois.</p>
+     <p style="margin:0 0 16px;font-size:13px;color:#57534e;word-break:break-all;">${escapeHtml(verifyUrl)}</p>
+     <p style="margin:0;font-size:13px;color:#57534e;">Si tu n'es pas à l'origine de cette inscription, ignore cet email.</p>`,
+  );
+
+  return sendMail({ to, subject: 'Active ton compte — TT Tournoi', text, html });
+}
+
 /** Confirmation après changement effectif du mot de passe. */
 export async function sendPasswordChangedEmail(
   to: string,

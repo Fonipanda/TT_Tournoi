@@ -131,11 +131,13 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Cartes stats : adresse / contact / inscriptions */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Carte adresse avec carte Google */}
-        <div className="card rounded-2xl overflow-hidden p-0 shadow-sm hover:shadow-md transition-shadow">
-          <div className="aspect-video bg-bg-alt relative">
+      {/* Deux encarts côte à côte sous le hero :
+          1. Adresse (carte Google) + Contact fusionnés
+          2. État des inscriptions + accès aux détails */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+        {/* Encart 1 — Adresse & contact */}
+        <div className="card rounded-2xl overflow-hidden p-0 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+          <div className="aspect-video bg-bg-alt relative shrink-0">
             <iframe
               src={mapsEmbedUrl}
               className="w-full h-full border-0"
@@ -145,52 +147,56 @@ export default async function HomePage() {
               title="Localisation du tournoi"
             />
           </div>
-          <div className="p-4">
-            <p className="text-xs uppercase tracking-widest text-foreground-muted mb-1">
-              📍 Adresse
-            </p>
-            <p className="font-medium text-sm">{tournament.location || 'Non renseignée'}</p>
-            <a
-              href={mapsLinkUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary text-xs hover:underline mt-2 inline-block"
-            >
-              Itinéraire →
-            </a>
+
+          <div className="flex-1 flex flex-col divide-y divide-border">
+            {/* Adresse */}
+            <div className="p-4">
+              <p className="text-xs uppercase tracking-widest text-foreground-muted mb-1">
+                📍 Adresse
+              </p>
+              <p className="font-medium text-sm">{tournament.location || 'Non renseignée'}</p>
+              <a
+                href={mapsLinkUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary text-xs hover:underline mt-1 inline-block"
+              >
+                Itinéraire →
+              </a>
+            </div>
+
+            {/* Contact */}
+            <div className="p-4 flex-1 flex flex-col">
+              <p className="text-xs uppercase tracking-widest text-foreground-muted mb-1">
+                ☎️ Contact
+              </p>
+              <p className="font-medium text-sm break-words">
+                {tournament.contact || 'Non renseigné'}
+              </p>
+              {tournament.contact?.includes('@') && (
+                <a
+                  href={`mailto:${tournament.contact}`}
+                  className="text-primary text-xs hover:underline mt-1 inline-block"
+                >
+                  Envoyer un email →
+                </a>
+              )}
+              {tournament.assoConnectUrl && (
+                <a
+                  href={tournament.assoConnectUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-primary text-sm rounded-full mt-3 self-start"
+                >
+                  Inscription en ligne ↗
+                </a>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Carte contact */}
-        <div className="card rounded-2xl shadow-sm hover:shadow-md transition-shadow flex flex-col">
-          <p className="text-xs uppercase tracking-widest text-foreground-muted mb-2">
-            ☎️ Contact
-          </p>
-          <p className="font-medium text-lg break-words">
-            {tournament.contact || 'Non renseigné'}
-          </p>
-          {tournament.contact?.includes('@') && (
-            <a
-              href={`mailto:${tournament.contact}`}
-              className="text-primary text-sm hover:underline mt-2"
-            >
-              Envoyer un email →
-            </a>
-          )}
-          {tournament.assoConnectUrl && (
-            <a
-              href={tournament.assoConnectUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-primary text-sm rounded-full mt-auto self-start"
-            >
-              Inscription en ligne ↗
-            </a>
-          )}
-        </div>
-
-        {/* Carte état des inscriptions */}
-        <div className="card rounded-2xl shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-primary-soft to-accent-soft border-primary">
+        {/* Encart 2 — État des inscriptions + accès détails */}
+        <div className="card rounded-2xl shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-primary-soft to-accent-soft border-primary flex flex-col">
           <p className="text-xs uppercase tracking-widest text-foreground-muted mb-2">
             📊 Inscriptions
           </p>
@@ -223,12 +229,15 @@ export default async function HomePage() {
           <p className="text-xs text-foreground-muted mt-1 text-right tabular">
             {tauxRemplissage}%
           </p>
-        </div>
-      </section>
 
-      {/* Boutons popups */}
-      <section className="flex flex-wrap gap-3 justify-center">
-        <HomeStatsButtons brackets={serialize(bracketStats)} players={serialize(allPlayers)} />
+          {/* Accès aux détails (modals) */}
+          <div className="mt-auto pt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <HomeStatsButtons
+              brackets={serialize(bracketStats)}
+              players={serialize(allPlayers)}
+            />
+          </div>
+        </div>
       </section>
 
       {/* Programme */}

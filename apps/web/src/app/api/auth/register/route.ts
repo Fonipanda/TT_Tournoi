@@ -2,8 +2,12 @@
  * POST /api/auth/register — inscription publique (sans login préalable).
  *
  * Crée un Player + un UserAccount role=player protégé par mot de passe.
- * Permet à un joueur sans licence FFTT (ou avec une licence introuvable) de
- * s'inscrire.
+ * Le numéro de licence FFTT sert à récupérer l'identité du joueur ; l'adresse
+ * email est l'identifiant de connexion et doit être confirmée par lien.
+ *
+ * Contrôles sur l'email : format (regex), fournisseur jetable, enregistrements
+ * MX du domaine, puis lien d'activation. Pas de SMTP VRFY (désactivé sur la
+ * plupart des serveurs et assimilé à du spam).
  *
  * Body : { firstName, lastName, email, password, phone?, licenseNumber?, club? }
  */
@@ -12,13 +16,20 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { hashPassword, isPasswordStrong, PASSWORD_POLICY_MESSAGE } from '@tt/auth/password';
-import { issueTokens, setAuthCookies, errorResponse, HttpError } from '@/lib/auth/server';
+import { errorResponse, HttpError } from '@/lib/auth/server';
 import { clientIp, enforceRateLimits } from '@/lib/rate-limit';
+import { validateEmail } from '@/lib/email-validation';
+import {
+  createEmailVerificationLink,
+  isEmailVerificationRequired,
+  VERIFICATION_TOKEN_TTL_HOURS,
+} from '@/lib/auth/email-verification';
+import { sendEmailVerificationEmail } from '@/lib/mailer';
 
 const Schema = z.object({
   firstName: z.string().min(1).max(50),
   lastName: z.string().min(1).max(50),
-  email: z.string().email('Adresse email invalide').max(255),
+  email: z.string().email('Adresse email invalide').max(254),
   password: z.string().min(1, 'Mot de passe requis').max(128),
   phone: z.string().min(8).max(20).optional().or(z.literal('')),
   licenseNumber: z
@@ -44,6 +55,12 @@ export async function POST(req: NextRequest) {
       throw new HttpError(400, PASSWORD_POLICY_MESSAGE, 'weak_password');
     }
 
+    // Format + fournisseur jetable + MX du domaine.
+    const emailCheck = await validateEmail(email);
+    if (!emailCheck.ok) {
+      throw new HttpError(400, emailCheck.message, emailCheck.code);
+    }
+
     // Une licence ou un email déjà utilisés ne peuvent pas être réinscrits.
     const existingPlayer = await prisma.player.findFirst({
       where: {
@@ -65,6 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await hashPassword(body.password);
+    const verificationRequired = isEmailVerificationRequired();
 
     // Créer le joueur
     const player = await prisma.player.create({
@@ -91,20 +109,26 @@ export async function POST(req: NextRequest) {
         role: 'player',
         playerId: player.id,
         passwordNeedsReset: false,
+        // Sans vérification exigée, le compte est actif immédiatement.
+        emailVerifiedAt: verificationRequired ? null : new Date(),
       },
     });
 
-    // Auto-login
-    const ua = req.headers.get('user-agent') ?? undefined;
-    const { accessToken, refreshToken } = await issueTokens({
-      userId: account.id,
-      role: 'player',
-      username: account.username,
-      playerId: player.id,
-      userAgent: ua,
-      ip,
-    });
-    await setAuthCookies(accessToken, refreshToken);
+    // Pas d'auto-connexion : le compte doit d'abord être activé via le lien.
+    if (verificationRequired) {
+      const verifyUrl = await createEmailVerificationLink(account.id, email, ip);
+      const result = await sendEmailVerificationEmail(
+        email,
+        verifyUrl,
+        player.firstName,
+        VERIFICATION_TOKEN_TTL_HOURS,
+      );
+      if (!result.delivered) {
+        console.error(
+          `[register] Email d'activation non délivré pour ${account.id} (${result.reason ?? 'inconnu'})`,
+        );
+      }
+    }
 
     return NextResponse.json(
       {
@@ -119,6 +143,8 @@ export async function POST(req: NextRequest) {
           firstName: player.firstName,
           lastName: player.lastName,
         },
+        emailVerificationRequired: verificationRequired,
+        email,
       },
       { status: 201 },
     );

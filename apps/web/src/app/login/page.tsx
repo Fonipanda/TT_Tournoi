@@ -14,6 +14,7 @@ function LoginForm() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [loading, setLoading] = useState(false);
 
   /**
@@ -34,6 +35,7 @@ function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNeedsVerification(false);
     setLoading(true);
     try {
       const res = await fetch('/api/auth/login', {
@@ -47,6 +49,9 @@ function LoginForm() {
         // pas si le compte existe. Le lien « Créer un compte » ci-dessous
         // couvre le cas du joueur qui ne s'est jamais inscrit.
         setError(data.error ?? 'Erreur de connexion');
+        // Seul cas non générique : identifiants corrects mais email non
+        // confirmé — on propose alors de renvoyer le lien d'activation.
+        setNeedsVerification(data.code === 'email_not_verified');
         return;
       }
       const target = pickDestination(data.user?.role);
@@ -101,24 +106,43 @@ function LoginForm() {
               role="alert"
             >
               <span aria-hidden="true">⚠</span>
-              <span>{error}</span>
+              <span>
+                {error}
+                {needsVerification && (
+                  <>
+                    {' '}
+                    <Link
+                      href={`/verifier-email?email=${encodeURIComponent(identifier)}`}
+                      className="underline font-medium"
+                      data-testid="verify-email-link"
+                    >
+                      Renvoyer le lien d’activation
+                    </Link>
+                  </>
+                )}
+              </span>
             </div>
           )}
 
           <div>
             <label className="block text-sm font-medium mb-1">
-              {mode === 'admin' ? 'Identifiant' : 'Numéro de licence FFTT'}
+              {mode === 'admin' ? (
+                'Identifiant'
+              ) : (
+                <>
+                  Email<span className="text-danger">*</span>
+                </>
+              )}
             </label>
             <input
               data-testid="identifier"
-              type="text"
+              type={mode === 'admin' ? 'text' : 'email'}
               required
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               className="input"
-              autoComplete={mode === 'admin' ? 'username' : 'off'}
-              inputMode={mode === 'player' ? 'numeric' : 'text'}
-              placeholder={mode === 'admin' ? 'admin' : '7711100001'}
+              autoComplete={mode === 'admin' ? 'username' : 'email'}
+              placeholder={mode === 'admin' ? 'admin' : 'prenom.nom@exemple.fr'}
             />
           </div>
 
@@ -151,15 +175,7 @@ function LoginForm() {
           {mode === 'player' && (
             <p className="text-sm text-foreground-muted">
               Pas encore de compte ?{' '}
-              <Link
-                href={
-                  /^\d{6,10}$/.test(identifier)
-                    ? `/register?licence=${identifier}`
-                    : '/register'
-                }
-                className="text-primary underline"
-                data-testid="register-link"
-              >
+              <Link href="/register" className="text-primary underline" data-testid="register-link">
                 Créer un compte
               </Link>
             </p>

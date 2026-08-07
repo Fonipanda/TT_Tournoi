@@ -97,6 +97,9 @@ if (!policyOk) {
   const prisma = new PrismaClient();
   try {
     const hash = await argon2.hash(password, { type: argon2.argon2id });
+    // Compte créé par un administrateur : l'adresse est marquée comme
+    // confirmée, sinon la connexion serait refusée (compte non activé).
+    const now = new Date();
     const result = await prisma.userAccount.upsert({
       where: { username },
       update: {
@@ -104,6 +107,7 @@ if (!policyOk) {
         role,
         isActive: true,
         passwordNeedsReset: false,
+        emailVerifiedAt: now,
       },
       create: {
         username,
@@ -112,6 +116,7 @@ if (!policyOk) {
         role,
         isActive: true,
         passwordNeedsReset: false,
+        emailVerifiedAt: now,
       },
     });
     console.log(`✅ Compte ${result.role} créé/réinitialisé`);

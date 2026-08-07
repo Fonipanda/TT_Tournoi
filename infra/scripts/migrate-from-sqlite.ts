@@ -271,6 +271,10 @@ async function main() {
         username: u.username,
         passwordHash: '', // SHA-256 incompatible
         passwordNeedsReset: true,
+        // Compte migré sans adresse email : aucun lien d'activation ne peut
+        // lui être envoyé. On le marque vérifié pour ne pas le rendre
+        // définitivement inaccessible après réinitialisation du mot de passe.
+        emailVerifiedAt: new Date(),
         role: role as 'admin' | 'juge_arbitre' | 'player',
       },
     });

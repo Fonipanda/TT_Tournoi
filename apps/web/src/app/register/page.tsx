@@ -64,7 +64,7 @@ function RegisterForm() {
       }));
       setLicenseFound(true);
       toast.success(`Licence trouvée : ${data.prenom} ${data.nom}`);
-    } catch (e) {
+    } catch {
       setLicenseFound(false);
       // On ne bloque pas — l'utilisateur peut saisir manuellement
       toast.info('Licence non trouvée — saisis tes informations manuellement');
@@ -94,10 +94,19 @@ function RegisterForm() {
     setSubmitting(true);
     setError(null);
     try {
-      await apiPost<{ user: { role: string } }>('/api/auth/register', { ...form, password });
-      toast.success('Compte créé · Sélectionne tes tableaux');
-      // Toujours rediriger vers /inscription pour que le joueur choisisse ses tableaux
-      router.push('/inscription');
+      const res = await apiPost<{ emailVerificationRequired: boolean; email: string }>(
+        '/api/auth/register',
+        { ...form, password },
+      );
+      // Pas d'auto-connexion : le compte doit d'abord être activé via le lien
+      // envoyé à l'adresse email saisie.
+      if (res.emailVerificationRequired) {
+        toast.success('Compte créé · Confirme ton adresse email');
+        router.push(`/verifier-email?sent=1&email=${encodeURIComponent(res.email)}`);
+      } else {
+        toast.success('Compte créé · Connecte-toi pour choisir tes tableaux');
+        router.push('/login');
+      }
       router.refresh();
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Erreur réseau';
@@ -141,6 +150,7 @@ function RegisterForm() {
               maxLength={10}
               placeholder="7711100001"
               className="flex-1"
+              helper="Sert à retrouver tes informations FFTT (nom, prénom, club)."
             />
             <button
               type="button"
@@ -189,6 +199,8 @@ function RegisterForm() {
             value={form.email}
             onChange={(e) => update('email', e.target.value)}
             autoComplete="email"
+            placeholder="prenom.nom@exemple.fr"
+            helper="Sert d'identifiant de connexion. Un lien d'activation y sera envoyé — les adresses jetables sont refusées."
           />
 
           <TextField
@@ -207,6 +219,7 @@ function RegisterForm() {
             value={password}
             onChange={setPassword}
             autoComplete="new-password"
+            helper={PASSWORD_POLICY_MESSAGE}
             showChecklist
           />
 

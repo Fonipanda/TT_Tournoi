@@ -137,6 +137,7 @@ function ResetPasswordForm() {
               value={password}
               onChange={setPassword}
               autoComplete="new-password"
+              helper={PASSWORD_POLICY_MESSAGE}
               showChecklist
             />
 

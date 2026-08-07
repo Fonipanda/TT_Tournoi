@@ -75,12 +75,19 @@ export function HomeStatsButtons({ brackets, players }: Props) {
     );
   });
 
+  // Boutons intégrés dans la carte « Inscriptions » (fond dégradé clair) :
+  // surface semi-opaque + bordure pour rester lisibles sur le dégradé.
+  const buttonClass =
+    'w-full bg-surface/80 hover:bg-surface border border-border text-foreground ' +
+    'text-sm font-medium px-4 py-2.5 rounded-full transition-all hover:shadow-sm ' +
+    'text-center whitespace-nowrap';
+
   return (
     <>
       <button
         type="button"
         onClick={() => setBracketsOpen(true)}
-        className="btn-secondary text-sm rounded-full"
+        className={buttonClass}
         data-testid="show-brackets"
       >
         🎯 Détail par tableau
@@ -88,7 +95,7 @@ export function HomeStatsButtons({ brackets, players }: Props) {
       <button
         type="button"
         onClick={() => setPlayersOpen(true)}
-        className="btn-secondary text-sm rounded-full"
+        className={buttonClass}
         data-testid="show-players"
       >
         👥 Liste des inscrits ({players.length})

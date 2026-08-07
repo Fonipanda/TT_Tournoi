@@ -186,20 +186,24 @@ model PlayerBracketRegistration {
 }
 
 model UserAccount {
-  id                 String   @id @default(uuid()) @db.Uuid
-  username           String   @unique
-  email              String?  @unique
-  passwordHash       String   @default("") // argon2id
-  passwordNeedsReset Boolean  @default(false) // true après migration SHA-256
-  role               Role     @default(player)
-  playerId           String?  @unique @db.Uuid
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                 String    @id @default(uuid()) @db.Uuid
+  username           String    @unique
+  email              String?   @unique
+  /// Date de confirmation de l'adresse email (lien reçu par email).
+  /// `null` = compte non activé : la connexion est refusée.
+  emailVerifiedAt    DateTime?
+  passwordHash       String    @default("") // argon2id
+  passwordNeedsReset Boolean   @default(false) // true après migration SHA-256
+  role               Role      @default(player)
+  playerId           String?   @unique @db.Uuid
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  player             Player?              @relation(fields: [playerId], references: [id], onDelete: SetNull)
-  refreshTokens      RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
+  player                  Player?                  @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@index([role, isActive])
 }
@@ -226,6 +230,25 @@ model PasswordResetToken {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @db.Uuid
   tokenHash String    @unique // hash sha256 du token envoyé par email
+  expiresAt DateTime
+  usedAt    DateTime?
+  requestIp String?
+  createdAt DateTime  @default(now())
+
+  user UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+/// Jeton de confirmation d'adresse email (activation du compte).
+/// Même principe que PasswordResetToken : seul le hash sha256 est stocké.
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique // hash sha256 du token envoyé par email
+  /// Adresse visée : permet de détecter un changement d'email entre-temps.
+  email     String
   expiresAt DateTime
   usedAt    DateTime?
   requestIp String?

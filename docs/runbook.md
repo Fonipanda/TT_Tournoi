@@ -183,7 +183,10 @@ const argon2 = require('argon2');
     email: 'arbitre1@chellestt.fr',
     passwordHash: hash,
     role: 'juge_arbitre',
-    passwordNeedsReset: true
+    passwordNeedsReset: true,
+    // Obligatoire : sans cette date le compte est considéré comme non activé
+    // et la connexion est refusée (403 email_not_verified).
+    emailVerifiedAt: new Date()
   }});
   console.log('OK');
 })();

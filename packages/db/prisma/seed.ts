@@ -17,7 +17,11 @@
 import argon2 from 'argon2';
 import { Prisma, prisma } from '../src/index.ts';
 
-async function hashPassword(pw: string): Promise<string> {
+/**
+ * Hachage local (argon2id), sans la politique de complexité de `@tt/auth` :
+ * les mots de passe de développement ci-dessous sont volontairement courts.
+ */
+async function hashPasswordUnchecked(pw: string): Promise<string> {
   return argon2.hash(pw, {
     type: argon2.argon2id,
     memoryCost: 65536,
@@ -172,30 +176,39 @@ async function main() {
   // Comptes : admin + juge-arbitre
   //
   // ATTENTION — identifiants de DÉVELOPPEMENT uniquement.
-  // En production, créer/réinitialiser le compte avec un mot de passe conforme
-  // à la politique (12 car. + maj/min/chiffre/spécial) :
+  // Ces mots de passe courts ne respectent PAS la politique de production
+  // (12 car. + maj/min/chiffre/spécial) : on passe donc volontairement par
+  // `hashPasswordUnchecked`, qui court-circuite la validation.
+  // En production, créer/réinitialiser le compte avec un mot de passe conforme :
   //   node infra/scripts/create-admin.mjs admin '<MotDePasseFort>'
+  //
+  // `emailVerifiedAt` est renseigné : sans cela, la connexion serait refusée
+  // (le compte serait considéré comme non activé).
   // ---------------------------------------------------------------------------
+  const seededAt = new Date();
+
   await prisma.userAccount.upsert({
     where: { username: 'admin' },
-    update: {},
+    update: { emailVerifiedAt: seededAt },
     create: {
       username: 'admin',
       email: 'admin@chellestt.fr',
-      passwordHash: await hashPassword('Admin123!'),
+      passwordHash: await hashPasswordUnchecked('Admin123!'),
       passwordNeedsReset: false,
+      emailVerifiedAt: seededAt,
       role: 'admin',
     },
   });
 
   await prisma.userAccount.upsert({
     where: { username: 'ja' },
-    update: {},
+    update: { emailVerifiedAt: seededAt },
     create: {
       username: 'ja',
       email: 'ja@chellestt.fr',
-      passwordHash: await hashPassword('Ja123!'),
+      passwordHash: await hashPasswordUnchecked('Ja123!'),
       passwordNeedsReset: false,
+      emailVerifiedAt: seededAt,
       role: 'juge_arbitre',
     },
   });

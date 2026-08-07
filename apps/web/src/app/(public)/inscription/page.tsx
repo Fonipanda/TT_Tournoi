@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { TextField } from '@/components/ui/fields';
-import { PasswordField } from '@/components/ui/password-field';
-import { toast, ToastViewport } from '@/components/ui/toast';
+import { ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 import { PaymentModal } from '@/components/PaymentModal';
 
@@ -33,23 +30,22 @@ export default function InscriptionPage() {
   const router = useRouter();
 
   // États
-  const [step, setStep] = useState<'check' | 'pick'>('check');
-  const [licence, setLicence] = useState('');
-  const [licencePassword, setLicencePassword] = useState('');
-  const [checking, setChecking] = useState(false);
+  // 'loading' : on vérifie la session ; 'pick' : sélection des tableaux.
+  // Un visiteur non authentifié est redirigé vers /register.
+  const [step, setStep] = useState<'loading' | 'pick'>('loading');
   const [me, setMe] = useState<{ playerId: string | null } | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [createdRegistrations, setCreatedRegistrations] = useState<
     Array<{ id: string; registrationId: string; name: string; entryFee: number }>
   >([]);
 
-  // Au chargement, vérifier si déjà loggé
+  // L'inscription au tournoi suppose un compte joueur : sans session valide,
+  // on envoie l'utilisateur créer son compte sur /register.
   useEffect(() => {
     (async () => {
       try {
@@ -58,9 +54,11 @@ export default function InscriptionPage() {
           setMe(meData.user);
           await loadBrackets(meData.user.playerId);
           setStep('pick');
+          return;
         }
+        router.replace('/register');
       } catch {
-        // pas loggé, on reste sur l'étape "check"
+        router.replace('/register');
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -78,37 +76,6 @@ export default function InscriptionPage() {
       setBrackets(bRes.data ?? []);
     }
   }
-
-  // Étape 1 : vérifier la licence
-  const checkLicence = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!/^\d{6,10}$/.test(licence)) {
-      setError('Numéro de licence invalide (6 à 10 chiffres)');
-      return;
-    }
-    setChecking(true);
-    setError(null);
-    try {
-      const res = await apiPost<{ user: { playerId: string } }>('/api/auth/login-player', {
-        licence,
-        password: licencePassword,
-      });
-      setMe(res.user);
-      await loadBrackets(res.user.playerId);
-      setStep('pick');
-      toast.success('Licence reconnue · Sélectionne tes tableaux');
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 404) {
-        // Licence inconnue → redirige vers /register
-        toast.info('Licence inconnue · Crée un compte');
-        router.push(`/register?licence=${licence}&reason=not_registered`);
-        return;
-      }
-      setError(e instanceof ApiError ? e.message : 'Erreur réseau');
-    } finally {
-      setChecking(false);
-    }
-  };
 
   // Étape 2 : éligibilité tableaux selon points
   const isEligible = (b: Bracket): { ok: boolean; reason?: string } => {
@@ -179,67 +146,12 @@ export default function InscriptionPage() {
   // RENDU
   // ========================================================================
 
-  // Étape 1 : pré-formulaire licence
-  if (step === 'check') {
+  // Session en cours de vérification → écran d'attente avant redirection
+  // éventuelle vers /register.
+  if (step === 'loading') {
     return (
-      <div className="max-w-md mx-auto" data-testid="inscription-precheck">
-        <h1 className="font-heading text-3xl uppercase tracking-wide mb-3 text-center">
-          Inscription au tournoi
-        </h1>
-        <p className="text-center text-foreground-muted text-sm mb-6">
-          Saisis ton numéro de licence FFTT et ton mot de passe pour t'inscrire.
-        </p>
-
-        <div className="card rounded-2xl">
-          <form onSubmit={checkLicence} className="space-y-4">
-            <TextField
-              label="Numéro de licence FFTT"
-              required
-              value={licence}
-              onChange={(e) => setLicence(e.target.value.replace(/\D/g, ''))}
-              inputMode="numeric"
-              maxLength={10}
-              placeholder="7711100001"
-              autoFocus
-            />
-
-            <PasswordField
-              data-testid="licence-password"
-              label="Mot de passe"
-              value={licencePassword}
-              onChange={setLicencePassword}
-              autoComplete="current-password"
-            />
-
-            {error && (
-              <div className="card border-danger bg-danger-soft text-danger text-sm rounded-xl px-3 py-2">
-                ⚠ {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={checking || !licence || !licencePassword}
-              className="btn-primary w-full disabled:opacity-50 rounded-full"
-              data-testid="check-licence"
-            >
-              {checking ? '…' : 'Continuer →'}
-            </button>
-          </form>
-
-          <p className="text-xs text-foreground-muted text-center mt-4">
-            Pas encore de compte ?{' '}
-            <Link href="/register" className="text-primary underline">
-              Créer un compte
-            </Link>
-          </p>
-          <p className="text-xs text-foreground-muted text-center mt-1">
-            <Link href="/mot-de-passe-oublie" className="text-primary underline">
-              Mot de passe oublié ?
-            </Link>
-          </p>
-        </div>
-
+      <div className="max-w-md mx-auto text-center py-16" data-testid="inscription-loading">
+        <p className="text-foreground-muted text-sm">Chargement…</p>
         <ToastViewport />
       </div>
     );
