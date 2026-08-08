@@ -537,8 +537,23 @@ JWT_ACCESS_TTL = 15m
 JWT_REFRESH_TTL = 7d
 
 # --- URLs publiques ---
+# APP_URL est lue au RUNTIME : c'est elle qui construit les liens d'activation
+# de compte et de mot de passe oublié envoyés par email. Sans elle, les liens
+# pointeraient vers http://localhost:3000 et seraient inutilisables.
+APP_URL = https://tournoi-chellestt.fr
 NEXT_PUBLIC_APP_URL = https://tournoi-chellestt.fr
 NEXT_PUBLIC_WS_URL = wss://tournoi-chellestt.fr/ws/api/ws/live
+
+# --- SMTP (emails d'activation de compte + mot de passe oublié) ---
+# SMTP_USER = adresse COMPLÈTE du compte email réel (OVH MX Plan / Zimbra).
+# Un alias ne peut PAS servir à s'authentifier : il n'a pas de mot de passe.
+SMTP_HOST = ssl0.ovh.net
+SMTP_PORT = 465
+SMTP_SECURE = true
+SMTP_USER = compte-reel@tournoi-chellestt.fr
+SMTP_PASS = <mot de passe de la boîte email>      🔒
+MAIL_FROM = TT Tournoi <no-reply@tournoi-chellestt.fr>
+EMAIL_VERIFICATION_REQUIRED = true
 
 # --- WebSocket interne ---
 WS_INTERNAL_TOKEN = <openssl rand -base64 32>     🔒
@@ -560,6 +575,41 @@ NODE_ENV = production
 ```
 
 > 🔑 **Pour générer les secrets** : ouvre une connexion SSH (mRemoteNG) sur le VPS et exécute `openssl rand -base64 48`. Copie le résultat dans Coolify.
+
+#### 📧 [OVH] Emails transactionnels (activation de compte, mot de passe oublié)
+
+Sans les variables `SMTP_*`, l'application **n'envoie aucun email** : elle se contente de journaliser `[mailer] SMTP non configuré — email NON envoyé` dans les logs Coolify. L'inscription semble fonctionner (message de succès affiché), mais personne ne reçoit son lien d'activation.
+
+**1. La boîte email OVH**
+
+Il faut un **compte email réel** (OVH MX Plan / Zimbra) : le serveur `ssl0.ovh.net` exige une authentification, et un simple alias ou une redirection ne possède pas de mot de passe.
+
+- `SMTP_USER` = l'adresse **complète du compte réel** (ex. `contact@tournoi-chellestt.fr`), jamais l'alias.
+- `MAIL_FROM` peut utiliser l'alias `no-reply@tournoi-chellestt.fr` **à condition qu'il soit bien déclaré comme alias du compte** dans l'espace client OVH. Si OVH rejette l'envoi avec une erreur du type `550 sender not allowed` / `Sender address rejected`, remplacer `MAIL_FROM` par l'adresse réelle du compte.
+- ⚠️ L'alias `no-reply@` reçoit quand même les réponses et les bounces : penser à consulter la boîte de temps en temps.
+
+**2. Délivrabilité — SPF / DKIM / DMARC sur `tournoi-chellestt.fr`**
+
+Sans ces enregistrements, les emails partent mais atterrissent en indésirables (voire sont rejetés par Gmail/Outlook).
+
+| Enregistrement | Où | Valeur |
+|---|---|---|
+| **SPF** | Zone DNS OVH | `v=spf1 include:mx.ovh.com ~all` — déjà présent si MX Plan est actif, à vérifier et **ne pas dupliquer** (un seul SPF par domaine) |
+| **DKIM** | Espace client OVH → *Emails* → *DKIM* | Activer : OVH publie l'enregistrement automatiquement |
+| **DMARC** | Zone DNS OVH, sous-domaine `_dmarc` | `v=DMARC1; p=none; rua=mailto:postmaster@tournoi-chellestt.fr` |
+
+> 💡 Démarrer DMARC en `p=none` (observation). Ne passer à `p=quarantine` qu'après avoir confirmé que SPF et DKIM sont alignés sur les emails réellement envoyés.
+
+**3. Vérifier que ça marche**
+
+1. Sur le site, utiliser « Mot de passe oublié » avec une adresse Gmail de test.
+2. Dans Coolify → `tt-web` → **`Logs`** :
+   - `[mailer] SMTP non configuré` → une variable `SMTP_*` manque ou l'app n'a pas été redéployée depuis leur ajout.
+   - `[mailer] Échec de l'envoi` → identifiants incorrects, ou `MAIL_FROM` refusé par OVH (voir point 1).
+   - Aucune ligne `[mailer]` → l'email est parti : **vérifier les indésirables**.
+3. Ouvrir le lien reçu : il doit pointer vers `https://tournoi-chellestt.fr/...`. S'il pointe vers `localhost:3000`, la variable `APP_URL` est absente.
+
+> 🔁 Après tout ajout de variable dans Coolify, il faut **redéployer** `tt-web` pour que le container la voie.
 
 #### 🎛️ [COOLIFY] Migration Prisma automatique au démarrage
 

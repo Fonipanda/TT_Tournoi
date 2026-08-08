@@ -5,9 +5,13 @@
  *   SMTP_HOST      ex. ssl0.ovh.net
  *   SMTP_PORT      465 (SSL) ou 587 (STARTTLS) — défaut 587
  *   SMTP_SECURE    'true' pour le port 465 — défaut : true si port 465
- *   SMTP_USER      identifiant SMTP
+ *   SMTP_USER      identifiant SMTP — chez OVH/Zimbra : l'adresse complète du
+ *                  compte réel, jamais un alias (un alias n'a pas de mot de passe)
  *   SMTP_PASS      mot de passe SMTP
- *   MAIL_FROM      ex. "TT Tournoi <no-reply@tournoi-chellestt.fr>"
+ *   MAIL_FROM      ex. "TT Tournoi <no-reply@tournoi-chellestt.fr>" — doit être
+ *                  le compte SMTP_USER ou l'un de ses alias, sinon le serveur
+ *                  rejette l'envoi (usurpation d'expéditeur)
+ *   APP_URL        base des liens envoyés dans les emails (voir appUrl)
  *
  * Si SMTP_HOST n'est pas configuré, les emails ne sont pas envoyés : leur
  * contenu est journalisé dans la console (mode développement). Le flux
@@ -36,9 +40,18 @@ function getFrom(): string {
   return process.env.MAIL_FROM || 'TT Tournoi <no-reply@localhost>';
 }
 
-/** URL publique de l'application, utilisée pour construire les liens. */
+/**
+ * URL publique de l'application, utilisée pour construire les liens envoyés
+ * par email (activation de compte, mot de passe oublié).
+ *
+ * `APP_URL` est lue en priorité car elle est évaluée au RUNTIME : c'est la
+ * seule qui fonctionne dans une image Docker construite sans connaître le
+ * domaine final. `NEXT_PUBLIC_APP_URL` est figée par Next.js au moment du
+ * build — elle ne sert que de repli en développement.
+ */
 export function appUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const url = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  return url.trim().replace(/\/+$/, '');
 }
 
 // -----------------------------------------------------------------------------
