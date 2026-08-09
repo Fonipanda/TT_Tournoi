@@ -73,3 +73,100 @@ export function dailyQuotaMessage(violation: DailyQuotaViolation): string {
   const when = violation.day ? `le ${violation.day}` : 'sur cette journée';
   return `Maximum ${MAX_BRACKETS_PER_DAY} tableaux par jour : « ${violation.bracket.name} » dépasse le quota ${when}.`;
 }
+
+// ---------------------------------------------------------------------------
+// Fenêtre de points (règle FFTT)
+// ---------------------------------------------------------------------------
+
+/**
+ * En tournoi homologué, un tableau définit une fenêtre de classement que le
+ * joueur ne doit pas franchir, dans un sens comme dans l'autre :
+ *
+ * - `maxPoints` — « Moins de 1099 points », « Série -1300 » : réservé aux
+ *   joueurs classés **au plus** à cette valeur. Un joueur mieux classé
+ *   écraserait la compétition.
+ * - `minPoints` — un tableau réservé aux 1500 points et plus n'est pas
+ *   ouvert à un joueur de 900 points.
+ *
+ * Les deux bornes sont opposables et vérifiées côté serveur. `minPoints` et
+ * `maxPoints` à `null` décrivent un tableau « Toutes Séries » / Open, ouvert à
+ * tous les classements et dispensé de tout contrôle.
+ */
+export interface BracketPointsWindow {
+  id: string;
+  name: string;
+  minPoints: number | null;
+  maxPoints: number | null;
+}
+
+/** État du joueur au regard du classement officiel. */
+export interface PlayerRanking {
+  points: number;
+  /** Date de la dernière vérification FFTT. `null` = jamais vérifié. */
+  ffttSyncedAt: Date | null;
+}
+
+export type PointsWindowReason =
+  /** Mieux classé que le plafond du tableau. */
+  | 'above_max'
+  /** Moins bien classé que le plancher du tableau. */
+  | 'below_min'
+  /** Classement jamais confronté à la base fédérale. */
+  | 'unverified';
+
+export interface PointsWindowViolation {
+  bracket: BracketPointsWindow;
+  reason: PointsWindowReason;
+  /** Classement retenu, arrondi. */
+  points: number;
+}
+
+/** Un tableau sans borne est ouvert à tous : aucun contrôle ne s'applique. */
+export function hasPointsWindow(b: BracketPointsWindow): boolean {
+  return b.minPoints !== null || b.maxPoints !== null;
+}
+
+/**
+ * Cherche le premier tableau dont la fenêtre de points n'est pas respectée.
+ *
+ * Le classement de référence est celui porté par la fiche au moment de
+ * l'appel — « le classement à la date de validation de l'inscription fait
+ * foi ». Encore faut-il qu'il vienne de la fédération : un classement jamais
+ * synchronisé vaut 500 points par défaut ou une saisie manuelle, et ne permet
+ * d'affirmer ni qu'il respecte la fenêtre, ni qu'il la viole. Le tableau borné
+ * est donc refusé tant que la vérification n'a pas eu lieu.
+ *
+ * @returns le premier tableau fautif, ou `null` si tout passe.
+ */
+export function findPointsWindowViolation(
+  brackets: readonly BracketPointsWindow[],
+  player: PlayerRanking,
+): PointsWindowViolation | null {
+  const verified = player.ffttSyncedAt !== null && Number.isFinite(player.points);
+  const p = Math.round(player.points);
+
+  for (const b of brackets) {
+    if (!hasPointsWindow(b)) continue;
+    // Sans classement certifié, on ne compare rien : on refuse.
+    if (!verified) return { bracket: b, reason: 'unverified', points: p };
+    if (b.maxPoints !== null && p > b.maxPoints) {
+      return { bracket: b, reason: 'above_max', points: p };
+    }
+    if (b.minPoints !== null && p < b.minPoints) {
+      return { bracket: b, reason: 'below_min', points: p };
+    }
+  }
+  return null;
+}
+
+/** Message d'erreur lisible pour l'utilisateur final. */
+export function pointsWindowMessage(violation: PointsWindowViolation): string {
+  const { bracket, points, reason } = violation;
+  if (reason === 'unverified') {
+    return `Classement non vérifié : « ${bracket.name} » impose une fenêtre de points. Lance la synchronisation FFTT depuis ton espace avant de t'inscrire.`;
+  }
+  if (reason === 'above_max') {
+    return `Classement trop élevé pour « ${bracket.name} » : ce tableau est limité à ${bracket.maxPoints} pts, le classement retenu est de ${points} pts.`;
+  }
+  return `Classement insuffisant pour « ${bracket.name} » : ce tableau est réservé aux joueurs d'au moins ${bracket.minPoints} pts, le classement retenu est de ${points} pts.`;
+}

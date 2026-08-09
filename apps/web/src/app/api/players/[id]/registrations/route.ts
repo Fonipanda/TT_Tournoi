@@ -10,7 +10,12 @@ import { z } from 'zod';
 import crypto from 'node:crypto';
 import { prisma } from '@tt/db';
 import { errorResponse, getCurrentUser, HttpError } from '@/lib/auth/server';
-import { dailyQuotaMessage, findDailyQuotaViolation } from '@/lib/registrations';
+import {
+  dailyQuotaMessage,
+  findDailyQuotaViolation,
+  findPointsWindowViolation,
+  pointsWindowMessage,
+} from '@/lib/registrations';
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -43,7 +48,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const uniqueIds = [...new Set(bracketIds)];
     const requested = await prisma.bracket.findMany({
       where: { id: { in: uniqueIds } },
-      select: { id: true, name: true, day: true },
+      select: { id: true, name: true, day: true, minPoints: true, maxPoints: true },
     });
     if (requested.length !== uniqueIds.length) {
       throw new HttpError(400, 'Tableau inconnu');
@@ -59,6 +64,27 @@ export async function POST(req: NextRequest, { params }: Params) {
       requested,
     );
     if (violation) throw new HttpError(400, dailyQuotaMessage(violation));
+
+    // Fenêtre de points : les deux bornes du tableau sont opposables, et le
+    // classement doit provenir de la fédération. Le classement retenu est
+    // celui de la fiche au moment de la validation, comme le veut le règlement.
+    //
+    // L'admin y déroge : il gère les cas que le règlement laisse à son
+    // appréciation (surclassement, licence en cours de mutation, joueur sans
+    // licence accepté sur décision du juge-arbitre). La dérogation est tracée.
+    const player = await prisma.player.findUnique({
+      where: { id },
+      select: { points: true, ffttSyncedAt: true, firstName: true, lastName: true },
+    });
+    if (!player) throw new HttpError(404, 'Joueur introuvable');
+
+    const window = findPointsWindowViolation(requested, player);
+    if (window) {
+      if (me.role !== 'admin') throw new HttpError(400, pointsWindowMessage(window));
+      console.warn(
+        `[inscriptions] dérogation admin — ${player.lastName} ${player.firstName} (${window.points} pts, motif ${window.reason}) inscrit sur « ${window.bracket.name} » [${window.bracket.minPoints ?? '−'} ; ${window.bracket.maxPoints ?? '−'}]`,
+      );
+    }
 
     const created = [];
     for (const bracketId of bracketIds) {

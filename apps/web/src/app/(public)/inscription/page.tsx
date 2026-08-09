@@ -6,6 +6,25 @@ import { ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 import { PaymentModal } from '@/components/PaymentModal';
 import { MAX_BRACKETS_PER_DAY, bracketDayKey } from '@/lib/registrations';
+import { computeBracketFits, isStretch, type BracketFitLevel } from '@/lib/bracket-fit';
+
+/**
+ * Habillage du badge de fenêtre de points.
+ *
+ * « Recommandé » est en aplat plein : c'est la seule pastille qui doit se voir
+ * au premier coup d'œil, et l'aplat évite de la confondre avec le fond clair
+ * d'une carte sélectionnée. L'ambre distingue « tableau trop fort pour toi » du
+ * rouge « plafond dépassé » : les deux sont refusés, mais pour des raisons
+ * opposées que le joueur doit pouvoir lire d'un coup d'œil.
+ */
+const FIT_BADGE: Record<BracketFitLevel, { className: string; icon: string }> = {
+  recommended: { className: 'bg-primary text-primary-fg border-primary', icon: '★' },
+  accessible: { className: 'bg-bg-alt text-foreground-muted border-border-strong', icon: '' },
+  stretch: { className: 'bg-warning-soft text-warning border-warning', icon: '↗' },
+  far_stretch: { className: 'bg-warning-soft text-warning border-warning', icon: '↗↗' },
+  closed: { className: 'bg-danger-soft text-danger border-danger', icon: '⚠' },
+  unverified: { className: 'bg-bg-alt text-foreground-muted border-border-strong', icon: '🔒' },
+};
 
 interface Bracket {
   id: string;
@@ -25,6 +44,8 @@ interface Player {
   points: number;
   firstName: string;
   lastName: string;
+  /** Dernière vérification FFTT. `null` = classement jamais confronté. */
+  ffttSyncedAt: string | null;
 }
 
 interface Registration {
@@ -46,7 +67,13 @@ export default function InscriptionPage() {
   /** Tableaux auxquels le joueur est DÉJÀ inscrit (source : serveur). */
   const [alreadyRegistered, setAlreadyRegistered] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  // Un refus serveur (plafond de points, quota) transite par ce même canal :
+  // il doit se distinguer d'une confirmation, sans quoi un rejet s'afficherait
+  // en vert précédé d'une coche.
+  const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(
+    null,
+  );
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [createdRegistrations, setCreatedRegistrations] = useState<
     Array<{ id: string; registrationId: string; name: string; entryFee: number }>
@@ -108,19 +135,33 @@ export default function InscriptionPage() {
     setSelected(new Set()); // la sélection ne porte que sur les NOUVEAUX choix
   }
 
-  // Étape 2 : éligibilité tableaux selon points
-  const isEligible = (b: Bracket): { ok: boolean; reason?: string } => {
-    if (!player) return { ok: false, reason: 'Chargement…' };
-    if (b.minPoints !== null && player.points < b.minPoints) {
-      return { ok: false, reason: `Min ${b.minPoints} pts (tu as ${Math.round(player.points)})` };
-    }
-    if (b.maxPoints !== null && player.points > b.maxPoints) {
-      return { ok: false, reason: `Max ${b.maxPoints} pts (tu as ${Math.round(player.points)})` };
-    }
-    if (b._count && b._count.registrations >= b.maxPlayers) {
-      return { ok: false, reason: 'Tableau complet' };
-    }
-    return { ok: true };
+  /** Le classement a-t-il été confronté à la base fédérale ? */
+  const rankingVerified = player?.ffttSyncedAt != null;
+
+  // Verdict par tableau, recalculé à chaque changement de liste ou de
+  // classement. Vide tant que le joueur n'est pas chargé.
+  const fits = useMemo(
+    () =>
+      computeBracketFits(brackets, {
+        points: player?.points ?? null,
+        verified: rankingVerified,
+      }),
+    [brackets, player, rankingVerified],
+  );
+
+  /**
+   * Ce qui empêche de cocher un tableau.
+   *
+   * Le verdict de `bracket-fit` reproduit exactement la règle serveur (fenêtre
+   * de points et classement vérifié) ; s'y ajoute ici la jauge du tableau, qui
+   * ne relève pas du classement.
+   */
+  const blockReason = (b: Bracket): string | null => {
+    if (!player) return 'Chargement…';
+    const fit = fits.get(b.id);
+    if (fit?.blocking) return fit.detail;
+    if (b._count && b._count.registrations >= b.maxPlayers) return 'Tableau complet';
+    return null;
   };
 
   /**
@@ -141,6 +182,38 @@ export default function InscriptionPage() {
   }, [brackets, alreadyRegistered, selected]);
 
   const pickedOnDayOf = (b: Bracket) => pickedPerDay.get(bracketDayKey(b.day)) ?? 0;
+
+  /** Tableaux rendus inaccessibles faute de classement vérifié. */
+  const lockedByVerification = useMemo(
+    () => brackets.filter((b) => fits.get(b.id)?.level === 'unverified').length,
+    [brackets, fits],
+  );
+
+  /**
+   * Confronte le classement à la base fédérale.
+   *
+   * Sans cette action à portée de clic, le refus « synchronise ton classement »
+   * laisserait le joueur sans issue : la page n'offrait aucun autre chemin.
+   */
+  async function syncFftt() {
+    if (!player || syncing) return;
+    setSyncing(true);
+    setMessage(null);
+    try {
+      await apiPost(`/api/players/${player.id}/sync-fftt`, {});
+      // Le classement a changé : les tableaux ouverts aussi, et la sélection
+      // en cours peut être devenue caduque. On repart de l'état serveur.
+      await loadBrackets(player.id);
+      setMessage({ kind: 'success', text: 'Classement mis à jour depuis la FFTT.' });
+    } catch (e) {
+      setMessage({
+        kind: 'error',
+        text: e instanceof ApiError ? e.message : 'Synchronisation FFTT impossible.',
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const toggle = (id: string) => {
     if (alreadyRegistered.has(id)) return; // déjà inscrit : non modifiable ici
@@ -188,11 +261,14 @@ export default function InscriptionPage() {
         setPaymentOpen(true);
       } else {
         // Aucun paiement nécessaire (gratuit) → direct mon-espace
-        setMessage('Inscription enregistrée !');
+        setMessage({ kind: 'success', text: 'Inscription enregistrée !' });
         setTimeout(() => router.push('/mon-espace'), 1500);
       }
     } catch (e) {
-      setMessage(e instanceof ApiError ? e.message : 'Erreur');
+      setMessage({
+        kind: 'error',
+        text: e instanceof ApiError ? e.message : "Impossible d'enregistrer l'inscription.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -229,12 +305,41 @@ export default function InscriptionPage() {
         <p className="text-foreground-muted mb-2 text-sm">
           {player.firstName} {player.lastName} —{' '}
           <span className="font-semibold text-primary">{Math.round(player.points)} pts</span>
+          {rankingVerified ? (
+            <span className="text-success"> · classement vérifié FFTT</span>
+          ) : (
+            <span className="text-warning"> · classement non vérifié</span>
+          )}
         </p>
       )}
       <p className="text-foreground-muted mb-4 text-sm">
         Sélectionne jusqu'à {MAX_BRACKETS_PER_DAY} tableaux <strong>par journée</strong> (règle
-        FFTT). Seuls les tableaux compatibles avec ton classement sont sélectionnables.
+        FFTT). Chaque tableau impose une fenêtre de classement : tu ne peux t'inscrire qu'aux
+        tableaux dont la fenêtre contient tes points.
       </p>
+
+      {player && !rankingVerified && lockedByVerification > 0 && (
+        <div
+          className="card border-warning bg-warning-soft text-sm mb-4 rounded-xl"
+          data-testid="fftt-sync-notice"
+        >
+          <p className="mb-3">
+            🔒 {lockedByVerification} tableau
+            {lockedByVerification > 1 ? 'x' : ''} avec fenêtre de points {' '}
+            {lockedByVerification > 1 ? 'sont verrouillés' : 'est verrouillé'} : ton classement
+            n'a jamais été confronté à la base fédérale. Une synchronisation suffit à les ouvrir.
+          </p>
+          <button
+            type="button"
+            onClick={syncFftt}
+            disabled={syncing}
+            className="btn-primary rounded-full disabled:opacity-50"
+            data-testid="sync-fftt"
+          >
+            {syncing ? 'Synchronisation…' : 'Synchroniser mon classement FFTT'}
+          </button>
+        </div>
+      )}
 
       {alreadyRegistered.size > 0 && (
         <p
@@ -249,26 +354,43 @@ export default function InscriptionPage() {
 
       {message && (
         <p
-          className="card border-success bg-success-soft text-success mb-4 rounded-xl"
+          className={`card mb-4 rounded-xl text-sm ${
+            message.kind === 'success'
+              ? 'border-success bg-success-soft text-success'
+              : 'border-danger bg-danger-soft text-danger'
+          }`}
           data-testid="inscription-message"
+          data-kind={message.kind}
+          role={message.kind === 'error' ? 'alert' : 'status'}
         >
-          ✓ {message}
+          {message.kind === 'success' ? '✓' : '⚠'} {message.text}
         </p>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="brackets-list">
         {brackets.map((b) => {
           const isRegistered = alreadyRegistered.has(b.id);
-          const eligibility = isEligible(b);
+          const blocked = blockReason(b);
+          const fit = fits.get(b.id);
           const isSelected = selected.has(b.id);
           // Quota atteint pour la journée du tableau : on grise les tableaux
           // restants de cette journée, sans masquer ceux que le joueur vient
           // de cocher (il doit pouvoir se raviser).
           const blockedByQuota =
             !isRegistered && !isSelected && pickedOnDayOf(b) >= MAX_BRACKETS_PER_DAY;
-          const disabled = isRegistered || !eligibility.ok || blockedByQuota;
+          const disabled = isRegistered || blocked !== null || blockedByQuota;
+          // Le refus prend la couleur de son motif : ambre pour « tableau trop
+          // fort », neutre pour « classement à vérifier », rouge pour un vrai
+          // dépassement de plafond ou un tableau complet.
+          const blockedTone =
+            fit && isStretch(fit.level)
+              ? 'text-warning'
+              : fit?.level === 'unverified'
+                ? 'text-foreground-muted'
+                : 'text-danger';
           const inscrits = b._count?.registrations ?? 0;
           const taux = b.maxPlayers > 0 ? Math.round((inscrits / b.maxPlayers) * 100) : 0;
+          const badge = fit ? FIT_BADGE[fit.level] : null;
           return (
             <button
               key={b.id}
@@ -276,37 +398,53 @@ export default function InscriptionPage() {
               onClick={() => !disabled && toggle(b.id)}
               disabled={disabled}
               data-testid={`bracket-${b.id}`}
+              data-fit={fit?.level ?? 'unknown'}
               className={`card text-left transition-all rounded-xl ${
                 isRegistered
                   ? 'border-success bg-success-soft cursor-default'
-                  : !eligibility.ok || blockedByQuota
+                  : blocked !== null || blockedByQuota
                     ? 'opacity-50 cursor-not-allowed'
                     : isSelected
                       ? 'border-primary bg-primary-soft shadow-md'
                       : 'hover:border-primary hover:shadow-sm'
               }`}
             >
-              <div className="flex items-start justify-between mb-2">
-                <div>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="min-w-0">
                   <p className="font-heading text-xl uppercase tracking-wide">{b.name}</p>
                   <p className="text-sm text-foreground-muted">{b.category}</p>
                 </div>
-                <span className="font-mono tabular text-primary font-semibold">
-                  {Number(b.entryFee).toFixed(2)} €
-                </span>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="font-mono tabular text-primary font-semibold">
+                    {Number(b.entryFee).toFixed(2)} €
+                  </span>
+                  {fit && badge && (
+                    <span
+                      className={`text-[11px] leading-tight border px-2 py-0.5 rounded-full whitespace-nowrap ${badge.className}`}
+                      data-testid={`fit-badge-${b.id}`}
+                    >
+                      {badge.icon ? `${badge.icon} ` : ''}
+                      {fit.label}
+                    </span>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-foreground-subtle">
                 {b.day ?? ''} · {b.startTime ?? '?'} · {inscrits}/{b.maxPlayers} ({taux}%)
               </p>
               {isRegistered ? (
                 <p className="text-xs text-success mt-2 font-medium">✓ Déjà inscrit</p>
-              ) : !eligibility.ok ? (
-                <p className="text-xs text-danger mt-2">⚠ {eligibility.reason}</p>
+              ) : blocked !== null ? (
+                <p className={`text-xs mt-2 ${blockedTone}`}>⚠ {blocked}</p>
               ) : blockedByQuota ? (
                 <p className="text-xs text-foreground-subtle mt-2">
                   Quota de {MAX_BRACKETS_PER_DAY} tableaux atteint
                   {b.day ? ` pour ${b.day}` : ' pour cette journée'}
                 </p>
+              ) : fit && fit.level !== 'accessible' ? (
+                // « Accessible » n'apporte rien de plus que son badge : une
+                // phrase sur chaque carte noierait les vrais conseils.
+                <p className="text-xs mt-2 text-foreground-muted">{fit.detail}</p>
               ) : null}
             </button>
           );

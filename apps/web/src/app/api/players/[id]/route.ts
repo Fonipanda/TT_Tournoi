@@ -9,7 +9,21 @@ import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { errorResponse, getCurrentUser, HttpError, requireRole } from '@/lib/auth/server';
 import { optionalPhoneField } from '@/lib/validation/phone';
-import { dailyQuotaMessage, findDailyQuotaViolation } from '@/lib/registrations';
+import {
+  dailyQuotaMessage,
+  findDailyQuotaViolation,
+  findPointsWindowViolation,
+} from '@/lib/registrations';
+
+/**
+ * Champs qui portent le classement officiel du joueur.
+ *
+ * Ils commandent l'accès aux tableaux : un joueur qui pourrait éditer ses
+ * propres points contournerait d'un appel le plafond vérifié à l'inscription.
+ * Seule l'organisation les modifie ; côté joueur, la mise à jour passe par la
+ * synchronisation FFTT (`POST /api/players/:id/sync-fftt`).
+ */
+const RANKING_FIELDS = ['points', 'ranking', 'licenseNumber'] as const;
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -49,6 +63,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const body = UpdateSchema.parse(await req.json());
     const { bracketIds, ...playerData } = body;
 
+    // Rejet explicite plutôt que filtrage silencieux : un client qui croit
+    // avoir mis à jour un classement doit savoir qu'il n'en a rien été.
+    if (me.role !== 'admin') {
+      const attempted = RANKING_FIELDS.filter((f) => playerData[f] !== undefined);
+      if (attempted.length > 0) {
+        throw new HttpError(
+          403,
+          `Champs réservés à l'organisation : ${attempted.join(', ')}. Utilise la synchronisation FFTT pour actualiser ton classement.`,
+        );
+      }
+    }
+
     // Le quota FFTT s'applique aussi aux inscriptions posées par l'admin.
     // Contrôlé AVANT toute écriture, sinon la fiche joueur serait modifiée
     // puis la synchronisation des tableaux rejetée : état incohérent.
@@ -57,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       const uniqueIds = [...new Set(bracketIds)];
       const targetBrackets = await prisma.bracket.findMany({
         where: { id: { in: uniqueIds } },
-        select: { id: true, name: true, day: true },
+        select: { id: true, name: true, day: true, minPoints: true, maxPoints: true },
       });
       if (targetBrackets.length !== uniqueIds.length) {
         throw new HttpError(400, 'Tableau inconnu');
@@ -65,6 +91,26 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       // `bracketIds` décrit l'état final complet : on part d'une base vide.
       const violation = findDailyQuotaViolation([], targetBrackets);
       if (violation) throw new HttpError(400, dailyQuotaMessage(violation));
+
+      // Ce chemin est réservé à l'admin : la fenêtre de points ne bloque donc
+      // pas, mais tout franchissement est tracé. Le classement évalué est celui
+      // envoyé dans la même requête s'il y en a un, sinon celui en base —
+      // sans quoi corriger des points et des tableaux d'un seul coup
+      // journaliserait une dérogation fantôme.
+      const current = await prisma.player.findUnique({
+        where: { id },
+        select: { points: true, ffttSyncedAt: true, firstName: true, lastName: true },
+      });
+      if (!current) throw new HttpError(404, 'Joueur introuvable');
+      const window = findPointsWindowViolation(targetBrackets, {
+        points: playerData.points ?? current.points,
+        ffttSyncedAt: current.ffttSyncedAt,
+      });
+      if (window) {
+        console.warn(
+          `[inscriptions] dérogation admin — ${current.lastName} ${current.firstName} (${window.points} pts, motif ${window.reason}) inscrit sur « ${window.bracket.name} » [${window.bracket.minPoints ?? '−'} ; ${window.bracket.maxPoints ?? '−'}]`,
+        );
+      }
     }
 
     // Update player fields

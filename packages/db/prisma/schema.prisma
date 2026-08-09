@@ -139,18 +139,22 @@ model Bracket {
 // -----------------------------------------------------------------------------
 
 model Player {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String    @id @default(uuid()) @db.Uuid
   firstName     String
   lastName      String
-  licenseNumber String?  @unique
+  licenseNumber String?   @unique
   ranking       String?
-  points        Float    @default(500) // float pour FFTT swap
+  points        Float     @default(500) // float pour FFTT swap
   club          String?
-  email         String   @default("")
+  email         String    @default("")
   phone         String?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive      Boolean   @default(true)
+  // Dernière vérification du classement auprès de la FFTT. `null` = jamais
+  // vérifié : les points valent alors la valeur par défaut de 500 ou une
+  // saisie manuelle, ce qui interdit les tableaux à borne de points.
+  ffttSyncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   account          UserAccount?
   registrations    PlayerBracketRegistration[]
@@ -302,8 +306,8 @@ model TableModel {
   currentMatch Match?  @relation("CurrentTable", fields: [currentMatchId], references: [id], onDelete: SetNull)
   matches      Match[] @relation("TableMatches")
 
-  @@map("tables")
   @@index([roomId, status])
+  @@map("tables")
 }
 
 // -----------------------------------------------------------------------------

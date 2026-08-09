@@ -46,6 +46,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
         firstName: fftt.prenom,
         lastName: fftt.nom,
         club: fftt.club ?? player.club,
+        // Atteste que le classement provient de la fédération : c'est ce
+        // marqueur qui ouvre les tableaux à borne de points.
+        ffttSyncedAt: new Date(),
       },
     });
 
@@ -57,6 +60,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
         lastName: updated.lastName,
         club: updated.club,
         points: updated.points,
+        ffttSyncedAt: updated.ffttSyncedAt,
       },
     });
   } catch (e) {

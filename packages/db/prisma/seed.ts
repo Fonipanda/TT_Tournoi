@@ -167,7 +167,11 @@ async function main() {
     await prisma.player.upsert({
       where: { licenseNumber: p.licenseNumber },
       update: {},
-      create: p,
+      // Jeu de démonstration : ces classements simulent des licenciés connus
+      // de la fédération. Sans ce marqueur, les tableaux à fenêtre de points
+      // leur seraient tous fermés et le parcours d'inscription serait
+      // intestable en recette.
+      create: { ...p, ffttSyncedAt: new Date() },
     });
   }
   console.info(`[seed] ${players.length} joueurs FFTT`);
