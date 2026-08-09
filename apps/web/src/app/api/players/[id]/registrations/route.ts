@@ -10,6 +10,7 @@ import { z } from 'zod';
 import crypto from 'node:crypto';
 import { prisma } from '@tt/db';
 import { errorResponse, getCurrentUser, HttpError } from '@/lib/auth/server';
+import { dailyQuotaMessage, findDailyQuotaViolation } from '@/lib/registrations';
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -36,6 +37,28 @@ export async function POST(req: NextRequest, { params }: Params) {
       throw new HttpError(403, 'Inscription pour autrui interdite');
     }
     const { bracketIds } = Schema.parse(await req.json());
+
+    // Quota FFTT : 2 tableaux par jour et par joueur. Contrôlé côté serveur —
+    // la règle appliquée dans le formulaire n'est qu'une aide à la saisie.
+    const uniqueIds = [...new Set(bracketIds)];
+    const requested = await prisma.bracket.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, name: true, day: true },
+    });
+    if (requested.length !== uniqueIds.length) {
+      throw new HttpError(400, 'Tableau inconnu');
+    }
+
+    const existing = await prisma.playerBracketRegistration.findMany({
+      where: { playerId: id, isActive: true },
+      select: { bracket: { select: { id: true, name: true, day: true } } },
+    });
+
+    const violation = findDailyQuotaViolation(
+      existing.map((r) => r.bracket),
+      requested,
+    );
+    if (violation) throw new HttpError(400, dailyQuotaMessage(violation));
 
     const created = [];
     for (const bracketId of bracketIds) {

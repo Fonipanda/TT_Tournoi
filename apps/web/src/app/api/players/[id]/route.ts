@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { errorResponse, getCurrentUser, HttpError, requireRole } from '@/lib/auth/server';
 import { optionalPhoneField } from '@/lib/validation/phone';
+import { dailyQuotaMessage, findDailyQuotaViolation } from '@/lib/registrations';
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -48,11 +49,29 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const body = UpdateSchema.parse(await req.json());
     const { bracketIds, ...playerData } = body;
 
+    // Le quota FFTT s'applique aussi aux inscriptions posées par l'admin.
+    // Contrôlé AVANT toute écriture, sinon la fiche joueur serait modifiée
+    // puis la synchronisation des tableaux rejetée : état incohérent.
+    const syncBrackets = bracketIds !== undefined && me.role === 'admin';
+    if (syncBrackets) {
+      const uniqueIds = [...new Set(bracketIds)];
+      const targetBrackets = await prisma.bracket.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true, name: true, day: true },
+      });
+      if (targetBrackets.length !== uniqueIds.length) {
+        throw new HttpError(400, 'Tableau inconnu');
+      }
+      // `bracketIds` décrit l'état final complet : on part d'une base vide.
+      const violation = findDailyQuotaViolation([], targetBrackets);
+      if (violation) throw new HttpError(400, dailyQuotaMessage(violation));
+    }
+
     // Update player fields
     const updated = await prisma.player.update({ where: { id }, data: playerData });
 
     // If bracketIds provided, sync registrations (admin only)
-    if (bracketIds !== undefined && me.role === 'admin') {
+    if (syncBrackets && bracketIds) {
       // Get current active registrations
       const existing = await prisma.playerBracketRegistration.findMany({
         where: { playerId: id, isActive: true },

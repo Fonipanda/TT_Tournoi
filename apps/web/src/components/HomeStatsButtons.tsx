@@ -98,7 +98,9 @@ export function HomeStatsButtons({ brackets, players }: Props) {
         className={buttonClass}
         data-testid="show-players"
       >
-        👥 Liste des inscrits ({players.length})
+        {/* Nombre de personnes, pas d'inscriptions : un joueur présent sur
+            2 tableaux ne compte que pour 1. */}
+        👥 Liste des inscrits ({playersGrouped.length})
       </button>
 
       {/* Modal détail tableaux */}

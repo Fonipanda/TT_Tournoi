@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 import { PaymentModal } from '@/components/PaymentModal';
+import { MAX_BRACKETS_PER_DAY, bracketDayKey } from '@/lib/registrations';
 
 interface Bracket {
   id: string;
@@ -122,17 +123,42 @@ export default function InscriptionPage() {
     return { ok: true };
   };
 
-  /** Quota global : inscriptions déjà validées + nouveaux choix en cours. */
-  const MAX_BRACKETS = 2;
-  const totalPicked = alreadyRegistered.size + selected.size;
-  const quotaReached = totalPicked >= MAX_BRACKETS;
+  /**
+   * Quota FFTT : 2 tableaux **par journée**, et non 2 au total. Un joueur peut
+   * donc disputer 2 tableaux le samedi et 2 autres le dimanche.
+   *
+   * On compte, pour chaque journée, les inscriptions déjà validées plus les
+   * nouveaux choix en cours.
+   */
+  const pickedPerDay = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of brackets) {
+      if (!alreadyRegistered.has(b.id) && !selected.has(b.id)) continue;
+      const key = bracketDayKey(b.day);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [brackets, alreadyRegistered, selected]);
+
+  const pickedOnDayOf = (b: Bracket) => pickedPerDay.get(bracketDayKey(b.day)) ?? 0;
 
   const toggle = (id: string) => {
     if (alreadyRegistered.has(id)) return; // déjà inscrit : non modifiable ici
+    const target = brackets.find((b) => b.id === id);
+    if (!target) return;
     setSelected((prev) => {
       const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else if (alreadyRegistered.size + n.size < MAX_BRACKETS) n.add(id);
+      if (n.has(id)) {
+        n.delete(id);
+        return n;
+      }
+      // Recompté depuis `prev` : le mémo peut être en retard d'un rendu.
+      const key = bracketDayKey(target.day);
+      const onThatDay = brackets.filter(
+        (b) => bracketDayKey(b.day) === key && (alreadyRegistered.has(b.id) || n.has(b.id)),
+      ).length;
+      if (onThatDay >= MAX_BRACKETS_PER_DAY) return prev;
+      n.add(id);
       return n;
     });
   };
@@ -206,8 +232,8 @@ export default function InscriptionPage() {
         </p>
       )}
       <p className="text-foreground-muted mb-4 text-sm">
-        Sélectionne jusqu'à {MAX_BRACKETS} tableaux par jour (règle FFTT). Seuls les tableaux
-        compatibles avec ton classement sont sélectionnables.
+        Sélectionne jusqu'à {MAX_BRACKETS_PER_DAY} tableaux <strong>par journée</strong> (règle
+        FFTT). Seuls les tableaux compatibles avec ton classement sont sélectionnables.
       </p>
 
       {alreadyRegistered.size > 0 && (
@@ -235,9 +261,11 @@ export default function InscriptionPage() {
           const isRegistered = alreadyRegistered.has(b.id);
           const eligibility = isEligible(b);
           const isSelected = selected.has(b.id);
-          // Quota atteint : on grise les tableaux restants, sans masquer
-          // ceux que le joueur vient de cocher (il doit pouvoir se raviser).
-          const blockedByQuota = !isRegistered && !isSelected && quotaReached;
+          // Quota atteint pour la journée du tableau : on grise les tableaux
+          // restants de cette journée, sans masquer ceux que le joueur vient
+          // de cocher (il doit pouvoir se raviser).
+          const blockedByQuota =
+            !isRegistered && !isSelected && pickedOnDayOf(b) >= MAX_BRACKETS_PER_DAY;
           const disabled = isRegistered || !eligibility.ok || blockedByQuota;
           const inscrits = b._count?.registrations ?? 0;
           const taux = b.maxPlayers > 0 ? Math.round((inscrits / b.maxPlayers) * 100) : 0;
@@ -276,7 +304,8 @@ export default function InscriptionPage() {
                 <p className="text-xs text-danger mt-2">⚠ {eligibility.reason}</p>
               ) : blockedByQuota ? (
                 <p className="text-xs text-foreground-subtle mt-2">
-                  Quota de {MAX_BRACKETS} tableaux atteint
+                  Quota de {MAX_BRACKETS_PER_DAY} tableaux atteint
+                  {b.day ? ` pour ${b.day}` : ' pour cette journée'}
                 </p>
               ) : null}
             </button>
