@@ -44,6 +44,28 @@ test.describe('Auth — admin', () => {
     await expect(page.getByTestId('login-error')).toBeVisible();
   });
 
+  test('la session survit à la navigation et le bouton devient « Se déconnecter »', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    await page.getByTestId('mode-admin').click();
+    await page.getByTestId('identifier').fill(ADMIN_USERNAME);
+    await page.getByTestId('password').fill(ADMIN_PASSWORD);
+    await page.getByTestId('submit').click();
+    await page.waitForURL((url) => !url.pathname.startsWith('/login'));
+
+    // La session doit rester active quelle que soit la navigation :
+    // seul un clic sur « Se déconnecter » doit y mettre fin.
+    for (const path of ['/', '/live', '/progression', '/buvette', '/']) {
+      await page.goto(path);
+      await expect(page.getByTestId('logout-button')).toBeVisible();
+      await expect(page.getByTestId('login-link')).toHaveCount(0);
+    }
+
+    await page.getByTestId('logout-button').click();
+    await expect(page.getByTestId('login-link')).toBeVisible();
+  });
+
   test('logout supprime les cookies', async ({ page, context }) => {
     // Login d'abord
     await page.goto('/login');

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { LogoutButton } from '@/components/LogoutButton';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Accueil' },
@@ -12,7 +13,18 @@ const NAV_ITEMS = [
   { href: '/reglement', label: 'Règlement' },
 ];
 
-export function PublicNav() {
+interface Props {
+  /**
+   * Utilisateur courant, résolu côté serveur par le layout.
+   *
+   * Passé en prop plutôt que récupéré en `fetch` côté client : le bouton
+   * afficherait sinon « Se connecter » pendant un instant à chaque chargement,
+   * y compris pour un utilisateur connecté.
+   */
+  user?: { username?: string | null; role: string } | null;
+}
+
+export function PublicNav({ user = null }: Props) {
   const pathname = usePathname();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -70,13 +82,21 @@ export function PublicNav() {
               {item.label}
             </Link>
           ))}
-          <Link
-            href="/login"
-            className="ml-4 btn-primary text-sm"
-            data-testid="login-link"
-          >
-            Se connecter
-          </Link>
+          {user ? (
+            <LogoutButton
+              label="Se déconnecter"
+              redirectTo="/"
+              className="ml-4 btn-secondary text-sm border-danger text-danger hover:bg-danger-soft disabled:opacity-50"
+            />
+          ) : (
+            <Link
+              href="/login"
+              className="ml-4 btn-primary text-sm"
+              data-testid="login-link"
+            >
+              Se connecter
+            </Link>
+          )}
         </nav>
 
         {/* Mobile burger button (< md) */}
@@ -120,13 +140,28 @@ export function PublicNav() {
                 {item.label}
               </Link>
             ))}
-            <Link
-              href="/login"
-              className="btn-primary text-sm mt-3 mb-2 text-center"
-              onClick={() => setMenuOpen(false)}
-            >
-              Se connecter
-            </Link>
+            {user ? (
+              <div className="mt-3 mb-2">
+                {user.username && (
+                  <p className="text-xs text-foreground-muted px-2 pb-2">
+                    Connecté en tant que <span className="font-medium">{user.username}</span>
+                  </p>
+                )}
+                <LogoutButton
+                  label="Se déconnecter"
+                  redirectTo="/"
+                  className="btn-secondary text-sm w-full border-danger text-danger hover:bg-danger-soft disabled:opacity-50"
+                />
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className="btn-primary text-sm mt-3 mb-2 text-center"
+                onClick={() => setMenuOpen(false)}
+              >
+                Se connecter
+              </Link>
+            )}
           </nav>
         </div>
       )}
