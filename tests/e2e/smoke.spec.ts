@@ -17,9 +17,11 @@ test.describe('Pages publiques', () => {
     await expect(page.getByTestId('live-status')).toBeVisible();
   });
 
-  test('Live TV est accessible', async ({ page }) => {
-    await page.goto('/live/tv');
-    await expect(page.getByTestId('live-tv')).toBeVisible();
+  test("Mode TV n'est pas accessible sans être admin", async ({ page }) => {
+    // Le mode TV se lance uniquement depuis /admin/parametres :
+    // un visiteur non authentifié est renvoyé vers la page de connexion.
+    await page.goto('/tv');
+    await expect(page).toHaveURL(/\/login/);
   });
 
   test('Progression liste les tableaux', async ({ page }) => {

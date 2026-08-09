@@ -20,7 +20,7 @@ export default async function AdminTableauxPage({ searchParams }: Props) {
           select: { matches: true, registrations: { where: { isActive: true } } },
         },
       },
-      orderBy: [{ tournament: { startDate: 'desc' } }, { startTime: 'asc' }],
+      orderBy: [{ tournament: { startDate: 'desc' } }, { name: 'asc' }],
     }),
     prisma.tournament.findMany({
       where: { isActive: true },

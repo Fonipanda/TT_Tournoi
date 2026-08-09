@@ -6,6 +6,7 @@ import { toast } from '@/components/ui/toast';
 import { apiJson, ApiError } from '@/lib/api-client';
 import { QrGenerator } from '@/components/admin/QrGenerator';
 import { MaintenanceToggle } from '@/components/admin/MaintenanceToggle';
+import { TvModeCard } from '@/components/admin/TvModeCard';
 
 const MAX_LOGO_SIZE = 500 * 1024; // 500 Ko
 
@@ -459,50 +460,11 @@ export default function AdminParametresPage() {
 
         {/* ─── Colonne droite ─── */}
         <div className="space-y-6">
-          <TvIntervalSlider />
+          <TvModeCard />
           <QrGenerator initialLogoUrl={logoUrl} />
           <MaintenanceToggle />
         </div>
       </div>
-    </div>
-  );
-}
-
-function TvIntervalSlider() {
-  const SETTINGS_KEY = 'tt_tv_interval_ms';
-  const [value, setValue] = useState(5000);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(SETTINGS_KEY);
-    if (saved) setValue(parseInt(saved, 10) || 5000);
-  }, []);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = Number(e.target.value);
-    setValue(v);
-    localStorage.setItem(SETTINGS_KEY, String(v));
-  };
-
-  return (
-    <div className="card rounded-2xl">
-      <h2 className="font-heading text-xl uppercase tracking-wide mb-3">Mode TV</h2>
-      <p className="text-sm text-foreground-muted mb-4">
-        Temps d'affichage de chaque salle en mode TV (alternance automatique).
-      </p>
-      <div className="flex items-center gap-4">
-        <span className="text-sm text-foreground-muted w-12">3s</span>
-        <input
-          type="range"
-          min={3000}
-          max={30000}
-          step={1000}
-          value={value}
-          onChange={handleChange}
-          className="flex-1 accent-primary"
-        />
-        <span className="text-sm text-foreground-muted w-12">30s</span>
-      </div>
-      <p className="text-center text-sm font-medium mt-2">{value / 1000}s</p>
     </div>
   );
 }

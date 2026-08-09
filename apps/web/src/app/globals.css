@@ -78,3 +78,29 @@
 .animate-spin-slow {
   animation: spin-slow 20s linear infinite;
 }
+
+/* Toasts : entrée glissée, sortie en fondu.
+   La durée de sortie doit rester alignée sur TOAST_FADE_MS
+   dans src/components/ui/toast.tsx. */
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateY(-0.5rem); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-leave {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-0.25rem) scale(0.98); }
+}
+.toast-enter {
+  animation: toast-enter 180ms ease-out both;
+}
+.toast-leave {
+  animation: toast-leave 300ms ease-in both;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter,
+  .toast-leave {
+    animation-duration: 1ms;
+  }
+}

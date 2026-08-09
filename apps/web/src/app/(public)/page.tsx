@@ -12,7 +12,7 @@ async function getActiveTournament() {
     include: {
       brackets: {
         where: { isActive: true },
-        orderBy: { startTime: 'asc' },
+        orderBy: { name: 'asc' },
         include: {
           // Les inscriptions annulées par l'admin sont désactivées, pas
           // effacées : sans ce filtre le compteur resterait figé au maximum

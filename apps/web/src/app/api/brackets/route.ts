@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
   const where = tournamentId ? { tournamentId } : {};
   const brackets = await prisma.bracket.findMany({
     where,
-    orderBy: [{ startTime: 'asc' }, { name: 'asc' }],
+    // Les tableaux sont systématiquement listés par ordre alphabétique.
+    orderBy: { name: 'asc' },
     // Les inscriptions supprimées par l'admin sont désactivées (isActive=false)
     // et non effacées : sans ce filtre le compteur ne redescendrait jamais, et
     // un tableau resterait affiché « complet » après libération des places.

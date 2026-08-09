@@ -42,7 +42,7 @@ Cette version fusionne les deux dépôts historiques (`TT_Tournoi` Django + `TT_
 #### Live & WebSocket
 - Événements diffusés : `match_created`, `match_started`, `match_completed`, `match_score_updated`, `match_blocked`, `match_unblocked`, `table_updated`, `tables_repositioned`, `pools_generated`, `elimination_generated`
 - **Hook React `useLiveWebSocket`** avec back-off exponentiel 1s→15s
-- **Mode TV** plein écran sur `/live/tv` (scoreboard XL `clamp(96px, 14vw, 192px)`, auto-rotation 30s)
+- **Mode TV** plein écran sur `/tv` — réservé à l'admin, lancé depuis `/admin/parametres` ; rend les salles de `/admin/salles` avec l'aspect de l'éditeur visuel, rotation automatique réglable (3 s → 30 s)
 - **Fallback polling REST** sur `/api/live/tables` et `/api/live/matches` pour clients sans WS
 
 #### PWA Juge-Arbitre
@@ -55,7 +55,6 @@ Cette version fusionne les deux dépôts historiques (`TT_Tournoi` Django + `TT_
 #### Pages publiques
 - Accueil (bento-grid responsive avec hero + compteurs + programme)
 - Live (RoomCanvas tables avec codage couleur libre/occupée)
-- Live TV (scoreboard plein écran lisible à 5m, fond slate-900)
 - Progression (liste brackets + détail poules + arbre élimination)
 - Buvette (sections + items)
 - Règlement (page MDX statique conforme FFTT)

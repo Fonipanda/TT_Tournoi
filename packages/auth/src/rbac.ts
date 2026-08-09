@@ -63,7 +63,6 @@ export const ROUTE_POLICIES: Record<string, readonly Role[]> = {
   // Routes publiques
   '/': ['visitor', 'player', 'juge_arbitre', 'admin'],
   '/live': ['visitor', 'player', 'juge_arbitre', 'admin'],
-  '/live/tv': ['visitor', 'player', 'juge_arbitre', 'admin'],
   '/progression': ['visitor', 'player', 'juge_arbitre', 'admin'],
   '/buvette': ['visitor', 'player', 'juge_arbitre', 'admin'],
   '/reglement': ['visitor', 'player', 'juge_arbitre', 'admin'],
@@ -76,6 +75,9 @@ export const ROUTE_POLICIES: Record<string, readonly Role[]> = {
   // Staff
   '/admin': ['admin'],
   '/juge-arbitre': ['juge_arbitre'],
+
+  // Mode TV : écran de hall, lancé uniquement depuis /admin/parametres.
+  '/tv': ['admin'],
 };
 
 /**

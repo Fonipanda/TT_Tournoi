@@ -162,7 +162,7 @@ Voir [SMS-OVH-A-FAIRE.md](SMS-OVH-A-FAIRE.md) pour les actions manuelles OVH/Coo
 
 - Implementation des articles **FFTT I.301 a I.305** (ordre des parties en poule, classement, departage).
 - WebSocket diffuse les evenements `match_started`, `match_completed`, `table_updated`, `tables_repositioned`, `elimination_generated`.
-- Mode TV plein ecran sur `/live/tv` (scoreboard XL, lisible a 5m).
+- Mode TV plein ecran sur `/tv` (reserve a l'admin, lance depuis `/admin/parametres`) : affiche les salles editees dans `/admin/salles` avec le rendu de l'editeur visuel, en rotation automatique.
 - PWA hors-ligne pour juges-arbitres (saisie de scores + sync au retour reseau).
 
 ## Licence

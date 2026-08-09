@@ -13,7 +13,7 @@ export default async function AdminDashboardPage() {
           _count: { select: { registrations: { where: { isActive: true } } } },
           tournament: { select: { name: true } },
         },
-        orderBy: { startTime: 'asc' },
+        orderBy: { name: 'asc' },
       }),
       prisma.player.count({ where: { isActive: true } }),
       prisma.match.count({ where: { status: 'in_progress' } }),

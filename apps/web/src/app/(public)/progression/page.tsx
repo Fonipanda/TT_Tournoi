@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export default async function ProgressionPage() {
   const brackets = await prisma.bracket.findMany({
     where: { isActive: true, tournament: { isActive: true } },
-    orderBy: [{ tournament: { startDate: 'desc' } }, { startTime: 'asc' }],
+    orderBy: [{ tournament: { startDate: 'desc' } }, { name: 'asc' }],
     include: {
       tournament: { select: { id: true, name: true } },
       _count: { select: { matches: true } },

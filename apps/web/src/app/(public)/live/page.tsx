@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { LiveStatusBadge } from '@/components/LiveStatusBadge';
 import { RoomCanvas, type RoomCanvasRoom, type RoomCanvasTable } from '@/components/RoomCanvas';
 import type { LiveEvent } from '@tt/types';
@@ -118,9 +117,6 @@ export default function LivePage() {
         <h1 className="font-heading text-3xl uppercase tracking-wide">Live</h1>
         <div className="flex items-center gap-4">
           <LiveStatusBadge onEvent={onLive} />
-          <Link href="/live/tv" className="btn-secondary text-sm" data-testid="live-tv-link">
-            Mode TV
-          </Link>
         </div>
       </div>
 

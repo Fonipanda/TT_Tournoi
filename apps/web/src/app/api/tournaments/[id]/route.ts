@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const t = await prisma.tournament.findUnique({
     where: { id },
-    include: { brackets: true, rooms: true },
+    include: { brackets: { orderBy: { name: 'asc' } }, rooms: { orderBy: { name: 'asc' } } },
   });
   if (!t) return NextResponse.json({ error: 'Introuvable' }, { status: 404 });
   return NextResponse.json(t);
