@@ -25,13 +25,14 @@ import {
   VERIFICATION_TOKEN_TTL_HOURS,
 } from '@/lib/auth/email-verification';
 import { sendEmailVerificationEmail } from '@/lib/mailer';
+import { optionalPhoneField } from '@/lib/validation/phone';
 
 const Schema = z.object({
   firstName: z.string().min(1).max(50),
   lastName: z.string().min(1).max(50),
   email: z.string().email('Adresse email invalide').max(254),
   password: z.string().min(1, 'Mot de passe requis').max(128),
-  phone: z.string().min(8).max(20).optional().or(z.literal('')),
+  phone: optionalPhoneField,
   licenseNumber: z
     .string()
     .regex(/^\d{6,10}$/)

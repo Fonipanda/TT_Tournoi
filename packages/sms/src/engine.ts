@@ -1,39 +1,17 @@
 /**
  * Engine SMS — orchestration envoi unitaire + bulk.
  *
- * Ce module utilise l'adaptateur ACTIF (DB) et logge chaque tentative dans
- * `SmsLog`. L'envoi en masse est délégué à BullMQ (cf. queue.ts).
+ * L'adaptateur utilisé est résolu par `resolveActiveAdapter()` (base de
+ * données prioritaire, variables d'environnement en amorçage) et chaque
+ * tentative est journalisée dans `SmsLog`. L'envoi en masse est délégué à
+ * BullMQ (cf. queue.ts).
  */
 
-import { prisma, type Player, type SmsAdapterConfig, type SmsLog } from '@tt/db';
+import { prisma, type Player, type SmsLog } from '@tt/db';
 import type { BulkRecipient, BulkSendResult, SmsAdapter, SmsSendResult } from '@tt/types';
-import { getAdapter } from './registry';
+import { resolveActiveAdapter } from './config';
+import { normalizePhone } from './phone';
 import { smsQueue } from './queue';
-
-let cachedActiveConfig: SmsAdapterConfig | null = null;
-let cachedActiveAt = 0;
-const ACTIVE_CACHE_TTL_MS = 30_000;
-
-/**
- * Retourne la config de l'adaptateur SMS actif (avec cache mémoire 30s).
- * Renvoie null si aucun n'est actif.
- */
-export async function getActiveAdapterConfig(): Promise<SmsAdapterConfig | null> {
-  const now = Date.now();
-  if (cachedActiveConfig && now - cachedActiveAt < ACTIVE_CACHE_TTL_MS) {
-    return cachedActiveConfig;
-  }
-  cachedActiveConfig = await prisma.smsAdapterConfig.findFirst({
-    where: { isActive: true },
-  });
-  cachedActiveAt = now;
-  return cachedActiveConfig;
-}
-
-export function invalidateAdapterCache(): void {
-  cachedActiveConfig = null;
-  cachedActiveAt = 0;
-}
 
 export interface SendSmsOptions {
   player?: Pick<Player, 'id' | 'firstName' | 'lastName' | 'phone'> | null;
@@ -51,36 +29,47 @@ export async function sendSmsSync(
   message: string,
   options: SendSmsOptions = {},
 ): Promise<SmsLog> {
-  const config = await getActiveAdapterConfig();
+  const recipientName = options.player
+    ? `${options.player.lastName} ${options.player.firstName}`
+    : '';
 
-  if (!config) {
-    return prisma.smsLog.create({
+  const fail = (adapterName: string, errorMessage: string, phone: string) =>
+    prisma.smsLog.create({
       data: {
         playerId: options.player?.id,
-        recipientPhone: to,
-        recipientName: options.player ? `${options.player.lastName} ${options.player.firstName}` : '',
+        recipientPhone: phone,
+        recipientName,
         message,
         sender: options.sender ?? '',
-        adapterName: 'none',
+        adapterName,
         status: 'failed',
-        errorMessage: 'Aucun adaptateur SMS actif',
+        errorMessage,
         kind: options.kind ?? 'manual',
         trigger: options.trigger ?? '',
       },
     });
+
+  const resolved = await resolveActiveAdapter();
+  if (!resolved) {
+    return fail('none', 'Aucun adaptateur SMS actif', to);
   }
 
-  const adapter = getAdapter(config.adapterType, config.config as Record<string, unknown>);
-  const effectiveSender = options.sender || config.defaultSender || '';
+  // Garde-fou : l'API OVH n'accepte que le format international.
+  const phone = normalizePhone(to);
+  if (!phone.ok) {
+    return fail(resolved.adapterName, `Numéro non normalisable : ${phone.reason}`, to);
+  }
+
+  const effectiveSender = options.sender || resolved.defaultSender || '';
 
   const log = await prisma.smsLog.create({
     data: {
       playerId: options.player?.id,
-      recipientPhone: to,
-      recipientName: options.player ? `${options.player.lastName} ${options.player.firstName}` : '',
+      recipientPhone: phone.e164,
+      recipientName,
       message,
       sender: effectiveSender,
-      adapterName: config.name,
+      adapterName: resolved.adapterName,
       status: 'pending',
       kind: options.kind ?? 'manual',
       trigger: options.trigger ?? '',
@@ -89,7 +78,7 @@ export async function sendSmsSync(
 
   let result: SmsSendResult;
   try {
-    result = await adapter.send(to, message, effectiveSender);
+    result = await resolved.adapter.send(phone.e164, message, effectiveSender);
   } catch (e) {
     result = { success: false, error: e instanceof Error ? e.message : String(e) };
   }

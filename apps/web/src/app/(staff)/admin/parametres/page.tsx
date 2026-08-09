@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from '@/components/ui/toast';
 import { apiJson, ApiError } from '@/lib/api-client';
 import { QrGenerator } from '@/components/admin/QrGenerator';
+import { MaintenanceToggle } from '@/components/admin/MaintenanceToggle';
 
 const MAX_LOGO_SIZE = 500 * 1024; // 500 Ko
 
@@ -460,6 +461,7 @@ export default function AdminParametresPage() {
         <div className="space-y-6">
           <TvIntervalSlider />
           <QrGenerator initialLogoUrl={logoUrl} />
+          <MaintenanceToggle />
         </div>
       </div>
     </div>

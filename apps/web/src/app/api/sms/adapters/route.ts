@@ -7,7 +7,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma, Prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
-import { invalidateAdapterCache } from '@tt/sms/engine';
+import { invalidateAdapterCache } from '@tt/sms/config';
+import { maskAdapterConfig } from '@tt/sms/secrets';
 import { listAdapterTypes } from '@tt/sms/registry';
 
 export async function GET() {
@@ -16,7 +17,11 @@ export async function GET() {
     orderBy: { createdAt: 'desc' },
   });
   return NextResponse.json({
-    data: adapters,
+    // Les identifiants sensibles ne sortent jamais du serveur.
+    data: adapters.map((a) => ({
+      ...a,
+      config: maskAdapterConfig(a.adapterType, a.config as Record<string, unknown>),
+    })),
     types: listAdapterTypes(),
   });
 }
@@ -40,7 +45,10 @@ export async function POST(req: NextRequest) {
       },
     });
     invalidateAdapterCache();
-    return NextResponse.json(created, { status: 201 });
+    return NextResponse.json(
+      { ...created, config: maskAdapterConfig(created.adapterType, created.config as Record<string, unknown>) },
+      { status: 201 },
+    );
   } catch (e) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: 'Validation', details: e.errors }, { status: 400 });

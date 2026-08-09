@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { errorResponse, getCurrentUser, HttpError, requireRole } from '@/lib/auth/server';
+import { optionalPhoneField } from '@/lib/validation/phone';
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -31,7 +32,7 @@ const UpdateSchema = z.object({
   points: z.number().optional(),
   club: z.string().optional(),
   email: z.string().email().or(z.literal('')).optional(),
-  phone: z.string().optional(),
+  phone: optionalPhoneField,
   isActive: z.boolean().optional(),
   bracketIds: z.array(z.string()).optional(),
 });

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
 import { publishLiveEvent } from '@/lib/live/publisher';
+import { notifySms } from '@/lib/sms/notify';
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -49,6 +50,34 @@ export async function POST(req: NextRequest, { params }: Params) {
         currentMatchId: result.table.currentMatchId,
       },
     });
+
+    // Appel à la table : SMS aux deux joueurs. Hors transaction et non bloquant.
+    const detail = await prisma.match.findUnique({
+      where: { id },
+      include: {
+        bracket: true,
+        player1: true,
+        player2: true,
+        table: { include: { room: true } },
+      },
+    });
+
+    if (detail) {
+      const label = (p: { lastName: string; firstName: string } | null) =>
+        p ? `${p.lastName} ${p.firstName}` : '';
+      await notifySms(
+        'table_assigned',
+        [detail.player1Id, detail.player2Id],
+        (playerId) => ({
+          joueur: label(playerId === detail.player1Id ? detail.player1 : detail.player2),
+          adversaire: label(playerId === detail.player1Id ? detail.player2 : detail.player1),
+          table: detail.table?.number ?? '',
+          salle: detail.table?.room?.name ?? '',
+          tableau: detail.bracket?.name ?? '',
+        }),
+      );
+    }
+
     return NextResponse.json(result.match);
   } catch (e) {
     if (e instanceof z.ZodError) {

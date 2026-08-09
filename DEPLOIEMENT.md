@@ -696,17 +696,25 @@ Tu dois voir `✅ WS connecté` puis `📨 {"type":"hello","role":"visitor",...}
 
 ### 🌐 [OVH WEB] 8.2. Générer un token API OVH
 
-1. Ouvrir https://api.ovh.com/createToken
+> 📌 **Statut : en attente.** Cette étape et les deux suivantes sont des actions manuelles
+> côté OVH / Coolify. Elles sont regroupées et suivies dans **[`SMS-OVH-A-FAIRE.md`](./SMS-OVH-A-FAIRE.md)**.
+
+L'application n'appelle qu'**un seul endpoint** OVH : `POST /sms/{serviceName}/jobs`.
+Le token n'a donc besoin que de droits minimaux — inutile d'accorder `PUT`/`DELETE`.
+
+1. Ouvrir le lien pré-rempli (droits déjà positionnés) :
+   ```
+   https://auth.eu.ovhcloud.com/api/createToken?GET=/sms/&GET=/sms/*/jobs&POST=/sms/*/jobs
+   ```
 2. Renseigner :
    - **Account ID** : ton identifiant OVH
    - **Password** : ton mot de passe OVH
    - **Validity** : `Unlimited` (ou 1 an si tu préfères)
-   - **Rights** :
+   - **Rights** (déjà pré-remplis par le lien) :
      ```
-     GET    /sms/*
-     POST   /sms/*
-     PUT    /sms/*
-     DELETE /sms/*
+     GET   /sms/            → lister les services SMS du compte
+     GET   /sms/*/jobs      → relire l'état des envois
+     POST  /sms/*/jobs      → envoyer un SMS (seul droit indispensable)
      ```
    - **Application name** : `TT-Tournoi`
    - **Application description** : `App TT Tournoi v2`
@@ -715,9 +723,11 @@ Tu dois voir `✅ WS connecté` puis `📨 {"type":"hello","role":"visitor",...}
    - `Application Secret`
    - `Consumer Key`
 
+> ⚠️ Les 3 clés ne sont affichées **qu'une seule fois**. Si elles sont perdues, il faut regénérer un token.
+
 ### 🎛️ [COOLIFY] 8.3. Mettre à jour les variables d'env de `tt-web`
 
-Retourner sur `tt-web` → **Environment Variables** → modifier :
+Retourner sur `tt-web` → **Environment Variables** → ajouter (toutes en **Runtime only**, les 3 clés cochées **Secret**) :
 ```
 OVH_SMS_APP_KEY = <Application Key>           🔒
 OVH_SMS_APP_SECRET = <Application Secret>     🔒
@@ -726,9 +736,29 @@ OVH_SMS_SERVICE_NAME = sms-ab12345-1
 OVH_SMS_DEFAULT_SENDER = ChellesTT
 ```
 
-> ⚠️ **`OVH_SMS_DEFAULT_SENDER`** : 11 caractères max, alphanumériques uniquement. Doit être préalablement validé chez OVH (manager → SMS → onglet **Expéditeurs**).
+> ⚠️ **`OVH_SMS_DEFAULT_SENDER`** : 11 caractères max, alphanumériques uniquement. Doit être préalablement validé chez OVH (manager → SMS → onglet **Expéditeurs**). Sans expéditeur validé, l'API refuse l'envoi.
 
-→ Cliquer **Save** → **Restart** (en haut à droite) pour appliquer.
+→ Cliquer **Save** → **Redeploy** pour appliquer.
+
+#### Les deux sources de configuration
+
+La configuration SMS peut venir de deux endroits, et l'application les combine :
+
+| Source | Rôle | Priorité |
+|---|---|---|
+| **Base de données** (`SmsAdapterConfig`, saisie dans `/admin/sms`) | Source de référence en exploitation | **Prioritaire** |
+| **Variables `OVH_SMS_*`** (Coolify) | Amorçage : complètent **champ par champ** les valeurs laissées vides en base | Repli |
+
+Concrètement :
+
+- si les 5 variables sont renseignées et qu'aucun adaptateur n'est actif en base, l'envoi fonctionne quand même — l'application construit un adaptateur `OVH SMS Pro (env)` ;
+- si un adaptateur OVH est actif en base avec des clés vides (cas du seed), les variables comblent les trous ;
+- dès qu'une clé est saisie dans l'UI admin, c'est elle qui l'emporte sur la variable d'environnement.
+
+Au démarrage, le container journalise la source réellement utilisée :
+```
+[sms] Adaptateur actif « OVH SMS Pro (env) » (ovh) — configuration issue de : variables d'environnement.
+```
 
 ---
 
@@ -789,19 +819,47 @@ Faire la même chose pour le compte `ja` (juge-arbitre).
 1. Sur `https://tournoi-chellestt.fr` → login admin
 2. Menu gauche → **`SMS`**
 3. Onglet **`Adaptateurs`** : trouver **`OVH SMS Pro (Chelles TT)`** (créé par le seed)
-4. Cliquer **`Modifier`** → **`isActive`** : ✅ → **Save**
+4. Cliquer **`Activer`** dans la colonne *Statut*
 5. Le trigger SQL désactive automatiquement les autres adaptateurs
+
+> 💡 Si les 5 variables `OVH_SMS_*` sont renseignées dans Coolify, il n'y a **rien d'autre à saisir** : les clés vides de l'adaptateur seedé sont complétées automatiquement. Pour saisir les clés directement en base, utiliser **`Éditer`**.
+
+> 🔒 Les champs `Application Secret` et `Consumer Key` s'affichent masqués (`••••••••`) une fois enregistrés — c'est normal, la valeur réelle ne quitte jamais le serveur. Laisser le champ tel quel conserve la valeur ; le remplacer écrit la nouvelle.
 
 ### 🖥️ [LOCAL] 9.4. Tester l'envoi SMS
 
-Toujours dans `/admin/sms` → onglet **`Test`** :
-- **To** : `+336XXXXXXXX` (ton numéro)
+Toujours dans `/admin/sms` → bouton **`Envoyer un SMS test`** :
+- **To** : `06XXXXXXXX` ou `+336XXXXXXXX` (les deux formats sont acceptés, la conversion est automatique)
 - **Message** : `Test TT Tournoi`
 - **Submit**
 
 ✅ Tu reçois le SMS dans les ~30 secondes.
 
-❌ Si erreur "OVH non configuré" → vérifier les 4 variables `OVH_SMS_*` dans Coolify et redémarrer `tt-web`.
+#### Diagnostic
+
+L'onglet **`Historique`** liste les 50 derniers envois avec leur statut et le message d'erreur. Correspondance des messages :
+
+| Message | Cause | Correction |
+|---|---|---|
+| `Aucun adaptateur SMS actif` | Ni adaptateur actif en base, ni les 4 clés `OVH_SMS_*` complètes | Activer l'adaptateur (§9.3) ou compléter les variables Coolify puis redéployer |
+| `Numéro non normalisable : …` | Le numéro du destinataire n'est pas exploitable (trop court, texte libre…) | Corriger la fiche joueur ; les formats `06…`, `+33…` et `0033…` sont acceptés |
+| Erreur renvoyée par OVH | Expéditeur non validé, crédit épuisé, droits du token insuffisants | Manager OVH → SMS : vérifier l'expéditeur, le crédit et les droits `GET /sms/`, `GET /sms/*/jobs`, `POST /sms/*/jobs` |
+
+> ⚠️ Après tout ajout de variable dans Coolify, **redéployer** `tt-web` : les variables ne sont pas rechargées à chaud.
+
+### 🎛️ 9.5. Activer les SMS automatiques
+
+`/admin/sms` → onglet **`Automatisations`**. Trois déclencheurs, chacun lié au template SMS du même nom :
+
+| Déclencheur | Événement | Par défaut |
+|---|---|---|
+| `table_assigned` | Une table est affectée à un match (appel à la table) | **Activé** |
+| `match_created` | Création d'un match à l'unité (convocation) | Désactivé |
+| `result` | Un score est enregistré | Désactivé |
+
+> 💡 La **génération d'un tableau complet** (poules ou élimination) n'envoie volontairement aucun SMS : elle créerait des centaines d'envois d'un coup. Seule la création unitaire d'un match déclenche `match_created`.
+
+> ✅ Un échec d'envoi SMS n'interrompt jamais l'opération en cours : un score reste enregistré même si le SMS ne part pas.
 
 ---
 

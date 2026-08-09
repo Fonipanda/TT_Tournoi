@@ -7,6 +7,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
+import { optionalPhoneField } from '@/lib/validation/phone';
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams.get('search')?.trim();
@@ -38,7 +39,7 @@ const CreateSchema = z.object({
   points: z.number().nonnegative().default(500),
   club: z.string().optional(),
   email: z.string().email().or(z.literal('')).default(''),
-  phone: z.string().optional(),
+  phone: optionalPhoneField,
 });
 
 export async function POST(req: NextRequest) {

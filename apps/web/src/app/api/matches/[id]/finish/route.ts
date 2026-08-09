@@ -11,6 +11,7 @@ import { prisma, Prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
 import { publishLiveEvent } from '@/lib/live/publisher';
 import { fftPointsSwap } from '@/lib/fftt/engine';
+import { notifySms } from '@/lib/sms/notify';
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -177,6 +178,21 @@ export async function POST(req: NextRequest, { params }: Params) {
         ? { id: result.winner.id, firstName: result.winner.firstName, lastName: result.winner.lastName }
         : null,
     });
+
+    // Résultat enregistré : SMS aux deux joueurs (déclencheur désactivé par défaut).
+    const bracket = await prisma.bracket.findUnique({
+      where: { id: result.bracketId },
+      select: { name: true },
+    });
+    const label = (p: { lastName: string; firstName: string } | null) =>
+      p ? `${p.lastName} ${p.firstName}` : '';
+    await notifySms('result', [result.player1Id, result.player2Id], (playerId) => ({
+      joueur: label(playerId === result.player1Id ? result.player1 : result.player2),
+      adversaire: label(playerId === result.player1Id ? result.player2 : result.player1),
+      tableau: bracket?.name ?? '',
+      table: result.table?.number ?? '',
+    }));
+
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof VersionConflictError) {

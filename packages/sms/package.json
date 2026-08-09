@@ -10,7 +10,10 @@
     "./engine": "./src/engine.ts",
     "./queue": "./src/queue.ts",
     "./templates": "./src/templates.ts",
-    "./registry": "./src/registry.ts"
+    "./registry": "./src/registry.ts",
+    "./config": "./src/config.ts",
+    "./phone": "./src/phone.ts",
+    "./secrets": "./src/secrets.ts"
   },
   "scripts": {
     "build": "echo 'no build (consumed via TypeScript path)'",

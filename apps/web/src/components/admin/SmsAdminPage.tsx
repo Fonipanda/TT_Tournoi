@@ -11,7 +11,7 @@ import {
 } from './SmsForms';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
-import { apiDelete, apiPatch, ApiError } from '@/lib/api-client';
+import { apiDelete, apiPatch, apiPut, ApiError } from '@/lib/api-client';
 
 interface Adapter {
   id: string;
@@ -20,6 +20,14 @@ interface Adapter {
   config: Record<string, unknown>;
   defaultSender: string;
   isActive: boolean;
+}
+
+interface TriggerState {
+  key: string;
+  settingKey: string;
+  label: string;
+  description: string;
+  enabled: boolean;
 }
 
 interface Template {
@@ -45,11 +53,13 @@ interface Props {
   adapters: Adapter[];
   templates: Template[];
   recentLogs: Log[];
+  triggers: TriggerState[];
 }
 
-export function SmsAdminPage({ adapters, templates, recentLogs }: Props) {
+export function SmsAdminPage({ adapters, templates, recentLogs, triggers }: Props) {
   const router = useRouter();
-  const [tab, setTab] = useState<'adapters' | 'templates' | 'logs'>('adapters');
+  const [tab, setTab] = useState<'adapters' | 'templates' | 'automations' | 'logs'>('adapters');
+  const [savingTrigger, setSavingTrigger] = useState<string | null>(null);
   const [createAdapterOpen, setCreateAdapterOpen] = useState(false);
   const [editAdapter, setEditAdapter] = useState<SmsAdapterForm | null>(null);
   const [confirmDeleteAdapter, setConfirmDeleteAdapter] = useState<Adapter | null>(null);
@@ -78,6 +88,19 @@ export function SmsAdminPage({ adapters, templates, recentLogs }: Props) {
       router.refresh();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    }
+  };
+
+  const toggleTrigger = async (t: TriggerState, next: boolean) => {
+    setSavingTrigger(t.key);
+    try {
+      await apiPut(`/api/settings/${t.settingKey}`, { value: next ? 'true' : 'false' });
+      toast.success(`${t.label} ${next ? 'activé' : 'désactivé'}`);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erreur');
+    } finally {
+      setSavingTrigger(null);
     }
   };
 
@@ -113,6 +136,7 @@ export function SmsAdminPage({ adapters, templates, recentLogs }: Props) {
         {[
           { id: 'adapters' as const, label: `Adaptateurs (${adapters.length})` },
           { id: 'templates' as const, label: `Templates (${templates.length})` },
+          { id: 'automations' as const, label: 'Automatisations' },
           { id: 'logs' as const, label: `Historique (${recentLogs.length})` },
         ].map((t) => (
           <button
@@ -260,6 +284,45 @@ export function SmsAdminPage({ adapters, templates, recentLogs }: Props) {
                 Aucun template SMS.
               </p>
             )}
+          </div>
+        </section>
+      )}
+
+      {tab === 'automations' && (
+        <section data-testid="sms-automations">
+          <p className="text-sm text-foreground-muted mb-4 max-w-2xl">
+            Chaque interrupteur déclenche l&apos;envoi du template SMS portant le même nom.
+            Un envoi en échec n&apos;interrompt jamais l&apos;opération en cours (affectation
+            de table, saisie de score).
+          </p>
+          <div className="card divide-y divide-border">
+            {triggers.map((t) => (
+              <div
+                key={t.key}
+                className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
+                data-testid={`trigger-${t.key}`}
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-sm">{t.label}</p>
+                  <p className="text-xs text-foreground-muted mt-0.5">{t.description}</p>
+                  <p className="text-xs font-mono text-foreground-muted mt-1">
+                    template : {t.key}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={savingTrigger === t.key}
+                  onClick={() => toggleTrigger(t, !t.enabled)}
+                  className={`shrink-0 text-xs px-3 py-1.5 border ${
+                    t.enabled
+                      ? 'bg-success-soft text-success border-success'
+                      : 'text-foreground-muted border-border'
+                  } disabled:opacity-50`}
+                >
+                  {t.enabled ? '✓ Activé' : 'Désactivé'}
+                </button>
+              </div>
+            ))}
           </div>
         </section>
       )}

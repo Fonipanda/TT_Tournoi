@@ -1,148 +1,47 @@
 /**
- * Validation d'adresse email — trois niveaux de contrôle.
+ * Validation d'adresse email — orchestration complète (serveur uniquement).
  *
  *  1. Format      : expression régulière (structure RFC 5322 simplifiée).
  *  2. Jetable     : blocage des fournisseurs d'emails temporaires connus.
  *  3. Délivrabilité : résolution DNS des enregistrements MX du domaine.
+ *
+ * Les niveaux 1 et 2 vivent dans `email-validation.shared.ts` afin d'être
+ * rejouables côté client (retour immédiat dans le formulaire). Ce module y
+ * ajoute le niveau 3, qui exige le réseau, et réexporte l'ensemble pour que
+ * les appelants serveur n'aient qu'un seul import.
  *
  * La confirmation réelle de la boîte se fait par lien cliquable
  * (cf. `lib/auth/email-verification.ts`) — on n'utilise volontairement PAS la
  * commande SMTP VRFY, désactivée par la quasi-totalité des serveurs et
  * assimilée à du spam.
  *
- * Node.js only (dns/promises) — ne pas importer dans le middleware Edge.
+ * Node.js only (dns/promises) — ne pas importer dans le middleware Edge ni
+ * dans un composant client.
  */
 
 import { resolveMx, resolve4, resolve6 } from 'node:dns/promises';
 import { redis } from '@/lib/redis';
+import {
+  EMAIL_MAX_LENGTH,
+  EMAIL_OK,
+  emailDomain,
+  isDisposableEmail,
+  isValidEmailFormat,
+  type EmailValidationResult,
+} from './email-validation.shared';
 
-/**
- * Structure d'adresse. Volontairement stricte mais sans excès :
- * - partie locale : caractères autorisés usuels, pas de point en tête/fin,
- *   pas de double point ;
- * - domaine : labels alphanumériques séparés par des points, TLD de 2+ lettres.
- */
-export const EMAIL_REGEX =
-  /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-
-export const EMAIL_MAX_LENGTH = 254; // RFC 5321
-const LOCAL_PART_MAX_LENGTH = 64;
-
-/**
- * Fournisseurs d'adresses jetables / temporaires les plus répandus.
- * Liste volontairement courte et maintenable : elle couvre l'essentiel du
- * trafic d'inscription frauduleux sans dépendance externe.
- */
-export const DISPOSABLE_DOMAINS = new Set([
-  '0-mail.com',
-  '10minutemail.com',
-  '10minutemail.net',
-  '20minutemail.com',
-  '33mail.com',
-  'anonbox.net',
-  'armyspy.com',
-  'bloq.ro',
-  'burnermail.io',
-  'cuvox.de',
-  'dayrep.com',
-  'discard.email',
-  'discardmail.com',
-  'dispostable.com',
-  'dropmail.me',
-  'einrot.com',
-  'emailondeck.com',
-  'fakeinbox.com',
-  'fakemail.net',
-  'fleckens.hu',
-  'getairmail.com',
-  'getnada.com',
-  'grr.la',
-  'guerrillamail.biz',
-  'guerrillamail.com',
-  'guerrillamail.de',
-  'guerrillamail.info',
-  'guerrillamail.net',
-  'guerrillamail.org',
-  'guerrillamailblock.com',
-  'harakirimail.com',
-  'inboxbear.com',
-  'inboxkitten.com',
-  'jetable.org',
-  'mail-temporaire.fr',
-  'mail.tm',
-  'mail7.io',
-  'mailcatch.com',
-  'maildrop.cc',
-  'mailasq.com',
-  'mailinator.com',
-  'mailnesia.com',
-  'mailsac.com',
-  'mintemail.com',
-  'moakt.com',
-  'mohmal.com',
-  'mytemp.email',
-  'nowmymail.com',
-  'pokemail.net',
-  'rhyta.com',
-  'sharklasers.com',
-  'spam4.me',
-  'spamgourmet.com',
-  'superrito.com',
-  'temp-mail.io',
-  'temp-mail.org',
-  'tempail.com',
-  'tempinbox.com',
-  'tempmail.com',
-  'tempmail.net',
-  'tempmailo.com',
-  'tempr.email',
-  'throwawaymail.com',
-  'trashmail.com',
-  'trashmail.de',
-  'trbvm.com',
-  'wegwerfmail.de',
-  'yopmail.com',
-  'yopmail.fr',
-  'yopmail.net',
-]);
-
-export type EmailValidationCode =
-  | 'ok'
-  | 'invalid_format'
-  | 'too_long'
-  | 'disposable'
-  | 'no_mx';
-
-export interface EmailValidationResult {
-  ok: boolean;
-  code: EmailValidationCode;
-  /** Message affichable à l'utilisateur (vide si `ok`). */
-  message: string;
-}
-
-const OK: EmailValidationResult = { ok: true, code: 'ok', message: '' };
-
-/** Niveau 1 — structure seule, synchrone (réutilisable côté client). */
-export function isValidEmailFormat(email: string): boolean {
-  const value = (email ?? '').trim();
-  if (!value || value.length > EMAIL_MAX_LENGTH) return false;
-  const [local] = value.split('@');
-  if (!local || local.length > LOCAL_PART_MAX_LENGTH) return false;
-  return EMAIL_REGEX.test(value);
-}
-
-export function emailDomain(email: string): string {
-  return (email.split('@')[1] ?? '').toLowerCase();
-}
-
-/** Niveau 2 — fournisseur d'email temporaire. */
-export function isDisposableEmail(email: string): boolean {
-  const domain = emailDomain(email);
-  if (!domain) return false;
-  if (DISPOSABLE_DOMAINS.has(domain)) return true;
-  // Sous-domaines : mail.guerrillamail.com → guerrillamail.com
-  return [...DISPOSABLE_DOMAINS].some((d) => domain.endsWith(`.${d}`));
-}
+export {
+  DISPOSABLE_DOMAINS,
+  EMAIL_MAX_LENGTH,
+  EMAIL_REGEX,
+  emailDomain,
+  isDisposableEmail,
+  isValidEmailFormat,
+  suggestDomainFix,
+  validateEmailOffline,
+  type EmailValidationCode,
+  type EmailValidationResult,
+} from './email-validation.shared';
 
 // -----------------------------------------------------------------------------
 // Niveau 3 — enregistrements MX
@@ -269,5 +168,5 @@ export async function validateEmail(email: string): Promise<EmailValidationResul
     };
   }
 
-  return OK;
+  return EMAIL_OK;
 }

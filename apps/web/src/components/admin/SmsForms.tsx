@@ -9,6 +9,13 @@ import { apiPatch, apiPost, ApiError } from '@/lib/api-client';
 
 type AdapterType = 'test' | 'ovh' | 'twilio' | 'free_mobile' | 'smpp';
 
+/**
+ * Sentinelle affichée à la place d'un secret enregistré.
+ * Doit rester identique à `SECRET_PLACEHOLDER` de `@tt/sms/secrets` — elle est
+ * redéclarée ici pour ne pas embarquer le paquet serveur dans le bundle client.
+ */
+const SECRET_PLACEHOLDER = '••••••••';
+
 export interface SmsAdapterForm {
   id?: string;
   name: string;
@@ -134,23 +141,31 @@ export function SmsAdapterFormModal({ open, onClose, initial }: Props) {
               Configuration {form.adapterType.toUpperCase()}
             </legend>
             <div className="space-y-3 mt-2">
-              {fields.map((f) => (
-                <TextField
-                  key={f.name}
-                  label={f.label}
-                  type={f.type}
-                  value={form.config[f.name] ?? ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      config: { ...prev.config, [f.name]: e.target.value },
-                    }))
-                  }
-                  placeholder={f.placeholder}
-                  helper={f.helper}
-                  autoComplete="off"
-                />
-              ))}
+              {fields.map((f) => {
+                const isMaskedSecret =
+                  f.type === 'password' && form.config[f.name] === SECRET_PLACEHOLDER;
+                return (
+                  <TextField
+                    key={f.name}
+                    label={f.label}
+                    type={f.type}
+                    value={form.config[f.name] ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        config: { ...prev.config, [f.name]: e.target.value },
+                      }))
+                    }
+                    placeholder={f.placeholder}
+                    helper={
+                      isMaskedSecret
+                        ? 'Valeur enregistrée, masquée. Laisser tel quel pour la conserver.'
+                        : f.helper
+                    }
+                    autoComplete="off"
+                  />
+                );
+              })}
             </div>
           </fieldset>
         )}

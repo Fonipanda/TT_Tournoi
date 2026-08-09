@@ -9,7 +9,10 @@ export default async function AdminDashboardPage() {
       prisma.tournament.count(),
       prisma.bracket.findMany({
         where: { isActive: true, tournament: { isActive: true } },
-        include: { _count: { select: { registrations: true } }, tournament: { select: { name: true } } },
+        include: {
+          _count: { select: { registrations: { where: { isActive: true } } } },
+          tournament: { select: { name: true } },
+        },
         orderBy: { startTime: 'asc' },
       }),
       prisma.player.count({ where: { isActive: true } }),

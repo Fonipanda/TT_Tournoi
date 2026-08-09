@@ -8,6 +8,7 @@ import { PasswordField } from '@/components/ui/password-field';
 import { isPasswordStrong, PASSWORD_POLICY_MESSAGE } from '@tt/auth/password-policy';
 import { toast, ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
+import { suggestDomainFix, validateEmailOffline } from '@/lib/email-validation.shared';
 
 function RegisterForm() {
   const router = useRouter();
@@ -32,9 +33,20 @@ function RegisterForm() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
+  // L'erreur d'email ne s'affiche qu'après une première sortie du champ, pour
+  // ne pas signaler « invalide » dès la première lettre saisie.
+  const [emailTouched, setEmailTouched] = useState(false);
+  const emailCheck = validateEmailOffline(form.email);
+  const emailSuggestion = emailCheck.ok ? suggestDomainFix(form.email) : null;
+  const emailError = emailTouched && !emailCheck.ok ? emailCheck.message : null;
+
   const passwordsMatch = password === passwordConfirm;
   const canSubmit =
-    !submitting && isPasswordStrong(password) && passwordsMatch && passwordConfirm.length > 0;
+    !submitting &&
+    emailCheck.ok &&
+    isPasswordStrong(password) &&
+    passwordsMatch &&
+    passwordConfirm.length > 0;
 
   const update = <K extends keyof typeof form>(key: K, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -82,6 +94,11 @@ function RegisterForm() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!emailCheck.ok) {
+      setEmailTouched(true);
+      setError(emailCheck.message);
+      return;
+    }
     if (!isPasswordStrong(password)) {
       setError(PASSWORD_POLICY_MESSAGE);
       return;
@@ -198,10 +215,33 @@ function RegisterForm() {
             required
             value={form.email}
             onChange={(e) => update('email', e.target.value)}
+            onBlur={() => setEmailTouched(true)}
             autoComplete="email"
             placeholder="prenom.nom@exemple.fr"
-            helper="Sert d'identifiant de connexion. Un lien d'activation y sera envoyé — les adresses jetables sont refusées."
+            error={emailError}
+            data-testid="register-email"
+            helper={
+              emailError
+                ? undefined
+                : "Sert d'identifiant de connexion. Un lien d'activation y sera envoyé — les adresses jetables sont refusées."
+            }
           />
+
+          {emailSuggestion && (
+            <p className="text-xs text-warning -mt-2" data-testid="email-suggestion">
+              Voulais-tu écrire{' '}
+              <button
+                type="button"
+                className="underline font-medium"
+                onClick={() =>
+                  update('email', `${form.email.split('@')[0]}@${emailSuggestion}`)
+                }
+              >
+                {form.email.split('@')[0]}@{emailSuggestion}
+              </button>
+               ?
+            </p>
+          )}
 
           <TextField
             label="Téléphone (pour SMS du tournoi)"

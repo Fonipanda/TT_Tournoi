@@ -26,6 +26,11 @@ interface Player {
   lastName: string;
 }
 
+interface Registration {
+  id: string;
+  bracketId: string;
+}
+
 export default function InscriptionPage() {
   const router = useRouter();
 
@@ -37,6 +42,8 @@ export default function InscriptionPage() {
   const [player, setPlayer] = useState<Player | null>(null);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Tableaux auxquels le joueur est DÉJÀ inscrit (source : serveur). */
+  const [alreadyRegistered, setAlreadyRegistered] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -71,10 +78,33 @@ export default function InscriptionPage() {
       '/api/tournaments',
     );
     const active = tournRes.data?.find((t) => t.isActive);
-    if (active) {
-      const bRes = await apiGet<{ data: Bracket[] }>(`/api/brackets?tournamentId=${active.id}`);
-      setBrackets(bRes.data ?? []);
+    if (!active) {
+      setBrackets([]);
+      setSelected(new Set());
+      setAlreadyRegistered(new Set());
+      return;
     }
+
+    const bRes = await apiGet<{ data: Bracket[] }>(`/api/brackets?tournamentId=${active.id}`);
+    const list = bRes.data ?? [];
+    setBrackets(list);
+
+    // On repart systématiquement de l'état renvoyé par le serveur : l'API ne
+    // liste que les inscriptions actives, donc celles supprimées par l'admin
+    // disparaissent d'elles-mêmes et les tableaux redeviennent sélectionnables.
+    const regs = await apiGet<{ data: Registration[] }>(
+      `/api/players/${playerId}/registrations`,
+    );
+    const visibleBracketIds = new Set(list.map((b) => b.id));
+    const current = new Set(
+      (regs.data ?? [])
+        .map((r) => r.bracketId)
+        // Un tableau que l'admin a désactivé n'apparaît plus dans la liste.
+        .filter((id) => visibleBracketIds.has(id)),
+    );
+
+    setAlreadyRegistered(current);
+    setSelected(new Set()); // la sélection ne porte que sur les NOUVEAUX choix
   }
 
   // Étape 2 : éligibilité tableaux selon points
@@ -92,11 +122,17 @@ export default function InscriptionPage() {
     return { ok: true };
   };
 
+  /** Quota global : inscriptions déjà validées + nouveaux choix en cours. */
+  const MAX_BRACKETS = 2;
+  const totalPicked = alreadyRegistered.size + selected.size;
+  const quotaReached = totalPicked >= MAX_BRACKETS;
+
   const toggle = (id: string) => {
+    if (alreadyRegistered.has(id)) return; // déjà inscrit : non modifiable ici
     setSelected((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
-      else if (n.size < 2) n.add(id);
+      else if (alreadyRegistered.size + n.size < MAX_BRACKETS) n.add(id);
       return n;
     });
   };
@@ -170,9 +206,20 @@ export default function InscriptionPage() {
         </p>
       )}
       <p className="text-foreground-muted mb-4 text-sm">
-        Sélectionne jusqu'à 2 tableaux par jour (règle FFTT). Seuls les tableaux compatibles avec
-        ton classement sont sélectionnables.
+        Sélectionne jusqu'à {MAX_BRACKETS} tableaux par jour (règle FFTT). Seuls les tableaux
+        compatibles avec ton classement sont sélectionnables.
       </p>
+
+      {alreadyRegistered.size > 0 && (
+        <p
+          className="card border-primary bg-primary-soft text-sm mb-4 rounded-xl"
+          data-testid="already-registered-notice"
+        >
+          Tu es déjà inscrit à {alreadyRegistered.size} tableau
+          {alreadyRegistered.size > 1 ? 'x' : ''}. Pour annuler une inscription, contacte
+          l'organisation.
+        </p>
+      )}
 
       {message && (
         <p
@@ -185,23 +232,30 @@ export default function InscriptionPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="brackets-list">
         {brackets.map((b) => {
+          const isRegistered = alreadyRegistered.has(b.id);
           const eligibility = isEligible(b);
           const isSelected = selected.has(b.id);
+          // Quota atteint : on grise les tableaux restants, sans masquer
+          // ceux que le joueur vient de cocher (il doit pouvoir se raviser).
+          const blockedByQuota = !isRegistered && !isSelected && quotaReached;
+          const disabled = isRegistered || !eligibility.ok || blockedByQuota;
           const inscrits = b._count?.registrations ?? 0;
           const taux = b.maxPlayers > 0 ? Math.round((inscrits / b.maxPlayers) * 100) : 0;
           return (
             <button
               key={b.id}
               type="button"
-              onClick={() => eligibility.ok && toggle(b.id)}
-              disabled={!eligibility.ok}
+              onClick={() => !disabled && toggle(b.id)}
+              disabled={disabled}
               data-testid={`bracket-${b.id}`}
               className={`card text-left transition-all rounded-xl ${
-                !eligibility.ok
-                  ? 'opacity-50 cursor-not-allowed'
-                  : isSelected
-                    ? 'border-primary bg-primary-soft shadow-md'
-                    : 'hover:border-primary hover:shadow-sm'
+                isRegistered
+                  ? 'border-success bg-success-soft cursor-default'
+                  : !eligibility.ok || blockedByQuota
+                    ? 'opacity-50 cursor-not-allowed'
+                    : isSelected
+                      ? 'border-primary bg-primary-soft shadow-md'
+                      : 'hover:border-primary hover:shadow-sm'
               }`}
             >
               <div className="flex items-start justify-between mb-2">
@@ -216,9 +270,15 @@ export default function InscriptionPage() {
               <p className="text-xs text-foreground-subtle">
                 {b.day ?? ''} · {b.startTime ?? '?'} · {inscrits}/{b.maxPlayers} ({taux}%)
               </p>
-              {!eligibility.ok && (
+              {isRegistered ? (
+                <p className="text-xs text-success mt-2 font-medium">✓ Déjà inscrit</p>
+              ) : !eligibility.ok ? (
                 <p className="text-xs text-danger mt-2">⚠ {eligibility.reason}</p>
-              )}
+              ) : blockedByQuota ? (
+                <p className="text-xs text-foreground-subtle mt-2">
+                  Quota de {MAX_BRACKETS} tableaux atteint
+                </p>
+              ) : null}
             </button>
           );
         })}

@@ -1,7 +1,22 @@
 import type { ReactNode } from 'react';
+import { redirect } from 'next/navigation';
 import { PublicNav } from '@/components/PublicNav';
+import { getCurrentUser } from '@/lib/auth/server';
+import { canBypassMaintenance, getMaintenanceState } from '@/lib/maintenance';
 
-export default function PublicLayout({ children }: { children: ReactNode }) {
+// L'état de maintenance est lu à chaque requête : une page mise en cache
+// continuerait de s'afficher après l'activation du mode.
+export const dynamic = 'force-dynamic';
+
+export default async function PublicLayout({ children }: { children: ReactNode }) {
+  const { enabled } = await getMaintenanceState();
+  if (enabled) {
+    const user = await getCurrentUser();
+    // L'organisation garde l'accès, sinon plus personne ne pourrait
+    // désactiver le mode maintenance depuis le site.
+    if (!canBypassMaintenance(user?.role)) redirect('/maintenance');
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <PublicNav />

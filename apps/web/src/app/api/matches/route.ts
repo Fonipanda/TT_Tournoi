@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { prisma, MatchStatus } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
 import { publishLiveEvent } from '@/lib/live/publisher';
+import { notifySms } from '@/lib/sms/notify';
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -65,6 +66,23 @@ export async function POST(req: NextRequest) {
         version: created.version,
       },
     });
+
+    // Convocation : uniquement sur création unitaire. La génération d'un
+    // tableau complet (poules / élimination) ne notifie volontairement pas.
+    const detail = await prisma.match.findUnique({
+      where: { id: created.id },
+      include: { bracket: { select: { name: true } }, player1: true, player2: true },
+    });
+    if (detail) {
+      const label = (p: { lastName: string; firstName: string } | null) =>
+        p ? `${p.lastName} ${p.firstName}` : '';
+      await notifySms('match_created', [detail.player1Id, detail.player2Id], (playerId) => ({
+        joueur: label(playerId === detail.player1Id ? detail.player1 : detail.player2),
+        adversaire: label(playerId === detail.player1Id ? detail.player2 : detail.player1),
+        tableau: detail.bracket?.name ?? '',
+      }));
+    }
+
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     if (e instanceof z.ZodError) {

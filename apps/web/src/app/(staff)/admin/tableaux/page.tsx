@@ -16,7 +16,9 @@ export default async function AdminTableauxPage({ searchParams }: Props) {
       where: tournamentId ? { tournamentId, isActive: true } : { isActive: true },
       include: {
         tournament: { select: { id: true, name: true } },
-        _count: { select: { matches: true, registrations: true } },
+        _count: {
+          select: { matches: true, registrations: { where: { isActive: true } } },
+        },
       },
       orderBy: [{ tournament: { startDate: 'desc' } }, { startTime: 'asc' }],
     }),

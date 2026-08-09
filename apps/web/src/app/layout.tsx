@@ -26,10 +26,8 @@ export const metadata: Metadata = {
     'Plateforme de gestion de tournois de tennis de table — Chelles TT. Live, inscriptions, classements FFTT.',
   applicationName: 'TT Tournoi',
   manifest: '/manifest.webmanifest',
-  icons: {
-    icon: '/icons/icon-192.png',
-    apple: '/icons/icon-192.png',
-  },
+  // Les icônes sont fournies par les conventions App Router :
+  // src/app/favicon.ico, src/app/icon.png, src/app/apple-icon.png
   formatDetection: { telephone: false, email: false, address: false },
 };
 

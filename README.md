@@ -147,6 +147,8 @@ Voir [PC-vs-VPS.md](PC-vs-VPS.md) pour comprendre **ce qui se fait sur PC Window
 
 Voir [docs/runbook.md](docs/runbook.md) pour les procedures d'urgence et de maintenance.
 
+Voir [SMS-OVH-A-FAIRE.md](SMS-OVH-A-FAIRE.md) pour les actions manuelles OVH/Coolify restantes du module SMS (code termine, en attente de validation de l'expediteur).
+
 ## Roles utilisateurs
 
 | Role               | Acces                                                  |

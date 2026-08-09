@@ -14,7 +14,14 @@ export async function GET(req: NextRequest) {
   const brackets = await prisma.bracket.findMany({
     where,
     orderBy: [{ startTime: 'asc' }, { name: 'asc' }],
-    include: { _count: { select: { matches: true, registrations: true } } },
+    // Les inscriptions supprimées par l'admin sont désactivées (isActive=false)
+    // et non effacées : sans ce filtre le compteur ne redescendrait jamais, et
+    // un tableau resterait affiché « complet » après libération des places.
+    include: {
+      _count: {
+        select: { matches: true, registrations: { where: { isActive: true } } },
+      },
+    },
   });
   return NextResponse.json({ data: brackets });
 }

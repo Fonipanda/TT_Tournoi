@@ -5,11 +5,11 @@
  * instrumentation hook) au boot du serveur.
  */
 
-import { Queue, Worker, type Job } from 'bullmq';
+import { Queue, Worker, UnrecoverableError, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { prisma } from '@tt/db';
-import { getActiveAdapterConfig } from './engine';
-import { getAdapter } from './registry';
+import { resolveActiveAdapter } from './config';
+import { normalizePhone } from './phone';
 
 export interface SmsJobPayload {
   to: string;
@@ -49,44 +49,57 @@ export function startSmsWorker(): Worker<SmsJobPayload> {
     QUEUE_NAME,
     async (job: Job<SmsJobPayload>) => {
       const { to, message, sender, playerId, recipientName, kind, trigger } = job.data;
-      const config = await getActiveAdapterConfig();
+      const resolved = await resolveActiveAdapter();
 
-      if (!config) {
-        await prisma.smsLog.create({
+      const logFailure = (adapterName: string, errorMessage: string, phone: string) =>
+        prisma.smsLog.create({
           data: {
             playerId,
-            recipientPhone: to,
+            recipientPhone: phone,
             recipientName: recipientName ?? '',
             message,
             sender: sender ?? '',
-            adapterName: 'none',
+            adapterName,
             status: 'failed',
-            errorMessage: 'Aucun adaptateur actif',
+            errorMessage,
             kind: kind ?? 'auto',
             trigger: trigger ?? '',
           },
         });
+
+      if (!resolved) {
+        await logFailure('none', 'Aucun adaptateur SMS actif', to);
         throw new Error('Aucun adaptateur SMS actif');
       }
 
-      const adapter = getAdapter(config.adapterType, config.config as Record<string, unknown>);
-      const effectiveSender = sender || config.defaultSender || '';
+      // Un numéro invalide le restera : inutile de consommer les 3 tentatives.
+      const phone = normalizePhone(to);
+      if (!phone.ok) {
+        await logFailure(
+          resolved.adapterName,
+          `Numéro non normalisable : ${phone.reason}`,
+          to,
+        );
+        throw new UnrecoverableError(`Numéro non normalisable : ${phone.reason}`);
+      }
+
+      const effectiveSender = sender || resolved.defaultSender || '';
 
       const log = await prisma.smsLog.create({
         data: {
           playerId,
-          recipientPhone: to,
+          recipientPhone: phone.e164,
           recipientName: recipientName ?? '',
           message,
           sender: effectiveSender,
-          adapterName: config.name,
+          adapterName: resolved.adapterName,
           status: 'pending',
           kind: kind ?? 'auto',
           trigger: trigger ?? '',
         },
       });
 
-      const result = await adapter.send(to, message, effectiveSender);
+      const result = await resolved.adapter.send(phone.e164, message, effectiveSender);
       await prisma.smsLog.update({
         where: { id: log.id },
         data: {

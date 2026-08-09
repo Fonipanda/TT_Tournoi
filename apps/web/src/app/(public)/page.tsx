@@ -14,7 +14,10 @@ async function getActiveTournament() {
         where: { isActive: true },
         orderBy: { startTime: 'asc' },
         include: {
-          _count: { select: { registrations: true } },
+          // Les inscriptions annulées par l'admin sont désactivées, pas
+          // effacées : sans ce filtre le compteur resterait figé au maximum
+          // atteint et la page annoncerait « Complet » à tort.
+          _count: { select: { registrations: { where: { isActive: true } } } },
           registrations: {
             where: { isActive: true },
             include: { player: { select: { id: true, firstName: true, lastName: true, club: true } } },
@@ -197,24 +200,37 @@ export default async function HomePage() {
 
         {/* Encart 2 — État des inscriptions + accès détails */}
         <div className="card rounded-2xl shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-primary-soft to-accent-soft border-primary flex flex-col">
-          <p className="text-xs uppercase tracking-widest text-foreground-muted mb-2">
-            📊 Inscriptions
-          </p>
-          <p className="font-heading text-5xl text-primary tabular leading-none">
-            {totalInscrits}
-            <span className="text-2xl text-foreground-muted">/{totalPlaces}</span>
-          </p>
-          <p className="text-sm text-foreground-muted mt-1">
-            {placesDisponibles > 0 ? (
-              <>
-                <span className="font-semibold text-primary">{placesDisponibles}</span> place
-                {placesDisponibles > 1 ? 's' : ''} restante{placesDisponibles > 1 ? 's' : ''}
-              </>
-            ) : (
-              <span className="text-danger font-semibold">Complet</span>
-            )}
-          </p>
-          <div className="mt-3 h-2 bg-surface rounded-full overflow-hidden">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-xs uppercase tracking-widest text-foreground-muted">
+              📊 Inscriptions
+            </p>
+            <span className="text-xs font-semibold tabular text-foreground-muted">
+              {tauxRemplissage}%
+            </span>
+          </div>
+
+          {/* Total et places restantes sur une seule ligne : la hauteur gagnée
+              est réinvestie dans le détail par tableau, plutôt que laissée vide. */}
+          <div className="flex items-end justify-between gap-3 mt-1">
+            <p className="font-heading text-4xl text-primary tabular leading-none">
+              {totalInscrits}
+              <span className="text-xl text-foreground-muted">/{totalPlaces}</span>
+            </p>
+            <p className="text-sm text-foreground-muted text-right leading-tight">
+              {placesDisponibles > 0 ? (
+                <>
+                  <span className="font-semibold text-primary">{placesDisponibles}</span> place
+                  {placesDisponibles > 1 ? 's' : ''}
+                  <br />
+                  restante{placesDisponibles > 1 ? 's' : ''}
+                </>
+              ) : (
+                <span className="text-danger font-semibold">Complet</span>
+              )}
+            </p>
+          </div>
+
+          <div className="mt-2 h-2 bg-surface rounded-full overflow-hidden">
             <div
               className={`h-full transition-all duration-700 ${
                 tauxRemplissage >= 100
@@ -226,12 +242,37 @@ export default async function HomePage() {
               style={{ width: `${Math.min(tauxRemplissage, 100)}%` }}
             />
           </div>
-          <p className="text-xs text-foreground-muted mt-1 text-right tabular">
-            {tauxRemplissage}%
-          </p>
+
+          {/* Détail par tableau — occupe l'espace autrefois vide */}
+          {bracketStats.length > 0 && (
+            <ul className="mt-3 space-y-1.5" data-testid="home-bracket-breakdown">
+              {bracketStats.map((b) => {
+                const taux =
+                  b.maxPlayers > 0 ? Math.round((b.inscrits / b.maxPlayers) * 100) : 0;
+                return (
+                  <li key={b.id} className="flex items-center gap-2 text-xs">
+                    <span className="truncate flex-1 font-medium" title={b.name}>
+                      {b.name}
+                    </span>
+                    <span className="h-1.5 w-16 bg-surface rounded-full overflow-hidden shrink-0">
+                      <span
+                        className={`block h-full ${
+                          taux >= 100 ? 'bg-danger' : taux > 75 ? 'bg-warning' : 'bg-primary'
+                        }`}
+                        style={{ width: `${Math.min(taux, 100)}%` }}
+                      />
+                    </span>
+                    <span className="tabular text-foreground-muted w-12 text-right shrink-0">
+                      {b.inscrits}/{b.maxPlayers}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           {/* Accès aux détails (modals) */}
-          <div className="mt-auto pt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="mt-auto pt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
             <HomeStatsButtons
               brackets={serialize(bracketStats)}
               players={serialize(allPlayers)}
