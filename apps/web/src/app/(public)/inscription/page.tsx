@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 import { PaymentModal } from '@/components/PaymentModal';
-import { MAX_BRACKETS_PER_DAY, bracketDayKey } from '@/lib/registrations';
+import { MAX_BRACKETS_PER_DAY, bracketScopeKey } from '@/lib/registrations';
 import { computeBracketFits, isStretch, type BracketFitLevel } from '@/lib/bracket-fit';
 
 /**
@@ -20,6 +20,7 @@ import { computeBracketFits, isStretch, type BracketFitLevel } from '@/lib/brack
 const FIT_BADGE: Record<BracketFitLevel, { className: string; icon: string }> = {
   recommended: { className: 'bg-primary text-primary-fg border-primary', icon: '★' },
   accessible: { className: 'bg-bg-alt text-foreground-muted border-border-strong', icon: '' },
+  open_fill: { className: 'bg-success-soft text-success border-success', icon: '↑' },
   stretch: { className: 'bg-warning-soft text-warning border-warning', icon: '↗' },
   far_stretch: { className: 'bg-warning-soft text-warning border-warning', icon: '↗↗' },
   closed: { className: 'bg-danger-soft text-danger border-danger', icon: '⚠' },
@@ -29,6 +30,7 @@ const FIT_BADGE: Record<BracketFitLevel, { className: string; icon: string }> = 
 interface Bracket {
   id: string;
   name: string;
+  tournamentId: string;
   category: string;
   minPoints: number | null;
   maxPoints: number | null;
@@ -142,10 +144,23 @@ export default function InscriptionPage() {
   // classement. Vide tant que le joueur n'est pas chargé.
   const fits = useMemo(
     () =>
-      computeBracketFits(brackets, {
-        points: player?.points ?? null,
-        verified: rankingVerified,
-      }),
+      computeBracketFits(
+        // Le taux de remplissage fait partie de la règle : au-delà du seuil,
+        // le tableau s'ouvre à tous les classements.
+        brackets.map((b) => ({
+          id: b.id,
+          tournamentId: b.tournamentId,
+          day: b.day,
+          minPoints: b.minPoints,
+          maxPoints: b.maxPoints,
+          maxPlayers: b.maxPlayers,
+          registeredCount: b._count?.registrations ?? 0,
+        })),
+        {
+          points: player?.points ?? null,
+          verified: rankingVerified,
+        },
+      ),
     [brackets, player, rankingVerified],
   );
 
@@ -165,8 +180,8 @@ export default function InscriptionPage() {
   };
 
   /**
-   * Quota FFTT : 2 tableaux **par journée**, et non 2 au total. Un joueur peut
-   * donc disputer 2 tableaux le samedi et 2 autres le dimanche.
+   * Quota FFTT : 2 tableaux **par journée de tournoi**, et non 2 au total. Un
+   * joueur peut donc disputer 2 tableaux le samedi et 2 autres le dimanche.
    *
    * On compte, pour chaque journée, les inscriptions déjà validées plus les
    * nouveaux choix en cours.
@@ -175,13 +190,13 @@ export default function InscriptionPage() {
     const counts = new Map<string, number>();
     for (const b of brackets) {
       if (!alreadyRegistered.has(b.id) && !selected.has(b.id)) continue;
-      const key = bracketDayKey(b.day);
+      const key = bracketScopeKey(b);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return counts;
   }, [brackets, alreadyRegistered, selected]);
 
-  const pickedOnDayOf = (b: Bracket) => pickedPerDay.get(bracketDayKey(b.day)) ?? 0;
+  const pickedOnDayOf = (b: Bracket) => pickedPerDay.get(bracketScopeKey(b)) ?? 0;
 
   /** Tableaux rendus inaccessibles faute de classement vérifié. */
   const lockedByVerification = useMemo(
@@ -226,9 +241,9 @@ export default function InscriptionPage() {
         return n;
       }
       // Recompté depuis `prev` : le mémo peut être en retard d'un rendu.
-      const key = bracketDayKey(target.day);
+      const key = bracketScopeKey(target);
       const onThatDay = brackets.filter(
-        (b) => bracketDayKey(b.day) === key && (alreadyRegistered.has(b.id) || n.has(b.id)),
+        (b) => bracketScopeKey(b) === key && (alreadyRegistered.has(b.id) || n.has(b.id)),
       ).length;
       if (onThatDay >= MAX_BRACKETS_PER_DAY) return prev;
       n.add(id);

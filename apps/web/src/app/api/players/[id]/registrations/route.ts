@@ -43,20 +43,43 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     const { bracketIds } = Schema.parse(await req.json());
 
-    // Quota FFTT : 2 tableaux par jour et par joueur. Contrôlé côté serveur —
-    // la règle appliquée dans le formulaire n'est qu'une aide à la saisie.
+    // Quota FFTT : 2 tableaux par jour et par joueur, tournoi par tournoi.
+    // Contrôlé côté serveur — la règle appliquée dans le formulaire n'est
+    // qu'une aide à la saisie.
     const uniqueIds = [...new Set(bracketIds)];
-    const requested = await prisma.bracket.findMany({
+    const rows = await prisma.bracket.findMany({
       where: { id: { in: uniqueIds } },
-      select: { id: true, name: true, day: true, minPoints: true, maxPoints: true },
+      select: {
+        id: true,
+        name: true,
+        tournamentId: true,
+        day: true,
+        minPoints: true,
+        maxPoints: true,
+        maxPlayers: true,
+        // Seules les inscriptions actives remplissent le tableau : une
+        // inscription retirée par l'admin libère sa place, et la compter
+        // maintiendrait artificiellement le tableau au-dessus du seuil.
+        _count: { select: { registrations: { where: { isActive: true } } } },
+      },
     });
-    if (requested.length !== uniqueIds.length) {
+    if (rows.length !== uniqueIds.length) {
       throw new HttpError(400, 'Tableau inconnu');
     }
+    const requested = rows.map((b) => ({
+      id: b.id,
+      name: b.name,
+      tournamentId: b.tournamentId,
+      day: b.day,
+      minPoints: b.minPoints,
+      maxPoints: b.maxPoints,
+      maxPlayers: b.maxPlayers,
+      registeredCount: b._count.registrations,
+    }));
 
     const existing = await prisma.playerBracketRegistration.findMany({
       where: { playerId: id, isActive: true },
-      select: { bracket: { select: { id: true, name: true, day: true } } },
+      select: { bracket: { select: { id: true, name: true, tournamentId: true, day: true } } },
     });
 
     const violation = findDailyQuotaViolation(

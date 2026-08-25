@@ -13,6 +13,9 @@
  * synchronisée valent 500 par défaut ou une saisie manuelle, ce qui ne permet
  * d'affirmer ni le respect ni la violation de la fenêtre.
  *
+ * Ces deux conditions tombent ensemble dès que le tableau atteint le seuil de
+ * remplissage : un tableau assuré de se tenir accepte tous les classements.
+ *
  * Le niveau « recommandé » n'est volontairement pas absolu, mais **relatif à
  * l'offre du tournoi** : parmi les tableaux ouverts au joueur une même journée,
  * le plus pertinent est celui dont le plafond serre au plus près son classement.
@@ -22,7 +25,7 @@
  * Ce module ne dépend ni de Node ni de Prisma : il est consommé côté client.
  */
 
-import { bracketDayKey } from './registrations';
+import { bracketScopeKey, isOpenByFill, FILL_OPEN_RATIO } from './registrations';
 
 /**
  * Écart, en points, au-delà duquel un tableau est hors de portée plutôt que
@@ -34,9 +37,14 @@ export const STRETCH_GAP = 400;
 /** Tableau réduit aux champs nécessaires au calcul. */
 export interface BracketFitInput {
   id: string;
+  tournamentId: string;
   day: string | null;
   minPoints: number | null;
   maxPoints: number | null;
+  /** Jauge du tableau. */
+  maxPlayers: number;
+  /** Inscriptions actives déjà enregistrées. */
+  registeredCount: number;
 }
 
 /** État du joueur au regard du classement officiel. */
@@ -51,6 +59,8 @@ export type BracketFitLevel =
   | 'recommended'
   /** Ouvert à son classement, sans être le choix le plus ajusté. */
   | 'accessible'
+  /** Hors fenêtre, mais le tableau est assez rempli pour accueillir tout le monde. */
+  | 'open_fill'
   /** Sous le plancher du tableau, écart raisonnable. Refusé. */
   | 'stretch'
   /** Nettement sous le plancher du tableau. Refusé. */
@@ -108,8 +118,31 @@ export function computeBracketFits(
   const inRange: BracketFitInput[] = [];
 
   for (const b of brackets) {
+    const bounded = hasWindow(b);
+
+    // Un tableau assez rempli s'ouvre à tous les classements. Le joueur qui
+    // entre malgré tout dans la fenêtre garde son verdict habituel : lui
+    // afficher « ouvert à tous » masquerait le fait que ce tableau est,
+    // pour lui, le choix ajusté.
+    if (bounded && isOpenByFill(b)) {
+      const withinWindow =
+        verified &&
+        (b.maxPoints === null || p <= b.maxPoints) &&
+        (b.minPoints === null || p >= b.minPoints);
+      if (!withinWindow) {
+        const rate = Math.round((b.registeredCount / b.maxPlayers) * 100);
+        fits.set(b.id, {
+          level: 'open_fill',
+          label: 'Ouvert à tous',
+          detail: `Rempli à ${rate} % — au-delà de ${Math.round(FILL_OPEN_RATIO * 100)} %, ce tableau accepte tous les classements.`,
+          blocking: false,
+        });
+        continue;
+      }
+    }
+
     // Un tableau borné exige un classement certifié, avant toute comparaison.
-    if (!verified && hasWindow(b)) {
+    if (!verified && bounded) {
       fits.set(b.id, {
         level: 'unverified',
         label: 'Classement à vérifier',
@@ -144,20 +177,20 @@ export function computeBracketFits(
     inRange.push(b);
   }
 
-  // Le meilleur choix se juge journée par journée : le quota d'inscription est
-  // lui-même journalier, comparer des tableaux du samedi et du dimanche n'aurait
-  // aucun sens pour le joueur.
+  // Le meilleur choix se juge journée par journée, tournoi par tournoi : le
+  // quota d'inscription a lui-même cette portée, comparer des tableaux du
+  // samedi et du dimanche n'aurait aucun sens pour le joueur.
   const bestGapPerDay = new Map<string, number>();
   for (const b of inRange) {
     if (b.maxPoints === null) continue; // sans plafond, rien à comparer
-    const key = bracketDayKey(b.day);
+    const key = bracketScopeKey(b);
     const gap = b.maxPoints - p;
     const best = bestGapPerDay.get(key);
     if (best === undefined || gap < best) bestGapPerDay.set(key, gap);
   }
 
   for (const b of inRange) {
-    const best = bestGapPerDay.get(bracketDayKey(b.day));
+    const best = bestGapPerDay.get(bracketScopeKey(b));
     const isBest = b.maxPoints !== null && best !== undefined && b.maxPoints - p === best;
     fits.set(
       b.id,

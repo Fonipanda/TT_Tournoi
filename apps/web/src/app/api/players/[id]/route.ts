@@ -81,13 +81,33 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const syncBrackets = bracketIds !== undefined && me.role === 'admin';
     if (syncBrackets) {
       const uniqueIds = [...new Set(bracketIds)];
-      const targetBrackets = await prisma.bracket.findMany({
+      const rows = await prisma.bracket.findMany({
         where: { id: { in: uniqueIds } },
-        select: { id: true, name: true, day: true, minPoints: true, maxPoints: true },
+        select: {
+          id: true,
+          name: true,
+          tournamentId: true,
+          day: true,
+          minPoints: true,
+          maxPoints: true,
+          maxPlayers: true,
+          // Seules les inscriptions actives occupent une place.
+          _count: { select: { registrations: { where: { isActive: true } } } },
+        },
       });
-      if (targetBrackets.length !== uniqueIds.length) {
+      if (rows.length !== uniqueIds.length) {
         throw new HttpError(400, 'Tableau inconnu');
       }
+      const targetBrackets = rows.map((b) => ({
+        id: b.id,
+        name: b.name,
+        tournamentId: b.tournamentId,
+        day: b.day,
+        minPoints: b.minPoints,
+        maxPoints: b.maxPoints,
+        maxPlayers: b.maxPlayers,
+        registeredCount: b._count.registrations,
+      }));
       // `bracketIds` décrit l'état final complet : on part d'une base vide.
       const violation = findDailyQuotaViolation([], targetBrackets);
       if (violation) throw new HttpError(400, dailyQuotaMessage(violation));

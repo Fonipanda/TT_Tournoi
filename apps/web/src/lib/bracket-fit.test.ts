@@ -12,7 +12,17 @@ const b = (
   minPoints: number | null,
   maxPoints: number | null,
   day: string | null = 'Samedi',
-): BracketFitInput => ({ id, day, minPoints, maxPoints });
+  fill?: { maxPlayers: number; registeredCount: number; tournamentId?: string },
+): BracketFitInput => ({
+  id,
+  tournamentId: fill?.tournamentId ?? 'T1',
+  day,
+  minPoints,
+  maxPoints,
+  // Par défaut un tableau vide : la fenêtre de points s'applique pleinement.
+  maxPlayers: fill?.maxPlayers ?? 32,
+  registeredCount: fill?.registeredCount ?? 0,
+});
 
 /** Classement vérifié auprès de la FFTT — cas nominal. */
 const verified = (points: number) => ({ points, verified: true });
@@ -151,6 +161,7 @@ describe('Fenêtre de points — lecture joueur', () => {
     expect(isStretch('accessible')).toBe(false);
     expect(isStretch('closed')).toBe(false);
     expect(isStretch('unverified')).toBe(false);
+    expect(isStretch('open_fill')).toBe(false);
   });
 
   it('décrit la fenêtre de points de façon lisible', () => {
@@ -191,5 +202,69 @@ describe('Classement non vérifié', () => {
   it('invite explicitement à synchroniser', () => {
     const fits = computeBracketFits([b('x', null, 900)], unverified(600));
     expect(fits.get('x')?.detail).toContain('FFTT');
+  });
+
+  it('n’exige plus la vérification sur un tableau rempli au seuil', () => {
+    const plein = b('x', null, 900, 'Samedi', { maxPlayers: 10, registeredCount: 7 });
+    const fits = computeBracketFits([plein], unverified(1400));
+    expect(fits.get('x')?.level).toBe('open_fill');
+    expect(fits.get('x')?.blocking).toBe(false);
+  });
+});
+
+describe('Ouverture par remplissage — lecture joueur', () => {
+  it('ouvre un tableau plafonné au joueur trop bien classé', () => {
+    const plein = b('petit', null, 900, 'Samedi', { maxPlayers: 20, registeredCount: 14 });
+    const fit = computeBracketFits([plein], verified(1400)).get('petit');
+    expect(fit?.level).toBe('open_fill');
+    expect(fit?.blocking).toBe(false);
+    expect(fit?.detail).toContain('70');
+  });
+
+  it('ouvre un tableau à plancher au joueur trop faible', () => {
+    const plein = b('elite', 1500, null, 'Samedi', { maxPlayers: 10, registeredCount: 7 });
+    expect(computeBracketFits([plein], verified(900)).get('elite')?.level).toBe('open_fill');
+  });
+
+  it('bloque encore juste sous le seuil', () => {
+    const presque = b('petit', null, 900, 'Samedi', { maxPlayers: 20, registeredCount: 13 });
+    const fit = computeBracketFits([presque], verified(1400)).get('petit');
+    expect(fit?.level).toBe('closed');
+    expect(fit?.blocking).toBe(true);
+  });
+
+  it('garde le verdict habituel pour le joueur qui respecte la fenêtre', () => {
+    // Lui afficher « ouvert à tous » masquerait que ce tableau est, pour lui,
+    // le choix ajusté.
+    const plein = b('petit', null, 900, 'Samedi', { maxPlayers: 20, registeredCount: 14 });
+    expect(computeBracketFits([plein], verified(800)).get('petit')?.level).toBe('recommended');
+  });
+
+  it('ne perturbe pas le choix du recommandé', () => {
+    const list = [
+      b('plein-700', null, 700, 'Samedi', { maxPlayers: 10, registeredCount: 8 }),
+      b('juste', null, 1200, 'Samedi'),
+    ];
+    const fits = computeBracketFits(list, verified(900));
+    // « ≤ 700 » n'est ouvert que par remplissage : il ne doit pas voler la
+    // recommandation au tableau réellement taillé pour le joueur.
+    expect(fits.get('plein-700')?.level).toBe('open_fill');
+    expect(fits.get('juste')?.level).toBe('recommended');
+  });
+
+  it('n’affecte pas un tableau Toutes Séries', () => {
+    const plein = b('open', null, null, 'Samedi', { maxPlayers: 10, registeredCount: 9 });
+    expect(computeBracketFits([plein], verified(1400)).get('open')?.level).toBe('accessible');
+  });
+
+  it('sépare la recommandation par tournoi', () => {
+    const list = [
+      b('t1-700', null, 700, 'Samedi', { maxPlayers: 32, registeredCount: 0, tournamentId: 'T1' }),
+      b('t2-1500', null, 1500, 'Samedi', { maxPlayers: 32, registeredCount: 0, tournamentId: 'T2' }),
+    ];
+    const fits = computeBracketFits(list, verified(650));
+    // Sans cloisonnement, « ≤ 700 » aurait éclipsé « ≤ 1500 » d'un autre tournoi.
+    expect(fits.get('t1-700')?.level).toBe('recommended');
+    expect(fits.get('t2-1500')?.level).toBe('recommended');
   });
 });

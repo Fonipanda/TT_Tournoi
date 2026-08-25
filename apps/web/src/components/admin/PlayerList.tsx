@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { PlayerFormModal, type PlayerForm } from './PlayerFormModal';
+import { PlayerFormModal, type PlayerForm, type BracketOption, type TournamentOption } from './PlayerFormModal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
 import { apiDelete, apiPatch, ApiError } from '@/lib/api-client';
@@ -22,17 +22,17 @@ interface Player {
   bracketIds?: string[];
 }
 
-interface BracketOption {
-  id: string;
-  name: string;
-}
-
 interface PlayerListProps {
   players: Player[];
   allBrackets?: BracketOption[];
+  tournaments?: TournamentOption[];
 }
 
-export function PlayerList({ players: initial, allBrackets = [] }: PlayerListProps) {
+export function PlayerList({
+  players: initial,
+  allBrackets = [],
+  tournaments = [],
+}: PlayerListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [createOpen, setCreateOpen] = useState(false);
@@ -133,6 +133,7 @@ export function PlayerList({ players: initial, allBrackets = [] }: PlayerListPro
       email: p.email,
       phone: p.phone ?? '',
       isActive: p.isActive,
+      bracketIds: p.bracketIds ?? [],
     });
   };
 
@@ -366,7 +367,13 @@ export function PlayerList({ players: initial, allBrackets = [] }: PlayerListPro
 
       <PlayerFormModal open={createOpen} onClose={() => setCreateOpen(false)} />
       {editing && (
-        <PlayerFormModal open={!!editing} onClose={() => setEditing(null)} initial={editing} />
+        <PlayerFormModal
+          open={!!editing}
+          onClose={() => setEditing(null)}
+          initial={editing}
+          brackets={allBrackets}
+          tournaments={tournaments}
+        />
       )}
       <ConfirmDialog
         open={!!confirmDelete}

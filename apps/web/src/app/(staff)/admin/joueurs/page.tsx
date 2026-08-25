@@ -35,12 +35,47 @@ export default async function AdminJoueursPage({ searchParams }: Props) {
     },
   });
 
-  // Get all active brackets for the editable Tableaux column
-  const allBrackets = await prisma.bracket.findMany({
-    where: { isActive: true },
-    select: { id: true, name: true },
-    orderBy: { name: 'asc' },
-  });
+  // Tableaux et tournois pour la colonne éditable et la modale « Éditer ».
+  // `tournamentId` est indispensable : sans lui la modale ne pourrait pas
+  // regrouper les tableaux par tournoi ni préserver les inscriptions posées
+  // sur un autre tournoi que celui affiché.
+  //
+  // Les tableaux désactivés sont inclus : un joueur peut y être inscrit, et les
+  // masquer rendrait son inscription invisible donc irrévocable — il resterait
+  // rattaché à un tableau qui ne se tiendra pas, sans possibilité de le
+  // basculer vers un autre.
+  const [allBrackets, tournaments] = await Promise.all([
+    prisma.bracket.findMany({
+      select: {
+        id: true,
+        name: true,
+        tournamentId: true,
+        day: true,
+        minPoints: true,
+        maxPoints: true,
+        maxPlayers: true,
+        isActive: true,
+        _count: { select: { registrations: { where: { isActive: true } } } },
+      },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.tournament.findMany({
+      orderBy: [{ isActive: 'desc' }, { startDate: 'desc' }],
+      select: { id: true, name: true, isActive: true },
+    }),
+  ]);
+
+  const bracketOptions = allBrackets.map((b) => ({
+    id: b.id,
+    name: b.name,
+    tournamentId: b.tournamentId,
+    day: b.day,
+    minPoints: b.minPoints,
+    maxPoints: b.maxPoints,
+    maxPlayers: b.maxPlayers,
+    isActive: b.isActive,
+    registeredCount: b._count.registrations,
+  }));
 
   // Mapper avec les noms de tableaux
   const playersWithBrackets = players.map((p) => ({
@@ -62,7 +97,8 @@ export default async function AdminJoueursPage({ searchParams }: Props) {
     <div data-testid="admin-joueurs">
       <PlayerList
         players={serialize(playersWithBrackets)}
-        allBrackets={serialize(allBrackets)}
+        allBrackets={serialize(bracketOptions)}
+        tournaments={serialize(tournaments)}
       />
     </div>
   );

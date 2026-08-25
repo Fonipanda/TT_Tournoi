@@ -1,17 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_BRACKETS_PER_DAY,
-  bracketDayKey,
+  FILL_OPEN_RATIO,
+  bracketScopeKey,
   findDailyQuotaViolation,
   findPointsWindowViolation,
   hasPointsWindow,
+  isOpenByFill,
   pointsWindowMessage,
   type BracketDay,
   type BracketPointsWindow,
   type PlayerRanking,
 } from './registrations';
 
-const b = (id: string, name: string, day: string | null): BracketDay => ({ id, name, day });
+const b = (id: string, name: string, day: string | null, tournamentId = 'T1'): BracketDay => ({
+  id,
+  name,
+  tournamentId,
+  day,
+});
 
 describe('Quota d’inscription — 2 tableaux par jour', () => {
   it('accepte 2 tableaux sur la même journée', () => {
@@ -55,7 +62,9 @@ describe('Quota d’inscription — 2 tableaux par jour', () => {
   });
 
   it('regroupe les tableaux sans journée dans leur propre compteur', () => {
-    expect(bracketDayKey(null)).toBe('');
+    expect(bracketScopeKey({ tournamentId: 'T1', day: null })).not.toBe(
+      bracketScopeKey({ tournamentId: 'T1', day: 'Samedi' }),
+    );
     // 2 sans journée + 2 le samedi : aucun groupe ne dépasse la limite.
     const incoming = [
       b('1', 'A', null),
@@ -70,6 +79,31 @@ describe('Quota d’inscription — 2 tableaux par jour', () => {
     expect(v?.day).toBeNull();
   });
 
+  it('cloisonne le quota par tournoi — deux tournois ont des dates distinctes', () => {
+    // « Samedi » du tournoi T1 et « Samedi » du tournoi T2 ne désignent pas le
+    // même jour : consommer le quota de l'un sur l'autre serait une erreur.
+    const incoming = [
+      b('1', 'A', 'Samedi', 'T1'),
+      b('2', 'B', 'Samedi', 'T1'),
+      b('3', 'C', 'Samedi', 'T2'),
+      b('4', 'D', 'Samedi', 'T2'),
+    ];
+    expect(findDailyQuotaViolation([], incoming)).toBeNull();
+    // Le 3e sur T1 dépasse, sans que T2 y soit pour quelque chose.
+    const v = findDailyQuotaViolation([], [...incoming, b('5', 'E', 'Samedi', 'T1')]);
+    expect(v?.bracket.id).toBe('5');
+  });
+
+  it('distingue deux tournois dans la clé de portée', () => {
+    expect(bracketScopeKey({ tournamentId: 'T1', day: 'Samedi' })).not.toBe(
+      bracketScopeKey({ tournamentId: 'T2', day: 'Samedi' }),
+    );
+    // Aucun recollement possible entre identifiant et libellé.
+    expect(bracketScopeKey({ tournamentId: 'A', day: 'BC' })).not.toBe(
+      bracketScopeKey({ tournamentId: 'AB', day: 'C' }),
+    );
+  });
+
   it('expose une limite de 2', () => {
     expect(MAX_BRACKETS_PER_DAY).toBe(2);
   });
@@ -79,7 +113,16 @@ const win = (
   name: string,
   minPoints: number | null,
   maxPoints: number | null,
-): BracketPointsWindow => ({ id: name, name, minPoints, maxPoints });
+  fill?: { maxPlayers: number; registeredCount: number },
+): BracketPointsWindow => ({
+  id: name,
+  name,
+  minPoints,
+  maxPoints,
+  // Par défaut un tableau vide : la fenêtre de points s'applique pleinement.
+  maxPlayers: fill?.maxPlayers ?? 32,
+  registeredCount: fill?.registeredCount ?? 0,
+});
 
 /** Fiche dont le classement provient de la fédération. */
 const checked = (points: number): PlayerRanking => ({
@@ -180,6 +223,48 @@ describe('Fenêtre de points — règle FFTT', () => {
       findPointsWindowViolation([win('-900', null, 900)], unchecked(600))!,
     );
     expect(unverified).toContain('FFTT');
+  });
+});
+
+describe('Ouverture par remplissage — seuil de 70 %', () => {
+  it('expose un seuil de 70 %', () => {
+    expect(FILL_OPEN_RATIO).toBe(0.7);
+  });
+
+  it('lève la fenêtre de points dès le seuil atteint', () => {
+    // 14/20 = 70 % : un joueur de 1400 pts entre sur un tableau « -900 ».
+    const plein = win('-900', null, 900, { maxPlayers: 20, registeredCount: 14 });
+    expect(findPointsWindowViolation([plein], checked(1400))).toBeNull();
+  });
+
+  it('applique encore la fenêtre juste sous le seuil', () => {
+    // 13/20 = 65 %.
+    const presque = win('-900', null, 900, { maxPlayers: 20, registeredCount: 13 });
+    expect(findPointsWindowViolation([presque], checked(1400))?.reason).toBe('above_max');
+  });
+
+  it('lève aussi le plancher de points', () => {
+    const plein = win('Élite', 1500, null, { maxPlayers: 10, registeredCount: 7 });
+    expect(findPointsWindowViolation([plein], checked(900))).toBeNull();
+  });
+
+  it('lève l’exigence de classement vérifié', () => {
+    // Cette exigence n'existait que pour appliquer la fenêtre : la maintenir
+    // seule refuserait le joueur sans qu'aucune borne ne lui soit opposée.
+    const plein = win('-900', null, 900, { maxPlayers: 10, registeredCount: 7 });
+    expect(findPointsWindowViolation([plein], unchecked(1400))).toBeNull();
+  });
+
+  it('n’ouvre rien sans jauge exploitable', () => {
+    expect(isOpenByFill({ maxPlayers: 0, registeredCount: 5 })).toBe(false);
+    expect(isOpenByFill({ maxPlayers: 10, registeredCount: -1 })).toBe(false);
+    expect(isOpenByFill({ maxPlayers: Number.NaN, registeredCount: 5 })).toBe(false);
+  });
+
+  it('reste vrai au-delà du seuil, jusqu’au tableau complet', () => {
+    expect(isOpenByFill({ maxPlayers: 10, registeredCount: 7 })).toBe(true);
+    expect(isOpenByFill({ maxPlayers: 10, registeredCount: 10 })).toBe(true);
+    expect(isOpenByFill({ maxPlayers: 10, registeredCount: 6 })).toBe(false);
   });
 });
 
