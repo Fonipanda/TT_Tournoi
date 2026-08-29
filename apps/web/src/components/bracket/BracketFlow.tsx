@@ -16,7 +16,11 @@
  *     canevas prend donc la hauteur exacte du tableau et la page défile, comme
  *     n'importe quel autre contenu.
  *   - **Aucune commande de zoom.** Elles n'apportaient rien face au défilement
- *     de la page. Le déplacement latéral se fait en attrapant le fond.
+ *     de la page.
+ *   - **Déplacement latéral par flèches, pas au glisser.** Attraper le fond
+ *     n'est découvrable que par accident et entre en conflit avec le
+ *     défilement tactile de la page. Deux flèches encadrent la ligne des tours
+ *     et cadrent le tour suivant ou précédent.
  *
  * Les liaisons ne sont PAS des edges React Flow : elles sont tracées à la main
  * dans un <svg> placé par `ViewportPortal`, donc exprimées dans le repère du
@@ -31,7 +35,11 @@ import {
   BackgroundVariant,
   Panel,
   ReactFlow,
+  ReactFlowProvider,
   ViewportPortal,
+  useReactFlow,
+  useStore,
+  useViewport,
   type Node,
   type NodeProps,
 } from '@xyflow/react';
@@ -39,6 +47,7 @@ import '@xyflow/react/dist/style.css';
 
 import {
   COL_W,
+  LABEL_H,
   columnX,
   computeRoundLabel,
   connectorPath,
@@ -58,6 +67,10 @@ const DOTS = '#CBD5E1';
 /** Marge de déplacement autour du tableau. */
 const MARGIN_X = 160;
 const MARGIN_Y = 40;
+/** Blanc laissé à gauche du tour cadré par les flèches. */
+const NAV_PAD = 48;
+/** Durée du glissement animé d'un tour à l'autre. */
+const NAV_MS = 320;
 
 /* Le gestionnaire de sélection passe par un contexte plutôt que par `data` :
    le placer dans `data` obligerait à recréer chaque nœud à chaque rendu. */
@@ -96,6 +109,77 @@ function MatchNode({ data }: NodeProps) {
    remonter React Flow tous ses nœuds. */
 const nodeTypes = { match: MatchNode };
 
+/**
+ * Flèches de déplacement latéral, posées sur la ligne des tours.
+ *
+ * Elles remplacent le glisser du fond : un clic cadre le tour suivant (ou
+ * précédent) contre le bord gauche. Rendues hors de `<ReactFlow>` mais dans son
+ * fournisseur, elles restent fixes pendant que le tableau glisse dessous.
+ *
+ * Quand le tableau tient dans la largeur disponible, il n'y a rien à déplacer :
+ * le composant ne rend rien.
+ */
+function RoundNav({ columnXs, totalW }: { columnXs: number[]; totalW: number }) {
+  const { setViewport } = useReactFlow();
+  const { x, y, zoom } = useViewport();
+  const width = useStore((st) => st.width);
+
+  // Abscisse de viewport qui amène le tour `r` contre le bord gauche, et borne
+  // au-delà de laquelle on ne ferait plus défiler que du vide.
+  const stops = columnXs.map((cx) => NAV_PAD - cx * zoom);
+  const minX = Math.min(0, width - totalW * zoom - NAV_PAD);
+
+  if (width === 0 || minX >= 0) return null;
+
+  const go = (target: number) =>
+    setViewport({ x: Math.min(0, Math.max(minX, target)), y, zoom }, { duration: NAV_MS });
+
+  // Tolérance de 1 px : une animation s'arrête rarement sur la valeur exacte.
+  const prev = stops.filter((sx) => sx > x + 1).pop();
+  const next = stops.find((sx) => sx < x - 1);
+  const canPrev = x < -1;
+  const canNext = x > minX + 1;
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Tour précédent"
+        disabled={!canPrev}
+        onClick={() => go(prev ?? 0)}
+        className={`${s.navBtn} left-1`}
+        style={{ top: (LABEL_H - 32) / 2 }}
+      >
+        <Chevron dir="left" />
+      </button>
+      <button
+        type="button"
+        aria-label="Tour suivant"
+        disabled={!canNext}
+        onClick={() => go(next ?? minX)}
+        className={`${s.navBtn} right-1`}
+        style={{ top: (LABEL_H - 32) / 2 }}
+      >
+        <Chevron dir="right" />
+      </button>
+    </>
+  );
+}
+
+function Chevron({ dir }: { dir: 'left' | 'right' }) {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path
+        d={dir === 'left' ? 'M15 5 L8 12 L15 19' : 'M9 5 L16 12 L9 19'}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export interface BracketFlowProps {
   matches: BracketTreeMatch[];
   highlightWinner?: boolean;
@@ -121,7 +205,7 @@ export function BracketFlow({
 }: BracketFlowProps) {
   const [focusId, setFocusId] = useState<string | null>(minePlayerId ?? null);
 
-  const { nodes, wiresD, mineWiresD, labels, extent, totalH, focusName } = useMemo(() => {
+  const { nodes, wiresD, mineWiresD, labels, extent, totalW, totalH, focusName } = useMemo(() => {
     const layout = layoutBracket(matches);
     const mineIds = minePathIds(matches, focusId);
     const following = mineIds.size > 0;
@@ -180,7 +264,16 @@ export function BracketFlow({
       }
     }
 
-    return { nodes: ns, wiresD, mineWiresD, labels, extent, totalH: layout.totalH, focusName };
+    return {
+      nodes: ns,
+      wiresD,
+      mineWiresD,
+      labels,
+      extent,
+      totalW: layout.totalW,
+      totalH: layout.totalH,
+      focusName,
+    };
   }, [matches, focusId, highlightWinner]);
 
   const focusApi = useMemo<FocusApi>(
@@ -210,59 +303,69 @@ export function BracketFlow({
       style={{ height: height ?? totalH }}
     >
       <FocusContext.Provider value={focusApi}>
-        <ReactFlow
-          nodes={nodes}
-          edges={[]}
-          nodeTypes={nodeTypes}
-          /* Taille réelle à l'ouverture, cadrée en haut à gauche. */
-          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-          minZoom={minZoom}
-          maxZoom={maxZoom}
-          translateExtent={extent}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          nodesFocusable={false}
-          edgesFocusable={false}
-          /* L'arbre est un bloc au milieu d'une page qui défile : la molette
-             doit faire défiler la page, pas zoomer le canevas. */
-          zoomOnScroll={false}
-          preventScrolling={false}
-          proOptions={{ hideAttribution: true }}
-        >
-          <ViewportPortal>
-            <svg
-              className={s.wires}
-              width={1}
-              height={1}
-              style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
-            >
-              {wiresD && <path d={wiresD} fill="none" stroke={WIRE} strokeWidth={1.5} />}
-              {mineWiresD && <path d={mineWiresD} fill="none" stroke={WIRE_MINE} strokeWidth={3} />}
-            </svg>
-            {labels.map((l) => (
-              <div
-                key={l.round}
-                className="absolute text-[11px] uppercase tracking-wider font-semibold text-foreground-muted text-center pointer-events-none select-none"
-                style={{ left: l.x, top: 0, width: COL_W }}
+        <ReactFlowProvider>
+          <ReactFlow
+            nodes={nodes}
+            edges={[]}
+            nodeTypes={nodeTypes}
+            /* Taille réelle à l'ouverture, cadrée en haut à gauche. */
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            minZoom={minZoom}
+            maxZoom={maxZoom}
+            translateExtent={extent}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            nodesFocusable={false}
+            edgesFocusable={false}
+            /* Le déplacement passe par les flèches de `RoundNav` : le glisser du
+               fond confisquait le geste de défilement tactile de la page. */
+            panOnDrag={false}
+            /* L'arbre est un bloc au milieu d'une page qui défile : la molette
+               doit faire défiler la page, pas zoomer le canevas. */
+            zoomOnScroll={false}
+            zoomOnDoubleClick={false}
+            preventScrolling={false}
+            proOptions={{ hideAttribution: true }}
+          >
+            <ViewportPortal>
+              <svg
+                className={s.wires}
+                width={1}
+                height={1}
+                style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
               >
-                {l.text}
-              </div>
-            ))}
-          </ViewportPortal>
-          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={DOTS} />
-          {focusName && (
-            <Panel position="top-right">
-              <button
-                type="button"
-                onClick={() => setFocusId(null)}
-                className="min-h-0 text-xs px-3 py-1.5 bg-primary text-primary-fg shadow-sm"
-              >
-                Parcours de {focusName} — tout afficher
-              </button>
-            </Panel>
-          )}
-        </ReactFlow>
+                {wiresD && <path d={wiresD} fill="none" stroke={WIRE} strokeWidth={1.5} />}
+                {mineWiresD && (
+                  <path d={mineWiresD} fill="none" stroke={WIRE_MINE} strokeWidth={3} />
+                )}
+              </svg>
+              {labels.map((l) => (
+                <div
+                  key={l.round}
+                  className="absolute text-[11px] uppercase tracking-wider font-semibold text-foreground-muted text-center pointer-events-none select-none"
+                  style={{ left: l.x, top: 0, width: COL_W }}
+                >
+                  {l.text}
+                </div>
+              ))}
+            </ViewportPortal>
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={DOTS} />
+            {focusName && (
+              /* Décalé sous la ligne des tours, que les flèches occupent. */
+              <Panel position="top-right" style={{ marginTop: LABEL_H + 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setFocusId(null)}
+                  className="min-h-0 text-xs px-3 py-1.5 bg-primary text-primary-fg shadow-sm"
+                >
+                  Parcours de {focusName} — tout afficher
+                </button>
+              </Panel>
+            )}
+          </ReactFlow>
+          <RoundNav columnXs={labels.map((l) => l.x)} totalW={totalW} />
+        </ReactFlowProvider>
       </FocusContext.Provider>
     </div>
   );

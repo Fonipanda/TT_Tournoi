@@ -27,13 +27,43 @@
   pointer-events: auto !important;
 }
 
-/* Le fond du canevas est la seule zone qui répond au déplacement : le curseur
-   doit l'annoncer, faute de quoi rien n'indique que le tableau est manipulable. */
+/* Le fond ne se déplace plus au glisser (`panOnDrag={false}`) : le curseur doit
+   rester neutre, sans quoi il promettrait une préhension qui n'existe plus. */
 .root :global(.react-flow__pane) {
-  cursor: grab;
+  cursor: default;
 }
-.root :global(.react-flow__pane.dragging) {
-  cursor: grabbing;
+
+/* Flèches de tour — posées sur la ligne des libellés, au-dessus du canevas.
+   Le positionnement vertical vient du composant (hauteur de la bande). */
+.navBtn {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 9999px;
+  background: rgb(255 255 255);
+  color: rgb(71 85 105);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 12%);
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+.navBtn:hover:not(:disabled) {
+  color: rgb(2 132 199);
+  border-color: rgb(2 132 199);
+}
+
+.navBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 /* Le <svg> hôte mesure 1×1 : sans `overflow: visible`, les connecteurs tracés
