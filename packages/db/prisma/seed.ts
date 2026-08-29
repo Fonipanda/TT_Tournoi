@@ -86,7 +86,7 @@ async function main() {
       dotationSemi: new Prisma.Decimal(20),
       // Le récap suit désormais les quatre montants ; il est recalculé par
       // l'API à chaque écriture. Ici on écrit le texte qu'elle produirait.
-      prize: '1er 80€ / 2è 40€ / 3è-4è 20€ / 5è à 8è 0€',
+      prize: '1er 80€ / 2ème 40€ / 3ème-4ème 20€ / 5ème à 8ème 0€',
     },
     {
       id: '00000000-0000-0000-0000-0000000000a2',
@@ -102,7 +102,7 @@ async function main() {
       dotationWinner: new Prisma.Decimal(120),
       dotationFinalist: new Prisma.Decimal(60),
       dotationSemi: new Prisma.Decimal(30),
-      prize: '1er 120€ / 2è 60€ / 3è-4è 30€ / 5è à 8è 0€',
+      prize: '1er 120€ / 2ème 60€ / 3ème-4ème 30€ / 5ème à 8ème 0€',
     },
     {
       id: '00000000-0000-0000-0000-0000000000a3',
@@ -118,7 +118,7 @@ async function main() {
       dotationWinner: new Prisma.Decimal(180),
       dotationFinalist: new Prisma.Decimal(90),
       dotationSemi: new Prisma.Decimal(45),
-      prize: '1er 180€ / 2è 90€ / 3è-4è 45€ / 5è à 8è 0€',
+      prize: '1er 180€ / 2ème 90€ / 3ème-4ème 45€ / 5ème à 8ème 0€',
     },
     {
       id: '00000000-0000-0000-0000-0000000000a4',
@@ -134,7 +134,7 @@ async function main() {
       dotationWinner: new Prisma.Decimal(250),
       dotationFinalist: new Prisma.Decimal(120),
       dotationSemi: new Prisma.Decimal(60),
-      prize: '1er 250€ / 2è 120€ / 3è-4è 60€ / 5è à 8è 0€',
+      prize: '1er 250€ / 2ème 120€ / 3ème-4ème 60€ / 5ème à 8ème 0€',
     },
   ];
 
