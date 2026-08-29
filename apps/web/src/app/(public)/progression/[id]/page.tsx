@@ -19,6 +19,8 @@ export default async function ProgressionDetailPage({ params }: Params) {
     where: { id },
     include: {
       tournament: true,
+      // Les inscriptions annulées sont désactivées, pas effacées.
+      _count: { select: { registrations: { where: { isActive: true } } } },
       matches: {
         include: { player1: true, player2: true, winner: true, table: true },
         orderBy: [{ poolNumber: 'asc' }, { roundNumber: 'asc' }, { createdAt: 'asc' }],
@@ -76,9 +78,13 @@ export default async function ProgressionDetailPage({ params }: Params) {
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-1">
         {bracket.name}
       </h1>
-      <p className="text-foreground-muted text-sm mb-8">
+      <p className="text-foreground-muted text-sm mb-1">
         {bracket.category} &middot;{' '}
         {bracket.matches.filter((m) => m.status === 'finished').length}/{bracket.matches.length} matches terminés
+      </p>
+      <p className="text-foreground-subtle text-sm mb-8">
+        {pools.size} poule{pools.size > 1 ? 's' : ''} &middot; {bracket._count.registrations} joueur
+        {bracket._count.registrations > 1 ? 's' : ''} &middot; début {bracket.startTime ?? '—'}
       </p>
 
       {/* Toggle Poules / Tableau final */}

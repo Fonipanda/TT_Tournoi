@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { Prisma, prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
+import { formatDotation } from '@/lib/dotation';
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -41,6 +42,8 @@ const UpdateSchema = z.object({
   dotationSemi: z.number().optional(),
   dotationFinalist: z.number().optional(),
   dotationWinner: z.number().optional(),
+  // `prize` est accepté par compatibilité mais ignoré : le récap est une
+  // projection des quatre montants, pas une saisie indépendante.
   prize: z.string().optional(),
   isActive: z.boolean().optional(),
 });
@@ -54,6 +57,27 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     for (const key of ['entryFee', 'dotationQuarter', 'dotationSemi', 'dotationFinalist', 'dotationWinner'] as const) {
       if (typeof body[key] === 'number') data[key] = new Prisma.Decimal(body[key] as number);
     }
+
+    // Le récap est toujours recalculé, jamais repris du corps de la requête.
+    // Un PATCH partiel peut ne porter qu'un seul montant : les autres sont
+    // relus en base, sans quoi le récap serait reconstruit avec des zéros.
+    const current = await prisma.bracket.findUnique({
+      where: { id },
+      select: {
+        dotationWinner: true,
+        dotationFinalist: true,
+        dotationSemi: true,
+        dotationQuarter: true,
+      },
+    });
+    if (!current) return NextResponse.json({ error: 'Introuvable' }, { status: 404 });
+    data.prize = formatDotation({
+      winner: body.dotationWinner ?? Number(current.dotationWinner),
+      finalist: body.dotationFinalist ?? Number(current.dotationFinalist),
+      semi: body.dotationSemi ?? Number(current.dotationSemi),
+      quarter: body.dotationQuarter ?? Number(current.dotationQuarter),
+    });
+
     const updated = await prisma.bracket.update({ where: { id }, data });
     return NextResponse.json(updated);
   } catch (e) {

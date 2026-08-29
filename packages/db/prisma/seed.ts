@@ -79,11 +79,14 @@ async function main() {
       maxPlayers: 32,
       entryFee: new Prisma.Decimal(8),
       startTime: '09:00',
+      checkinEnd: '08:45',
       day: 'Samedi',
       dotationWinner: new Prisma.Decimal(80),
       dotationFinalist: new Prisma.Decimal(40),
       dotationSemi: new Prisma.Decimal(20),
-      prize: '80€ / 40€ / 2x20€',
+      // Le récap suit désormais les quatre montants ; il est recalculé par
+      // l'API à chaque écriture. Ici on écrit le texte qu'elle produirait.
+      prize: '1er 80€ / 2è 40€ / 3è-4è 20€ / 5è à 8è 0€',
     },
     {
       id: '00000000-0000-0000-0000-0000000000a2',
@@ -94,11 +97,12 @@ async function main() {
       maxPlayers: 32,
       entryFee: new Prisma.Decimal(10),
       startTime: '13:30',
+      checkinEnd: '13:15',
       day: 'Samedi',
       dotationWinner: new Prisma.Decimal(120),
       dotationFinalist: new Prisma.Decimal(60),
       dotationSemi: new Prisma.Decimal(30),
-      prize: '120€ / 60€ / 2x30€',
+      prize: '1er 120€ / 2è 60€ / 3è-4è 30€ / 5è à 8è 0€',
     },
     {
       id: '00000000-0000-0000-0000-0000000000a3',
@@ -109,11 +113,12 @@ async function main() {
       maxPlayers: 16,
       entryFee: new Prisma.Decimal(12),
       startTime: '09:00',
+      checkinEnd: '08:45',
       day: 'Dimanche',
       dotationWinner: new Prisma.Decimal(180),
       dotationFinalist: new Prisma.Decimal(90),
       dotationSemi: new Prisma.Decimal(45),
-      prize: '180€ / 90€ / 2x45€',
+      prize: '1er 180€ / 2è 90€ / 3è-4è 45€ / 5è à 8è 0€',
     },
     {
       id: '00000000-0000-0000-0000-0000000000a4',
@@ -124,11 +129,12 @@ async function main() {
       maxPlayers: 16,
       entryFee: new Prisma.Decimal(15),
       startTime: '14:00',
+      checkinEnd: '13:45',
       day: 'Dimanche',
       dotationWinner: new Prisma.Decimal(250),
       dotationFinalist: new Prisma.Decimal(120),
       dotationSemi: new Prisma.Decimal(60),
-      prize: '250€ / 120€ / 2x60€',
+      prize: '1er 250€ / 2è 120€ / 3è-4è 60€ / 5è à 8è 0€',
     },
   ];
 

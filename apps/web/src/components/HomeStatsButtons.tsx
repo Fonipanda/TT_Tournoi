@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { Modal } from '@/components/ui/modal';
+import { formatDotation } from '@/lib/dotation';
+import { rankingFromPoints } from '@/lib/ranking';
 
 interface BracketStat {
   id: string;
@@ -12,7 +14,10 @@ interface BracketStat {
   day: string | null;
   maxPlayers: number;
   inscrits: number;
-  prize: string;
+  dotationWinner: number;
+  dotationFinalist: number;
+  dotationSemi: number;
+  dotationQuarter: number;
   byePlayers: string;
 }
 
@@ -21,6 +26,7 @@ interface PlayerLite {
   firstName: string;
   lastName: string;
   club: string | null;
+  points: number;
   bracketName: string;
 }
 
@@ -29,6 +35,7 @@ interface PlayerGrouped {
   firstName: string;
   lastName: string;
   club: string | null;
+  points: number;
   brackets: string[];
 }
 
@@ -57,6 +64,7 @@ export function HomeStatsButtons({ brackets, players }: Props) {
           firstName: p.firstName,
           lastName: p.lastName,
           club: p.club,
+          points: p.points,
           brackets: [p.bracketName],
         });
       }
@@ -133,12 +141,16 @@ export function HomeStatsButtons({ brackets, players }: Props) {
                     {full ? 'Complet' : `${taux}% rempli`}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                   <div>
-                    <p className="text-foreground-muted">Heure de pointage</p>
+                    <p className="text-foreground-muted">Fin de pointage</p>
                     <p className="font-medium">
-                      {b.day ?? '—'} · {b.checkinEnd ?? b.startTime ?? '—'}
+                      {b.day ?? '—'} · {b.checkinEnd || '—'}
                     </p>
+                  </div>
+                  <div>
+                    <p className="text-foreground-muted">Début du tableau</p>
+                    <p className="font-medium">{b.startTime || '—'}</p>
                   </div>
                   <div>
                     <p className="text-foreground-muted">Inscrits</p>
@@ -152,9 +164,16 @@ export function HomeStatsButtons({ brackets, players }: Props) {
                       {b.byePlayers ? b.byePlayers.split(',').filter(Boolean).length : 0}
                     </p>
                   </div>
-                  <div>
+                  <div className="col-span-full">
                     <p className="text-foreground-muted">Dotations</p>
-                    <p className="font-medium text-xs">{b.prize || '—'}</p>
+                    <p className="font-medium text-xs">
+                      {formatDotation({
+                        winner: b.dotationWinner,
+                        finalist: b.dotationFinalist,
+                        semi: b.dotationSemi,
+                        quarter: b.dotationQuarter,
+                      })}
+                    </p>
                   </div>
                 </div>
                 {/* Barre de progression */}
@@ -193,6 +212,7 @@ export function HomeStatsButtons({ brackets, players }: Props) {
             <thead className="text-xs uppercase tracking-widest text-foreground-muted sticky top-0 bg-surface">
               <tr className="border-b border-border">
                 <th className="text-left py-2">Nom</th>
+                <th className="text-left py-2">Clt</th>
                 <th className="text-left py-2">Club</th>
                 <th className="text-left py-2">Tableaux</th>
               </tr>
@@ -203,6 +223,7 @@ export function HomeStatsButtons({ brackets, players }: Props) {
                   <td className="py-1.5 font-medium uppercase">
                     {p.lastName} <span className="font-normal normal-case">{p.firstName}</span>
                   </td>
+                  <td className="py-1.5 tabular font-medium">{rankingFromPoints(p.points)}</td>
                   <td className="py-1.5 text-foreground-muted">{p.club ?? '—'}</td>
                   <td className="py-1.5">
                     <div className="flex flex-wrap gap-1">
@@ -220,7 +241,7 @@ export function HomeStatsButtons({ brackets, players }: Props) {
               ))}
               {filteredPlayers.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="py-6 text-center text-foreground-muted">
+                  <td colSpan={4} className="py-6 text-center text-foreground-muted">
                     Aucun résultat.
                   </td>
                 </tr>

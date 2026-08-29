@@ -20,7 +20,18 @@ async function getActiveTournament() {
           _count: { select: { registrations: { where: { isActive: true } } } },
           registrations: {
             where: { isActive: true },
-            include: { player: { select: { id: true, firstName: true, lastName: true, club: true } } },
+            include: {
+              player: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  club: true,
+                  // Alimente la colonne « Clt » de la liste des inscrits.
+                  points: true,
+                },
+              },
+            },
           },
         },
       },
@@ -65,7 +76,13 @@ export default async function HomePage() {
     day: b.day,
     maxPlayers: b.maxPlayers,
     inscrits: b._count.registrations,
-    prize: b.prize,
+    // Les quatre montants plutôt que `prize` : le récap est recalculé à
+    // l'affichage, donc juste même pour un tableau enregistré avant que le
+    // texte ne devienne une donnée dérivée.
+    dotationWinner: Number(b.dotationWinner),
+    dotationFinalist: Number(b.dotationFinalist),
+    dotationSemi: Number(b.dotationSemi),
+    dotationQuarter: Number(b.dotationQuarter),
     byePlayers: b.byePlayers,
   }));
 
@@ -76,6 +93,7 @@ export default async function HomePage() {
       firstName: r.player.firstName,
       lastName: r.player.lastName,
       club: r.player.club,
+      points: r.player.points,
       bracketName: b.name,
     })),
   );

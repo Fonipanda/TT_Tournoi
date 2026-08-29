@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/modal';
 import { TextField, NumberField, SelectField } from '@/components/ui/fields';
 import { toast } from '@/components/ui/toast';
 import { apiPatch, apiPost, ApiError } from '@/lib/api-client';
+import { formatDotation } from '@/lib/dotation';
 
 export interface BracketForm {
   id?: string;
@@ -17,6 +18,7 @@ export interface BracketForm {
   maxPlayers?: number;
   entryFee?: number;
   day?: string;
+  checkinEnd?: string;
   startTime?: string;
   poolQualifiers?: number;
   byePlayers?: string;
@@ -56,12 +58,24 @@ export function BracketFormModal({ open, onClose, tournamentId, initial }: Props
   const update = <K extends keyof BracketForm>(key: K, value: BracketForm[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
+  // Aperçu du texte public, reconstruit à chaque frappe. Le serveur applique
+  // la même fonction à l'enregistrement : l'aperçu ne peut pas mentir.
+  const dotationRecap = formatDotation({
+    winner: form.dotationWinner ?? 0,
+    finalist: form.dotationFinalist ?? 0,
+    semi: form.dotationSemi ?? 0,
+    quarter: form.dotationQuarter ?? 0,
+  });
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
+      // `prize` n'est pas transmis : il est dérivé des montants côté serveur.
+      const fields: BracketForm = { ...form };
+      delete fields.prize;
       const payload = {
-        ...form,
+        ...fields,
         minPoints: form.minPoints ?? null,
         maxPoints: form.maxPoints ?? null,
       };
@@ -127,7 +141,7 @@ export function BracketFormModal({ open, onClose, tournamentId, initial }: Props
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <NumberField
             label="Frais d'inscription (€)"
             value={form.entryFee ?? 0}
@@ -144,6 +158,13 @@ export function BracketFormModal({ open, onClose, tournamentId, initial }: Props
               { value: 'Samedi', label: 'Samedi' },
               { value: 'Dimanche', label: 'Dimanche' },
             ]}
+          />
+          <TextField
+            label="Fin de pointage"
+            type="time"
+            value={form.checkinEnd ?? ''}
+            onChange={(e) => update('checkinEnd', e.target.value)}
+            helper="Clôture des présences"
           />
           <TextField
             label="Heure début"
@@ -197,10 +218,11 @@ export function BracketFormModal({ open, onClose, tournamentId, initial }: Props
           </div>
           <TextField
             label="Récap dotation (texte affiché)"
-            value={form.prize ?? ''}
-            onChange={(e) => update('prize', e.target.value)}
-            placeholder="80€ / 40€ / 2x20€"
-            className="mt-3"
+            value={dotationRecap}
+            readOnly
+            tabIndex={-1}
+            className="mt-3 bg-bg-alt cursor-default"
+            helper="Construit à partir des quatre montants ci-dessus, et affiché tel quel au public."
           />
         </fieldset>
 

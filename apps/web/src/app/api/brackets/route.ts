@@ -7,6 +7,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { Prisma, prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
+import { formatDotation } from '@/lib/dotation';
 
 export async function GET(req: NextRequest) {
   const tournamentId = req.nextUrl.searchParams.get('tournamentId') ?? undefined;
@@ -44,7 +45,9 @@ const CreateSchema = z.object({
   dotationSemi: z.number().nonnegative().default(0),
   dotationFinalist: z.number().nonnegative().default(0),
   dotationWinner: z.number().nonnegative().default(0),
-  prize: z.string().default(''),
+  // `prize` est accepté par compatibilité mais ignoré : le récap est une
+  // projection des quatre montants, pas une saisie indépendante.
+  prize: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -59,6 +62,12 @@ export async function POST(req: NextRequest) {
         dotationSemi: new Prisma.Decimal(body.dotationSemi),
         dotationFinalist: new Prisma.Decimal(body.dotationFinalist),
         dotationWinner: new Prisma.Decimal(body.dotationWinner),
+        prize: formatDotation({
+          winner: body.dotationWinner,
+          finalist: body.dotationFinalist,
+          semi: body.dotationSemi,
+          quarter: body.dotationQuarter,
+        }),
       },
     });
     return NextResponse.json(created, { status: 201 });

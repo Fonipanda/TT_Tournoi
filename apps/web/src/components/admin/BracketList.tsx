@@ -17,6 +17,7 @@ interface Bracket {
   maxPoints: number | null;
   maxPlayers: number;
   entryFee: string | number;
+  checkinEnd: string | null;
   startTime: string | null;
   day: string | null;
   poolQualifiers: number;
@@ -64,6 +65,7 @@ export function BracketList({ brackets, tournaments, selectedTournamentId }: Pro
       entryFee: Number(b.entryFee),
       day: b.day ?? '',
       startTime: b.startTime ?? '',
+      checkinEnd: b.checkinEnd ?? '',
       poolQualifiers: b.poolQualifiers,
       byePlayers: b.byePlayers,
       dotationWinner: Number(b.dotationWinner),
