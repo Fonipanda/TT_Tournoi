@@ -1,0 +1,44 @@
+/* Ajustements React Flow — strictement locaux au composant.
+   Rien n'est ajouté à globals.css : le reste du site ne doit pas subir
+   l'arrivée de cette dépendance. */
+
+.root {
+  position: relative;
+}
+
+/* Le nœud React Flow ne porte aucune décoration : la carte de match fournit
+   déjà bordure, rayon et fond. */
+.root :global(.react-flow__node) {
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  cursor: default;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+/* `globals.css` impose `button { min-height: 44px }` pour les cibles tactiles.
+   Appliqué aux commandes de React Flow, cela produit une colonne démesurée :
+   on leur rend leur gabarit d'origine, tout en restant confortable au doigt. */
+.root :global(.react-flow__controls) {
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+}
+.root :global(.react-flow__controls-button) {
+  min-height: 30px;
+  height: 30px;
+  width: 30px;
+  border-radius: 0;
+}
+
+/* Le <svg> hôte mesure 1×1 : sans `overflow: visible`, les connecteurs tracés
+   au-delà de ces bornes seraient rognés par le navigateur. */
+.wires {
+  overflow: visible;
+  max-width: none;
+}

@@ -22,8 +22,13 @@ export default async function AdminBracketDetail({ params }: Props) {
       matches: {
         orderBy: [{ poolNumber: 'asc' }, { poolMatchOrder: 'asc' }, { roundNumber: 'asc' }],
         include: {
-          player1: { select: { id: true, firstName: true, lastName: true, points: true } },
-          player2: { select: { id: true, firstName: true, lastName: true, points: true } },
+          // `club` alimente la carte de match de la vue arbre.
+          player1: {
+            select: { id: true, firstName: true, lastName: true, points: true, club: true },
+          },
+          player2: {
+            select: { id: true, firstName: true, lastName: true, points: true, club: true },
+          },
           table: { select: { id: true, number: true, roomId: true } },
         },
       },

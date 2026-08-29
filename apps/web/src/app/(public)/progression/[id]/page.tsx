@@ -1,7 +1,9 @@
 import { prisma } from '@tt/db';
 import Link from 'next/link';
-import { BracketTree, type BracketTreeMatch } from '@/components/BracketTree';
+import { BracketView } from '@/components/bracket/BracketView';
 import { ProgressionToggle } from '@/components/ProgressionToggle';
+import { getCurrentUser } from '@/lib/auth/server';
+import { type BracketTreeMatch } from '@/lib/bracket-layout';
 import { serialize } from '@/lib/serialize';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +12,9 @@ interface Params { params: Promise<{ id: string }> }
 
 export default async function ProgressionDetailPage({ params }: Params) {
   const { id } = await params;
+  // Le visiteur connecté voit son propre parcours mis en relief ; un visiteur
+  // anonyme obtient le tableau neutre.
+  const me = await getCurrentUser();
   const bracket = await prisma.bracket.findUnique({
     where: { id },
     include: {
@@ -153,7 +158,8 @@ export default async function ProgressionDetailPage({ params }: Params) {
               <h2 className="font-heading text-xl uppercase tracking-wide mb-4">
                 Tableau final
               </h2>
-              <BracketTree
+              <BracketView
+                minePlayerId={me?.playerId ?? null}
                 matches={elimMatches.map<BracketTreeMatch>((m) => ({
                   id: m.id,
                   roundNumber: m.roundNumber,

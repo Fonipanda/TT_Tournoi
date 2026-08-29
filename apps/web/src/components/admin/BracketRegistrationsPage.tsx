@@ -7,6 +7,8 @@ import { PlayerRegistrationModal } from './PlayerRegistrationModal';
 import { PoolSizeModal } from './PoolSizeModal';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
+import { BracketView } from '@/components/bracket/BracketView';
+import { type BracketTreeMatch } from '@/lib/bracket-layout';
 import { apiPatch, apiDelete, apiPost, ApiError } from '@/lib/api-client';
 
 interface Registration {
@@ -30,6 +32,7 @@ interface MatchPlayer {
   firstName: string;
   lastName: string;
   points: number;
+  club?: string | null;
 }
 
 interface PoolMatch {
@@ -46,6 +49,7 @@ interface PoolMatch {
   winnerId: string | null;
   setsP1: number | null;
   setsP2: number | null;
+  sets?: unknown;
   tableId: string | null;
   table: { id: string; number: number; roomId: string } | null;
 }
@@ -83,6 +87,9 @@ export function BracketRegistrationsPage({
   const [deleting, setDeleting] = useState<string | null>(null);
   const [swapMode, setSwapMode] = useState(false);
   const [swapFirst, setSwapFirst] = useState<{ playerId: string; poolNumber: number } | null>(null);
+  // L'arbre donne la lecture d'ensemble ; la liste reste indispensable pour
+  // affecter les tables.
+  const [elimView, setElimView] = useState<'tree' | 'list'>('tree');
 
   const alreadyRegisteredIds = new Set(registrations.map((r) => r.player.id));
   const busySet = new Set(busyPlayerIds);
@@ -272,6 +279,26 @@ export function BracketRegistrationsPage({
     if (!poolsGrouped.has(pn)) poolsGrouped.set(pn, []);
     poolsGrouped.get(pn)!.push(m);
   }
+
+  // Vue arbre : le vainqueur n'est chargé que par son identifiant, on le
+  // retrouve parmi les deux joueurs du match.
+  const elimTreeMatches = elimMatches.map<BracketTreeMatch>((m) => {
+    const winner =
+      m.winnerId === m.player1?.id ? m.player1 : m.winnerId === m.player2?.id ? m.player2 : null;
+    return {
+      id: m.id,
+      roundNumber: m.roundNumber ?? 1,
+      roundName: m.roundName,
+      poolMatchOrder: m.poolMatchOrder,
+      player1: m.player1,
+      player2: m.player2,
+      winner,
+      status: m.status as BracketTreeMatch['status'],
+      setsP1: m.setsP1 ?? 0,
+      setsP2: m.setsP2 ?? 0,
+      sets: Array.isArray(m.sets) ? (m.sets as { p1: number; p2: number }[]) : null,
+    };
+  });
 
   return (
     <>
@@ -560,8 +587,33 @@ export function BracketRegistrationsPage({
       {/* Elimination matches — groupés par tour */}
       {elimMatches.length > 0 && (
         <div className="mt-6 space-y-6">
-          <h2 className="font-heading text-xl uppercase tracking-wide">Élimination directe</h2>
-          {(() => {
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h2 className="font-heading text-xl uppercase tracking-wide">Élimination directe</h2>
+            <div className="flex items-center gap-1 border border-border p-0.5" role="tablist">
+              {(['tree', 'list'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={elimView === v}
+                  onClick={() => setElimView(v)}
+                  className={`text-xs uppercase tracking-widest px-3 py-1.5 min-h-0 transition-colors ${
+                    elimView === v
+                      ? 'bg-primary text-primary-fg'
+                      : 'text-foreground-muted hover:bg-bg-alt'
+                  }`}
+                  data-testid={`elim-view-${v}`}
+                >
+                  {v === 'tree' ? 'Arbre' : 'Liste'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {elimView === 'tree' && <BracketView matches={elimTreeMatches} height="60vh" />}
+
+          {elimView === 'list' &&
+            (() => {
             // Groupe les matchs par roundNumber, trie chaque groupe par poolMatchOrder
             const byRound = new Map<number, typeof elimMatches>();
             for (const m of elimMatches) {

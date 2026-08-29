@@ -36,7 +36,11 @@ export default async function MonEspacePage() {
       registrations={player.registrations.map((r) => ({
         id: r.id,
         paymentStatus: r.paymentStatus,
-        bracket: { name: r.bracket.name, tournament: { name: r.bracket.tournament.name } },
+        bracket: {
+          id: r.bracketId,
+          name: r.bracket.name,
+          tournament: { name: r.bracket.tournament.name },
+        },
       }))}
     />
   );
