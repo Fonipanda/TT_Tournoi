@@ -610,7 +610,7 @@ export function BracketRegistrationsPage({
             </div>
           </div>
 
-          {elimView === 'tree' && <BracketView matches={elimTreeMatches} height="60vh" />}
+          {elimView === 'tree' && <BracketView matches={elimTreeMatches} />}
 
           {elimView === 'list' &&
             (() => {

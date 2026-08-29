@@ -5,22 +5,31 @@
  *
  * Même géométrie et même cellule FFTT que le rendu historique
  * (`BracketTree`) : seule la surface de rendu change. On y gagne un fond
- * pointillé, des connecteurs coudés plus lisibles, la mise en relief du
- * parcours d'un joueur, et le déplacement/zoom qu'impose un tableau de 64
- * places sur un écran de portable.
+ * pointillé, des connecteurs coudés plus lisibles, et surtout la sélection d'un
+ * parcours au clic.
+ *
+ * Deux partis pris, tirés de l'usage :
+ *
+ *   - **Taille réelle à l'ouverture.** Pas de recadrage automatique : sur un
+ *     tableau de 32 ou 64 places, l'ajustement à la hauteur de l'écran réduisait
+ *     tellement les cartes que ni les noms ni les états ne se lisaient. Le
+ *     canevas prend donc la hauteur exacte du tableau et la page défile, comme
+ *     n'importe quel autre contenu.
+ *   - **Aucune commande de zoom.** Elles n'apportaient rien face au défilement
+ *     de la page. Le déplacement latéral se fait en attrapant le fond.
  *
  * Les liaisons ne sont PAS des edges React Flow : elles sont tracées à la main
  * dans un <svg> placé par `ViewportPortal`, donc exprimées dans le repère du
- * canevas. Les edges auraient exigé des `Handle` sur chaque carte et un
- * routage orthogonal maison — pour un tracé qui est déjà entièrement calculé
- * par `layoutBracket`.
+ * canevas. Les edges auraient exigé des `Handle` sur chaque carte et un routage
+ * orthogonal maison — pour un tracé déjà entièrement calculé par
+ * `layoutBracket`.
  */
 
-import { useMemo } from 'react';
+import { createContext, useContext, useMemo, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
-  Controls,
+  Panel,
   ReactFlow,
   ViewportPortal,
   type Node,
@@ -46,8 +55,17 @@ const WIRE = 'rgb(203 213 225)';
 const WIRE_MINE = '#0284C7';
 /** Pointillés du fond, assez discrets pour ne pas concurrencer les liaisons. */
 const DOTS = '#CBD5E1';
-/** Marge autour du tableau au-delà de laquelle le déplacement est bloqué. */
-const EXTENT_MARGIN = 320;
+/** Marge de déplacement autour du tableau. */
+const MARGIN_X = 160;
+const MARGIN_Y = 40;
+
+/* Le gestionnaire de sélection passe par un contexte plutôt que par `data` :
+   le placer dans `data` obligerait à recréer chaque nœud à chaque rendu. */
+interface FocusApi {
+  focusId: string | null;
+  select: (playerId: string) => void;
+}
+const FocusContext = createContext<FocusApi>({ focusId: null, select: () => {} });
 
 interface MatchNodeData extends Record<string, unknown> {
   match: BracketTreeMatch;
@@ -58,6 +76,7 @@ interface MatchNodeData extends Record<string, unknown> {
 
 function MatchNode({ data }: NodeProps) {
   const d = data as MatchNodeData;
+  const { focusId, select } = useContext(FocusContext);
   return (
     <div style={{ width: COL_W }} data-testid={`bracket-match-${d.match.id}`}>
       <MatchCard
@@ -66,6 +85,8 @@ function MatchNode({ data }: NodeProps) {
         live
         mine={d.mine}
         dim={d.dim}
+        onSelectPlayer={select}
+        focusPlayerId={focusId}
       />
     </div>
   );
@@ -79,33 +100,30 @@ export interface BracketFlowProps {
   matches: BracketTreeMatch[];
   highlightWinner?: boolean;
   /**
-   * Joueur dont on suit le parcours : TOUS ses matches sont mis en relief —
-   * joués, en cours et à venir — et les autres sont atténués. Sur un tableau de
-   * 64 places, on cherche sa propre ligne, pas n'importe quel match vivant.
+   * Parcours mis en relief à l'ouverture : TOUS les matches du joueur — joués,
+   * en cours et à venir — les autres estompés. Le clic sur n'importe quel nom
+   * change ensuite de parcours.
    */
   minePlayerId?: string | null;
-  /** Commandes zoom/recadrage de React Flow. */
-  controls?: boolean;
-  /** Hauteur du canevas. React Flow exige une hauteur explicite. */
+  /** Force la hauteur du canevas. Par défaut, celle du tableau. */
   height?: number | string;
   minZoom?: number;
   maxZoom?: number;
-  fitPadding?: number;
 }
 
 export function BracketFlow({
   matches,
   highlightWinner = true,
   minePlayerId,
-  controls = true,
-  height = '70vh',
-  minZoom = 0.25,
-  maxZoom = 2,
-  fitPadding = 0.12,
+  height,
+  minZoom = 0.4,
+  maxZoom = 1.6,
 }: BracketFlowProps) {
-  const { nodes, wiresD, mineWiresD, labels, extent } = useMemo(() => {
+  const [focusId, setFocusId] = useState<string | null>(minePlayerId ?? null);
+
+  const { nodes, wiresD, mineWiresD, labels, extent, totalH, focusName } = useMemo(() => {
     const layout = layoutBracket(matches);
-    const mineIds = minePathIds(matches, minePlayerId);
+    const mineIds = minePathIds(matches, focusId);
     const following = mineIds.size > 0;
 
     const ns: Node[] = layout.nodes.map((n) => ({
@@ -144,15 +162,35 @@ export function BracketFlow({
       text: computeRoundLabel(r, layout.totalRounds),
     }));
 
-    // Bornes de déplacement : on ne doit pas pouvoir emmener le tableau hors
-    // de vue et se retrouver devant un canevas vide.
     const extent: [[number, number], [number, number]] = [
-      [-EXTENT_MARGIN, -EXTENT_MARGIN],
-      [layout.totalW + EXTENT_MARGIN, layout.totalH + EXTENT_MARGIN],
+      [-MARGIN_X, -MARGIN_Y],
+      [layout.totalW + MARGIN_X, layout.totalH + MARGIN_Y],
     ];
 
-    return { nodes: ns, wiresD, mineWiresD, labels, extent };
-  }, [matches, minePlayerId, highlightWinner]);
+    // Nom du joueur suivi, pour l'étiquette qui permet de tout réafficher.
+    let focusName: string | null = null;
+    if (focusId) {
+      for (const m of matches) {
+        const p =
+          m.player1?.id === focusId ? m.player1 : m.player2?.id === focusId ? m.player2 : null;
+        if (p) {
+          focusName = `${p.lastName} ${p.firstName}`;
+          break;
+        }
+      }
+    }
+
+    return { nodes: ns, wiresD, mineWiresD, labels, extent, totalH: layout.totalH, focusName };
+  }, [matches, focusId, highlightWinner]);
+
+  const focusApi = useMemo<FocusApi>(
+    () => ({
+      focusId,
+      // Recliquer sur le joueur suivi remet le tableau entier en avant.
+      select: (playerId: string) => setFocusId((cur) => (cur === playerId ? null : playerId)),
+    }),
+    [focusId],
+  );
 
   if (matches.length === 0) {
     return (
@@ -168,53 +206,64 @@ export function BracketFlow({
   return (
     <div
       data-testid="bracket-tree"
-      className={`${s.root} w-full overflow-hidden rounded-2xl border border-border bg-surface`}
-      style={{ height }}
+      className={`${s.root} w-full`}
+      style={{ height: height ?? totalH }}
     >
-      <ReactFlow
-        nodes={nodes}
-        edges={[]}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: fitPadding }}
-        minZoom={minZoom}
-        maxZoom={maxZoom}
-        translateExtent={extent}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable={false}
-        nodesFocusable={false}
-        edgesFocusable={false}
-        /* L'arbre est un bloc au milieu d'une page qui défile : la molette doit
-           faire défiler la page, pas zoomer le canevas. Le zoom reste accessible
-           au pincement, au Ctrl+molette et par les commandes. */
-        zoomOnScroll={false}
-        preventScrolling={false}
-        proOptions={{ hideAttribution: true }}
-      >
-        <ViewportPortal>
-          <svg
-            className={s.wires}
-            width={1}
-            height={1}
-            style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
-          >
-            {wiresD && <path d={wiresD} fill="none" stroke={WIRE} strokeWidth={1.5} />}
-            {mineWiresD && <path d={mineWiresD} fill="none" stroke={WIRE_MINE} strokeWidth={3} />}
-          </svg>
-          {labels.map((l) => (
-            <div
-              key={l.round}
-              className="absolute text-[11px] uppercase tracking-wider font-semibold text-foreground-muted text-center pointer-events-none select-none"
-              style={{ left: l.x, top: 0, width: COL_W }}
+      <FocusContext.Provider value={focusApi}>
+        <ReactFlow
+          nodes={nodes}
+          edges={[]}
+          nodeTypes={nodeTypes}
+          /* Taille réelle à l'ouverture, cadrée en haut à gauche. */
+          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+          minZoom={minZoom}
+          maxZoom={maxZoom}
+          translateExtent={extent}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          nodesFocusable={false}
+          edgesFocusable={false}
+          /* L'arbre est un bloc au milieu d'une page qui défile : la molette
+             doit faire défiler la page, pas zoomer le canevas. */
+          zoomOnScroll={false}
+          preventScrolling={false}
+          proOptions={{ hideAttribution: true }}
+        >
+          <ViewportPortal>
+            <svg
+              className={s.wires}
+              width={1}
+              height={1}
+              style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
             >
-              {l.text}
-            </div>
-          ))}
-        </ViewportPortal>
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={DOTS} />
-        {controls && <Controls showInteractive={false} />}
-      </ReactFlow>
+              {wiresD && <path d={wiresD} fill="none" stroke={WIRE} strokeWidth={1.5} />}
+              {mineWiresD && <path d={mineWiresD} fill="none" stroke={WIRE_MINE} strokeWidth={3} />}
+            </svg>
+            {labels.map((l) => (
+              <div
+                key={l.round}
+                className="absolute text-[11px] uppercase tracking-wider font-semibold text-foreground-muted text-center pointer-events-none select-none"
+                style={{ left: l.x, top: 0, width: COL_W }}
+              >
+                {l.text}
+              </div>
+            ))}
+          </ViewportPortal>
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={DOTS} />
+          {focusName && (
+            <Panel position="top-right">
+              <button
+                type="button"
+                onClick={() => setFocusId(null)}
+                className="min-h-0 text-xs px-3 py-1.5 bg-primary text-primary-fg shadow-sm"
+              >
+                Parcours de {focusName} — tout afficher
+              </button>
+            </Panel>
+          )}
+        </ReactFlow>
+      </FocusContext.Provider>
     </div>
   );
 }

@@ -196,7 +196,7 @@ function MyBracket({
       {loading && <p className="text-foreground-muted">Chargement du tableau…</p>}
       {failed && <p className="text-foreground-muted">Tableau momentanément indisponible.</p>}
       {!loading && !failed && matches && (
-        <BracketView matches={matches} minePlayerId={player.id} height="60vh" />
+        <BracketView matches={matches} minePlayerId={player.id} />
       )}
     </section>
   );
