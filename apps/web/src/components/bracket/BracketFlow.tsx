@@ -33,7 +33,6 @@ import { createContext, useContext, useMemo, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
-  Panel,
   ReactFlow,
   ReactFlowProvider,
   ViewportPortal,
@@ -205,7 +204,7 @@ export function BracketFlow({
 }: BracketFlowProps) {
   const [focusId, setFocusId] = useState<string | null>(minePlayerId ?? null);
 
-  const { nodes, wiresD, mineWiresD, labels, extent, totalW, totalH, focusName } = useMemo(() => {
+  const { nodes, wiresD, mineWiresD, labels, extent, totalW, totalH } = useMemo(() => {
     const layout = layoutBracket(matches);
     const mineIds = minePathIds(matches, focusId);
     const following = mineIds.size > 0;
@@ -251,19 +250,6 @@ export function BracketFlow({
       [layout.totalW + MARGIN_X, layout.totalH + MARGIN_Y],
     ];
 
-    // Nom du joueur suivi, pour l'étiquette qui permet de tout réafficher.
-    let focusName: string | null = null;
-    if (focusId) {
-      for (const m of matches) {
-        const p =
-          m.player1?.id === focusId ? m.player1 : m.player2?.id === focusId ? m.player2 : null;
-        if (p) {
-          focusName = `${p.lastName} ${p.firstName}`;
-          break;
-        }
-      }
-    }
-
     return {
       nodes: ns,
       wiresD,
@@ -272,7 +258,6 @@ export function BracketFlow({
       extent,
       totalW: layout.totalW,
       totalH: layout.totalH,
-      focusName,
     };
   }, [matches, focusId, highlightWinner]);
 
@@ -297,76 +282,74 @@ export function BracketFlow({
   }
 
   return (
-    <div
-      data-testid="bracket-tree"
-      className={`${s.root} w-full`}
-      style={{ height: height ?? totalH }}
-    >
-      <FocusContext.Provider value={focusApi}>
-        <ReactFlowProvider>
-          <ReactFlow
-            nodes={nodes}
-            edges={[]}
-            nodeTypes={nodeTypes}
-            /* Taille réelle à l'ouverture, cadrée en haut à gauche. */
-            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-            minZoom={minZoom}
-            maxZoom={maxZoom}
-            translateExtent={extent}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable={false}
-            nodesFocusable={false}
-            edgesFocusable={false}
-            /* Le déplacement passe par les flèches de `RoundNav` : le glisser du
-               fond confisquait le geste de défilement tactile de la page. */
-            panOnDrag={false}
-            /* L'arbre est un bloc au milieu d'une page qui défile : la molette
-               doit faire défiler la page, pas zoomer le canevas. */
-            zoomOnScroll={false}
-            zoomOnDoubleClick={false}
-            preventScrolling={false}
-            proOptions={{ hideAttribution: true }}
-          >
-            <ViewportPortal>
-              <svg
-                className={s.wires}
-                width={1}
-                height={1}
-                style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
-              >
-                {wiresD && <path d={wiresD} fill="none" stroke={WIRE} strokeWidth={1.5} />}
-                {mineWiresD && (
-                  <path d={mineWiresD} fill="none" stroke={WIRE_MINE} strokeWidth={3} />
-                )}
-              </svg>
-              {labels.map((l) => (
-                <div
-                  key={l.round}
-                  className="absolute text-[11px] uppercase tracking-wider font-semibold text-foreground-muted text-center pointer-events-none select-none"
-                  style={{ left: l.x, top: 0, width: COL_W }}
+    <div className="w-full">
+      {/* Le suivi d'un parcours ne se devine pas : rien, sur la carte, n'annonce
+          que les noms sont cliquables. Une ligne d'aide fixe au-dessus du
+          tableau coûte moins qu'une étiquette flottante, qui masquerait des
+          matches. */}
+      <p className="mb-2 text-xs text-foreground-muted" data-testid="bracket-hint">
+        Cliquez sur le nom d&apos;un joueur pour mettre son parcours en surbrillance ; cliquez à
+        nouveau pour réafficher tout le tableau.
+      </p>
+      <div
+        data-testid="bracket-tree"
+        className={`${s.root} w-full`}
+        style={{ height: height ?? totalH }}
+      >
+        <FocusContext.Provider value={focusApi}>
+          <ReactFlowProvider>
+            <ReactFlow
+              nodes={nodes}
+              edges={[]}
+              nodeTypes={nodeTypes}
+              /* Taille réelle à l'ouverture, cadrée en haut à gauche. */
+              defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+              minZoom={minZoom}
+              maxZoom={maxZoom}
+              translateExtent={extent}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={false}
+              nodesFocusable={false}
+              edgesFocusable={false}
+              /* Le déplacement passe par les flèches de `RoundNav` : le glisser
+                 du fond confisquait le geste de défilement tactile de la page. */
+              panOnDrag={false}
+              /* L'arbre est un bloc au milieu d'une page qui défile : la molette
+                 doit faire défiler la page, pas zoomer le canevas. */
+              zoomOnScroll={false}
+              zoomOnDoubleClick={false}
+              preventScrolling={false}
+              proOptions={{ hideAttribution: true }}
+            >
+              <ViewportPortal>
+                <svg
+                  className={s.wires}
+                  width={1}
+                  height={1}
+                  style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
                 >
-                  {l.text}
-                </div>
-              ))}
-            </ViewportPortal>
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={DOTS} />
-            {focusName && (
-              /* Décalé sous la ligne des tours, que les flèches occupent. */
-              <Panel position="top-right" style={{ marginTop: LABEL_H + 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setFocusId(null)}
-                  className="min-h-0 text-xs px-3 py-1.5 bg-primary text-primary-fg shadow-sm"
-                >
-                  Parcours de {focusName} — tout afficher
-                </button>
-              </Panel>
-            )}
-          </ReactFlow>
-          <RoundNav columnXs={labels.map((l) => l.x)} totalW={totalW} />
-        </ReactFlowProvider>
-      </FocusContext.Provider>
+                  {wiresD && <path d={wiresD} fill="none" stroke={WIRE} strokeWidth={1.5} />}
+                  {mineWiresD && (
+                    <path d={mineWiresD} fill="none" stroke={WIRE_MINE} strokeWidth={3} />
+                  )}
+                </svg>
+                {labels.map((l) => (
+                  <div
+                    key={l.round}
+                    className="absolute text-[11px] uppercase tracking-wider font-semibold text-foreground-muted text-center pointer-events-none select-none"
+                    style={{ left: l.x, top: 0, width: COL_W }}
+                  >
+                    {l.text}
+                  </div>
+                ))}
+              </ViewportPortal>
+              <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={DOTS} />
+            </ReactFlow>
+            <RoundNav columnXs={labels.map((l) => l.x)} totalW={totalW} />
+          </ReactFlowProvider>
+        </FocusContext.Provider>
+      </div>
     </div>
   );
 }
