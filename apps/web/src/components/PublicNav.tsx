@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LogoutButton } from '@/components/LogoutButton';
 
 const NAV_ITEMS = [
@@ -13,6 +13,8 @@ const NAV_ITEMS = [
   { href: '/reglement', label: 'Règlement' },
 ];
 
+const MON_ESPACE_ITEM = { href: '/mon-espace', label: 'Mon espace' };
+
 interface Props {
   /**
    * Utilisateur courant, résolu côté serveur par le layout.
@@ -21,13 +23,25 @@ interface Props {
    * afficherait sinon « Se connecter » pendant un instant à chaque chargement,
    * y compris pour un utilisateur connecté.
    */
-  user?: { username?: string | null; role: string } | null;
+  user?: { username?: string | null; role: string; playerId?: string | null } | null;
 }
 
 export function PublicNav({ user = null }: Props) {
   const pathname = usePathname();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  /**
+   * « Mon espace » n'est proposé qu'aux comptes joueur rattachés à une fiche.
+   *
+   * La condition porte aussi sur `playerId` : la page redirige vers l'écran de
+   * connexion quand le compte n'a pas de fiche joueur, l'onglet renverrait
+   * alors vers un cul-de-sac.
+   */
+  const navItems = useMemo(() => {
+    if (user?.role !== 'player' || !user.playerId) return NAV_ITEMS;
+    return [NAV_ITEMS[0]!, MON_ESPACE_ITEM, ...NAV_ITEMS.slice(1)];
+  }, [user?.role, user?.playerId]);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -68,7 +82,7 @@ export function PublicNav({ user = null }: Props) {
 
         {/* Desktop nav (≥ md) */}
         <nav className="hidden md:flex items-center gap-1">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -126,7 +140,7 @@ export function PublicNav({ user = null }: Props) {
       {menuOpen && (
         <div className="md:hidden border-t border-border bg-surface">
           <nav className="flex flex-col px-4 py-2">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

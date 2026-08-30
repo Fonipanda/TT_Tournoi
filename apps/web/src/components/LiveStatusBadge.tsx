@@ -3,8 +3,22 @@
 import { useLiveWebSocket } from '@/lib/live/useLiveWebSocket';
 import type { LiveEvent } from '@tt/types';
 
-export function LiveStatusBadge({ onEvent }: { onEvent?: (e: LiveEvent) => void }) {
+export function LiveStatusBadge({
+  onEvent,
+  hideWhenDisconnected = false,
+}: {
+  onEvent?: (e: LiveEvent) => void;
+  /**
+   * Masque entièrement le badge tant que le flux n'est pas établi.
+   *
+   * Destiné aux pages publiques : l'état de la liaison temps réel n'y est pas
+   * une information utile au visiteur. Un point gris privé de libellé serait
+   * plus intrigant que le texte retiré, d'où le retrait complet.
+   */
+  hideWhenDisconnected?: boolean;
+}) {
   const { connected } = useLiveWebSocket(onEvent);
+  if (!connected && hideWhenDisconnected) return null;
   return (
     <div
       className="inline-flex items-center gap-2 text-xs text-foreground-muted"

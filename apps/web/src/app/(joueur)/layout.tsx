@@ -16,11 +16,22 @@ export default async function JoueurLayout({ children }: { children: ReactNode }
 
   return (
     <>
-      <PublicNav user={{ username: me.username, role: me.role }} />
+      <PublicNav user={{ username: me.username, role: me.role, playerId: me.playerId }} />
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <nav className="card mb-4 flex items-center gap-2 flex-wrap" data-testid="player-nav">
+        {/*
+          Barre maintenue à l'écran au défilement : `top-14` correspond à la
+          hauteur de l'en-tête (`h-14`, lui-même `sticky top-0 z-40`), et
+          `z-30` la fait passer sous celui-ci plutôt que devant.
+        */}
+        <nav
+          className="card mb-4 flex items-center gap-2 flex-wrap sticky top-14 z-30"
+          data-testid="player-nav"
+        >
           <Link href="/mon-espace" className="btn-secondary text-sm">
             Mon espace
+          </Link>
+          <Link href="/mon-parcours" className="btn-secondary text-sm">
+            Mon parcours
           </Link>
           <Link href="/mes-points" className="btn-secondary text-sm">
             Mes points

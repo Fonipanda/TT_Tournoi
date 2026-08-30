@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/components/ui/toast';
-import { apiGet, apiPost, ApiError } from '@/lib/api-client';
-import { BracketView } from '@/components/bracket/BracketView';
-import { type BracketTreeMatch } from '@/lib/bracket-layout';
+import { apiPost, ApiError } from '@/lib/api-client';
 
 interface Player {
   id: string;
@@ -14,6 +12,8 @@ interface Player {
   club: string | null;
   points: number;
   licenseNumber: string | null;
+  /** `null` = classement jamais confronté à la fédération. */
+  ffttSyncedAt: string | null;
 }
 
 interface Registration {
@@ -31,10 +31,17 @@ export function MonEspaceContent({ player: initialPlayer, registrations }: Props
   const router = useRouter();
   const [player, setPlayer] = useState(initialPlayer);
   const [syncing, setSyncing] = useState(false);
+  const autoSyncDone = useRef(false);
 
-  const sync = async () => {
+  /**
+   * @param silent Synchronisation déclenchée par la page et non par le joueur :
+   *   les messages d'erreur sont alors tus. Une licence introuvable côté
+   *   fédération afficherait sinon un bandeau rouge à chaque visite, pour une
+   *   action que le joueur n'a pas demandée.
+   */
+  const sync = async (silent = false) => {
     if (!player.licenseNumber) {
-      toast.error('Aucune licence FFTT renseignée');
+      if (!silent) toast.error('Aucune licence FFTT renseignée');
       return;
     }
     setSyncing(true);
@@ -46,15 +53,33 @@ export function MonEspaceContent({ player: initialPlayer, registrations }: Props
         lastName: res.player.lastName,
         club: res.player.club,
         points: res.player.points,
+        ffttSyncedAt: res.player.ffttSyncedAt ?? new Date().toISOString(),
       });
       toast.success(`Points mis à jour : ${Math.round(res.player.points)} pts`);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Erreur sync FFTT');
+      if (!silent) toast.error(e instanceof ApiError ? e.message : 'Erreur sync FFTT');
     } finally {
       setSyncing(false);
     }
   };
+
+  /**
+   * Synchronisation forcée à l'ouverture tant que le classement n'a jamais été
+   * confronté à la fédération.
+   *
+   * C'est ce marqueur qui ouvre les tableaux à borne de points : le joueur
+   * jamais synchronisé est précisément celui que l'inscription refuse. Une
+   * fois la date posée, plus aucun appel automatique — rafraîchir à chaque
+   * visite solliciterait l'API fédérale sans rien changer au classement.
+   */
+  useEffect(() => {
+    if (autoSyncDone.current) return;
+    if (!initialPlayer.licenseNumber || initialPlayer.ffttSyncedAt) return;
+    autoSyncDone.current = true;
+    void sync(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPlayer.licenseNumber, initialPlayer.ffttSyncedAt]);
 
   return (
     <div data-testid="mon-espace">
@@ -78,12 +103,12 @@ export function MonEspaceContent({ player: initialPlayer, registrations }: Props
           {player.licenseNumber && (
             <button
               type="button"
-              onClick={sync}
+              onClick={() => sync()}
               disabled={syncing}
               className="text-xs text-primary hover:underline mt-1 disabled:opacity-50"
               data-testid="sync-fftt"
             >
-              {syncing ? 'Sync FFTT…' : '↻ Sync FFTT'}
+              {syncing ? 'Synchronisation du classement…' : '↻ Sync FFTT'}
             </button>
           )}
         </div>
@@ -123,81 +148,6 @@ export function MonEspaceContent({ player: initialPlayer, registrations }: Props
           </ul>
         </div>
       )}
-
-      <MyBracket player={player} registrations={registrations} />
     </div>
-  );
-}
-
-/**
- * Tableau final d'une des inscriptions du joueur, son parcours mis en relief.
- *
- * Le chargement est différé côté client : afficher d'emblée l'arbre de chaque
- * inscription obligerait la page à ramener tous les matches de tous les
- * tableaux, alors qu'un joueur en regarde un à la fois.
- */
-function MyBracket({
-  player,
-  registrations,
-}: {
-  player: Player;
-  registrations: Registration[];
-}) {
-  const [bracketId, setBracketId] = useState(registrations[0]?.bracket.id ?? '');
-  const [matches, setMatches] = useState<BracketTreeMatch[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!bracketId) return;
-    let cancelled = false;
-    setLoading(true);
-    setFailed(false);
-    apiGet<{ data: BracketTreeMatch[] }>(`/api/brackets/${bracketId}/tree`)
-      .then((res) => {
-        if (!cancelled) setMatches(res.data);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMatches(null);
-          setFailed(true);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bracketId]);
-
-  if (registrations.length === 0) return null;
-
-  return (
-    <section className="mt-8" data-testid="mon-parcours">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-        <h2 className="font-heading text-xl uppercase tracking-wide">Mon parcours</h2>
-        {registrations.length > 1 && (
-          <select
-            className="input w-auto text-sm"
-            value={bracketId}
-            onChange={(e) => setBracketId(e.target.value)}
-            aria-label="Choisir un tableau"
-          >
-            {registrations.map((r) => (
-              <option key={r.bracket.id} value={r.bracket.id}>
-                {r.bracket.name} — {r.bracket.tournament.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      {loading && <p className="text-foreground-muted">Chargement du tableau…</p>}
-      {failed && <p className="text-foreground-muted">Tableau momentanément indisponible.</p>}
-      {!loading && !failed && matches && (
-        <BracketView matches={matches} minePlayerId={player.id} />
-      )}
-    </section>
   );
 }

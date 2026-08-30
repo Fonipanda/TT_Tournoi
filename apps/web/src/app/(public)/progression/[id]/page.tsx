@@ -72,8 +72,25 @@ export default async function ProgressionDetailPage({ params }: Params) {
 
   return (
     <div data-testid="bracket-page" className="max-w-7xl mx-auto">
-      <Link href="/progression" className="text-sm text-primary mb-4 inline-block hover:underline">
-        &larr; Tous les tableaux
+      <Link
+        href="/progression"
+        className="btn-secondary text-sm inline-flex items-center gap-2 mb-4"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="19" y1="12" x2="5" y2="12" />
+          <polyline points="12 19 5 12 12 5" />
+        </svg>
+        Tous les tableaux
       </Link>
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-1">
         {bracket.name}
