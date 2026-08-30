@@ -87,9 +87,9 @@ export function BracketRegistrationsPage({
   const [deleting, setDeleting] = useState<string | null>(null);
   const [swapMode, setSwapMode] = useState(false);
   const [swapFirst, setSwapFirst] = useState<{ playerId: string; poolNumber: number } | null>(null);
-  // L'arbre donne la lecture d'ensemble ; la liste reste indispensable pour
-  // affecter les tables.
-  const [elimView, setElimView] = useState<'tree' | 'list'>('tree');
+  // La liste est la vue de travail : c'est elle qui permet d'affecter les
+  // tables. L'arbre reste à un clic pour la lecture d'ensemble.
+  const [elimView, setElimView] = useState<'tree' | 'list'>('list');
 
   const alreadyRegisteredIds = new Set(registrations.map((r) => r.player.id));
   const busySet = new Set(busyPlayerIds);

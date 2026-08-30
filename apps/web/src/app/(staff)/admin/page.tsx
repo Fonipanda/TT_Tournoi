@@ -44,7 +44,7 @@ export default async function AdminDashboardPage() {
     { label: 'Tournois', value: tournaments, href: '/admin/tournois' },
     { label: 'Tableaux actifs', value: brackets.length, href: '/admin/tableaux' },
     { label: 'Joueurs', value: players, href: '/admin/joueurs' },
-    { label: 'Matches en cours', value: matchesInProgress, href: '/live' },
+    { label: 'Matches en cours', value: matchesInProgress, href: '/juge-arbitre' },
     { label: 'SMS envoyés (24h)', value: smsSent24h, href: '/admin/sms' },
   ];
 

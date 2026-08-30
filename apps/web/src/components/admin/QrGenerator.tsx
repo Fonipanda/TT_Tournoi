@@ -8,6 +8,19 @@ interface Props {
   initialLogoUrl?: string | null;
 }
 
+/**
+ * Ramène une saisie libre à une URL ouvrable par un scanner.
+ *
+ * Sans schéma, la chaîne n'est pas une URI : le lecteur affiche du texte au
+ * lieu de proposer l'ouverture de la page. `https` est le repli, le site étant
+ * servi en TLS.
+ */
+function normalizeUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export function QrGenerator({ initialLogoUrl }: Props) {
   const [url, setUrl] = useState('https://tournoi-chellestt.fr');
   const [text, setText] = useState('Scanne pour t\'inscrire au tournoi');
@@ -19,9 +32,16 @@ export function QrGenerator({ initialLogoUrl }: Props) {
 
   // Re-générer la valeur (avec cache-bust)
   const generate = () => {
+    // Le QR ne porte que l'URL. Y adjoindre le texte en faisait une charge
+    // utile qui n'est plus une URI : les lecteurs l'affichaient alors comme du
+    // texte brut, sans jamais proposer d'ouvrir la page.
+    const data = normalizeUrl(url);
+    if (!data) {
+      toast.error('Renseigne une URL');
+      return;
+    }
+    setUrl(data);
     setVersion((v) => v + 1);
-    // Concaténer URL + texte dans le QR data
-    const data = text ? `${url}\n\n${text}` : url;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
       data,
     )}&size=${size}x${size}&ecc=H&margin=10&v=${Date.now()}`;
@@ -86,10 +106,11 @@ export function QrGenerator({ initialLogoUrl }: Props) {
   };
 
   return (
-    <div className="card max-w-2xl rounded-2xl">
+    <div className="card rounded-2xl">
       <h2 className="font-heading text-xl uppercase tracking-wide mb-3">Générateur QR Code</h2>
       <p className="text-sm text-foreground-muted mb-4">
-        Crée un QR code intégrant une URL et un texte libre, avec une image au centre.
+        Crée un QR code qui ouvre l'URL saisie, avec une image au centre et un texte imprimé
+        en légende.
       </p>
 
       <div className="space-y-3">
@@ -102,7 +123,7 @@ export function QrGenerator({ initialLogoUrl }: Props) {
           required
         />
         <TextAreaField
-          label="Texte (optionnel, intégré au QR)"
+          label="Texte imprimé sous le QR (optionnel)"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Scanne pour t'inscrire"

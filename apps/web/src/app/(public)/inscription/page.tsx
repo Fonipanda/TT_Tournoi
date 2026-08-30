@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ToastViewport } from '@/components/ui/toast';
 import { apiPost, apiGet, ApiError } from '@/lib/api-client';
 import { PaymentModal } from '@/components/PaymentModal';
+import { PlayerNav } from '@/components/PlayerNav';
 import { MAX_BRACKETS_PER_DAY, bracketScopeKey } from '@/lib/registrations';
 import { computeBracketFits, isStretch, type BracketFitLevel } from '@/lib/bracket-fit';
 
@@ -313,6 +314,13 @@ export default function InscriptionPage() {
   // Étape 2 : choix des tableaux
   return (
     <div data-testid="inscription-page">
+      {/*
+        La page appartient au groupe public mais suppose une session joueur :
+        la barre n'est rendue qu'ici, une fois la session confirmée. L'afficher
+        pendant le chargement la ferait clignoter avant la redirection d'un
+        visiteur vers /register.
+      */}
+      <PlayerNav />
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-2">
         Choisis tes tableaux
       </h1>
