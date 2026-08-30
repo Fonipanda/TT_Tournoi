@@ -10,6 +10,7 @@
  */
 
 import { prisma, type Match, type Player } from '@tt/db';
+import { computePoolPlan } from './pool-layout';
 
 // =============================================================================
 // I.301 — Ordre des parties dans une poule
@@ -179,15 +180,34 @@ export function ffttPoolRanking(
 /**
  * Génère la liste des positions standard de seeding pour un bracket de taille N
  * (N puissance de 2). result[i] = numéro de seed (1-based) à la position i.
+ *
+ * Construction récursive : à partir de p(n), chaque élément `s` d'index `i` est
+ * remplacé par la paire `[s, sum - s]` si `i` est pair, `[sum - s, s]` sinon,
+ * avec `sum = 2n + 1`. C'est cette alternance qui protège les têtes de série en
+ * les répartissant dans des demi-tableaux, quarts, huitièmes… distincts.
+ *
+ *   p(2)  = [1, 2]
+ *   p(4)  = [1, 4, 3, 2]
+ *   p(8)  = [1, 8, 5, 4, 3, 6, 7, 2]
+ *   p(16) = [1, 16, 9, 8, 5, 12, 13, 4, 3, 14, 11, 6, 7, 10, 15, 2]
+ *   p(32) = 1-32, 17-16, 9-24, 25-8, 5-28, 21-12, 13-20, 29-4,
+ *           3-30, 19-14, 11-22, 27-6, 7-26, 23-10, 15-18, 31-2
+ *
+ * La construction se généralise automatiquement à 64, 128, 256…
  */
 export function ffttSeedingPositions(bracketSize: number): number[] {
   if (bracketSize <= 1) return [1];
   let seeds: number[] = [1, 2];
   while (seeds.length < bracketSize) {
+    const sum = seeds.length * 2 + 1;
     const newSeeds: number[] = [];
-    for (const s of seeds) {
-      newSeeds.push(s);
-      newSeeds.push(seeds.length * 2 + 1 - s);
+    for (let i = 0; i < seeds.length; i++) {
+      const s = seeds[i]!;
+      if (i % 2 === 0) {
+        newSeeds.push(s, sum - s);
+      } else {
+        newSeeds.push(sum - s, s);
+      }
     }
     seeds = newSeeds;
   }
@@ -503,8 +523,14 @@ export interface GenerateEliminationResult {
  * Génère les poules pour un bracket : répartit les joueurs en poules de N joueurs
  * en équilibrant les niveaux (snake seeding), puis crée les matches dans l'ordre
  * I.301 et libellés.
+ *
+ * Le reste de la division agrandit les poules existantes (poules de `poolSize`
+ * ou `poolSize + 1`) au lieu de créer une poule résiduelle trop petite :
+ * 32 joueurs en « poules de 3 » → 10 poules (8 de 3 + 2 de 4).
+ * Voir `pool-layout.ts` pour la règle exacte et ses exceptions.
+ *
  * @param bracketId - ID du bracket
- * @param requestedPoolSize - Taille de poule souhaitée (2, 3, 4 ou 5). Par défaut auto (4 ou 3).
+ * @param requestedPoolSize - Taille de poule souhaitée (2, 3 ou 4). Par défaut auto (4 ou 3).
  */
 export async function generatePools(bracketId: string, requestedPoolSize?: number): Promise<GeneratePoolsResult> {
   const bracket = await prisma.bracket.findUnique({
@@ -548,14 +574,12 @@ export async function generatePools(bracketId: string, requestedPoolSize?: numbe
     }
   }
 
-  // Détermine la taille de poule (2, 3 ou 4 — règle FFTT)
+  // Répartition en poules de 2, 3 ou 4 joueurs — jamais plus.
+  // `requestedPoolSize` n'est qu'une taille PRIVILÉGIÉE : le moteur retient la
+  // combinaison P2/P3/P4 optimale et déterministe (cf. pool-layout.ts).
+  // `undefined` = mode automatique (poules de 3 privilégiées).
   const totalPlayers = sorted.length;
-  const requested = requestedPoolSize && requestedPoolSize >= 2 && requestedPoolSize <= 4
-    ? requestedPoolSize
-    : null;
-  const poolSize = requested
-    ?? (totalPlayers % 4 === 0 ? 4 : totalPlayers % 3 === 0 ? 3 : 4);
-  const numPools = Math.ceil(totalPlayers / poolSize);
+  const numPools = computePoolPlan(totalPlayers, requestedPoolSize).numPools;
 
   // Snake seeding : on alterne sens de remplissage à chaque "tour"
   const pools: Player[][] = Array.from({ length: numPools }, () => []);
@@ -567,6 +591,39 @@ export async function generatePools(bracketId: string, requestedPoolSize?: numbe
 
   // ─── Contrainte « même club » : éviter 2 joueurs du même club dans la même poule ───
   separateClubs(pools);
+
+  // ─── Persistance de la répartition ───────────────────────────────────────
+  // Le tirage au sort FFTT (ordre des joueurs à égalité de points) n'est joué
+  // qu'ici : on fige son résultat en base pour que la répartition reste
+  // reproductible et consultable jusqu'à la prochaine génération explicite.
+  const seedByPlayerId = new Map<string, number>();
+  sorted.forEach((p, i) => seedByPlayerId.set(p.id, i + 1));
+
+  const assignments = [
+    // Remise à zéro : les joueurs retirés du tableau ou exemptés de poule ne
+    // doivent pas conserver l'affectation d'une génération précédente.
+    prisma.playerBracketRegistration.updateMany({
+      where: { bracketId },
+      data: { initialSeed: null, poolNumber: null, poolPosition: null, poolRank: null },
+    }),
+  ];
+  for (let p = 0; p < pools.length; p++) {
+    const poolPlayers = pools[p]!;
+    for (let pos = 0; pos < poolPlayers.length; pos++) {
+      const player = poolPlayers[pos]!;
+      assignments.push(
+        prisma.playerBracketRegistration.updateMany({
+          where: { bracketId, playerId: player.id },
+          data: {
+            initialSeed: seedByPlayerId.get(player.id) ?? null,
+            poolNumber: p + 1,
+            poolPosition: pos + 1,
+          },
+        }),
+      );
+    }
+  }
+  await prisma.$transaction(assignments);
 
   // Suppression des matches existants de poule pour ce bracket
   await prisma.match.deleteMany({ where: { bracketId, poolNumber: { not: null } } });
@@ -677,6 +734,19 @@ export async function generateElimination(bracketId: string): Promise<GenerateEl
     );
     standings.push({ poolName: `Poule ${poolNum}`, ranking });
   }
+
+  // ─── Persistance du classement de poule ──────────────────────────────────
+  // Fige le rang de chaque joueur dans sa poule au moment où le tableau final
+  // est construit : c'est ce rang qui détermine son statut de 1er, 2ème, etc.
+  const rankUpdates = standings.flatMap((s) =>
+    s.ranking.map((playerId, idx) =>
+      prisma.playerBracketRegistration.updateMany({
+        where: { bracketId, playerId },
+        data: { poolRank: idx + 1 },
+      }),
+    ),
+  );
+  if (rankUpdates.length > 0) await prisma.$transaction(rankUpdates);
 
   // Récupère les bye players (par licence)
   const byeLicences = (bracket.byePlayers || '')

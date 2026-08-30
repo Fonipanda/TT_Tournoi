@@ -184,6 +184,15 @@ model PlayerBracketRegistration {
   // donc pas servir de référence rétroactive. `null` = inscription antérieure
   // à l'introduction du snapshot, on retombe alors sur `Player.points`.
   pointsAtRegistration Float?
+  // Répartition en poules, figée lors de la génération. Sans ces colonnes, le
+  // tirage au sort FFTT entre joueurs à égalité de points serait rejoué à
+  // chaque lecture : la répartition doit rester reproductible et consultable
+  // tant que l'organisateur ne relance pas explicitement la génération.
+  // `null` = poules pas encore générées pour ce tableau.
+  initialSeed  Int? // rang initial après classement par points + départage
+  poolNumber   Int? // numéro de poule attribué (1-based)
+  poolPosition Int? // place dans la poule issue du serpent (1-based)
+  poolRank     Int? // classement final dans la poule, figé à la génération du tableau
   // stripeSessionId / stripePaymentIntent : ajoutés en V2
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())
@@ -193,6 +202,7 @@ model PlayerBracketRegistration {
 
   @@unique([playerId, bracketId])
   @@index([bracketId, checkinStatus])
+  @@index([bracketId, poolNumber])
 }
 
 model UserAccount {

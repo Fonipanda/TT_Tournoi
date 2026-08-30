@@ -217,7 +217,7 @@ export function BracketFormModal({ open, onClose, tournamentId, initial }: Props
             helper="2 = 1er + 2ème de chaque poule"
           />
           <TextField
-            label="Têtes de série (bye)"
+            label="Têtes de série exemptées de poule"
             value={form.byePlayers ?? ''}
             onChange={(e) => update('byePlayers', e.target.value)}
             placeholder="7711100015,7711100016"

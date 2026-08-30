@@ -126,29 +126,47 @@ describe('FFTT I.304.2 — ffttSeedingPositions', () => {
   });
 
   it('bracket size 4', () => {
-    expect(ffttSeedingPositions(4)).toEqual([1, 4, 2, 3]);
+    expect(ffttSeedingPositions(4)).toEqual([1, 4, 3, 2]);
   });
 
   it('bracket size 8', () => {
-    expect(ffttSeedingPositions(8)).toEqual([1, 8, 4, 5, 2, 7, 3, 6]);
+    expect(ffttSeedingPositions(8)).toEqual([1, 8, 5, 4, 3, 6, 7, 2]);
   });
 
   it('bracket size 16', () => {
     const seeds = ffttSeedingPositions(16);
-    expect(seeds).toHaveLength(16);
-    expect(seeds[0]).toBe(1);
-    expect(seeds[15]).toBe(9);
+    expect(seeds).toEqual([1, 16, 9, 8, 5, 12, 13, 4, 3, 14, 11, 6, 7, 10, 15, 2]);
     // sommes par paire = 17
     for (let i = 0; i < 16; i += 2) {
       expect(seeds[i]! + seeds[i + 1]!).toBe(17);
     }
   });
 
-  it('bracket size 32', () => {
-    const seeds = ffttSeedingPositions(32);
-    expect(seeds).toHaveLength(32);
-    for (let i = 0; i < 32; i += 2) {
-      expect(seeds[i]! + seeds[i + 1]!).toBe(33);
+  it('bracket size 32 — structure de référence, ligne à ligne', () => {
+    // 1 ─ 32 / 17 ─ 16 / 9 ─ 24 / 25 ─ 8 / 5 ─ 28 / 21 ─ 12 / 13 ─ 20 / 29 ─ 4
+    // 3 ─ 30 / 19 ─ 14 / 11 ─ 22 / 27 ─ 6 / 7 ─ 26 / 23 ─ 10 / 15 ─ 18 / 31 ─ 2
+    expect(ffttSeedingPositions(32)).toEqual([
+      1, 32, 17, 16, 9, 24, 25, 8, 5, 28, 21, 12, 13, 20, 29, 4,
+      3, 30, 19, 14, 11, 22, 27, 6, 7, 26, 23, 10, 15, 18, 31, 2,
+    ]);
+  });
+
+  it('protection des têtes de série généralisée à 64 et 128', () => {
+    for (const size of [64, 128]) {
+      const seeds = ffttSeedingPositions(size);
+      expect(seeds).toHaveLength(size);
+      // chaque seed apparaît exactement une fois
+      expect(new Set(seeds).size).toBe(size);
+      // les deux joueurs d'un même match somment toujours à size + 1
+      for (let i = 0; i < size; i += 2) {
+        expect(seeds[i]! + seeds[i + 1]!).toBe(size + 1);
+      }
+      // les 4 meilleurs sont dans 4 quarts de tableau distincts
+      const quarterOf = (seed: number) => Math.floor(seeds.indexOf(seed) / (size / 4));
+      expect(new Set([1, 2, 3, 4].map(quarterOf)).size).toBe(4);
+      // les 8 meilleurs sont dans 8 huitièmes de tableau distincts
+      const eighthOf = (seed: number) => Math.floor(seeds.indexOf(seed) / (size / 8));
+      expect(new Set([1, 2, 3, 4, 5, 6, 7, 8].map(eighthOf)).size).toBe(8);
     }
   });
 });
@@ -210,6 +228,67 @@ describe('FFTT I.305 — ffttPlaceQualifiers', () => {
     const realPlayers = placed.filter((p) => p !== null);
     expect(realPlayers).toHaveLength(6);
     expect(new Set(realPlayers)).toEqual(new Set(['a1', 'a2', 'b1', 'b2', 'c1', 'c2']));
+  });
+
+  /** `pools` poules de `q` joueurs, tous qualifiés. */
+  const standingsOf = (pools: number, q: number) =>
+    Array.from({ length: pools }, (_, i) => ({
+      poolName: `Poule ${i + 1}`,
+      ranking: Array.from({ length: q }, (_, j) => `p${i + 1}_${j + 1}`),
+    }));
+
+  it('taille du tableau = plus petite puissance de 2 ≥ nombre de qualifiés', () => {
+    expect(ffttPlaceQualifiers(standingsOf(10, 2), 2, [])).toHaveLength(32); // 20 → 32
+    expect(ffttPlaceQualifiers(standingsOf(11, 2), 2, [])).toHaveLength(32); // 22 → 32
+    expect(ffttPlaceQualifiers(standingsOf(16, 2), 2, [])).toHaveLength(32); // 32 → 32
+    expect(ffttPlaceQualifiers(standingsOf(17, 2), 2, [])).toHaveLength(64); // 34 → 64
+    expect(ffttPlaceQualifiers(standingsOf(5, 1), 1, [])).toHaveLength(8); //    5 → 8
+  });
+
+  it('nombre de positions sans adversaire', () => {
+    const empties = (pools: number, q: number) =>
+      ffttPlaceQualifiers(standingsOf(pools, q), q, []).filter((p) => p === null).length;
+    expect(empties(10, 2)).toBe(12); // 20 qualifiés dans un tableau de 32
+    expect(empties(11, 2)).toBe(10); // 22 qualifiés
+    expect(empties(12, 2)).toBe(8); //  24 qualifiés
+    expect(empties(16, 2)).toBe(0); //  32 qualifiés : tableau complet
+  });
+
+  it('24 qualifiés : 8 passages directs pour les 8 meilleurs + 8 matches préliminaires', () => {
+    const placed = ffttPlaceQualifiers(standingsOf(12, 2), 2, []);
+    expect(placed).toHaveLength(32);
+    expect(placed.filter((p) => p !== null)).toHaveLength(24);
+
+    const seeds = ffttSeedingPositions(32);
+    const emptyIdx = placed.map((p, i) => (p === null ? i : -1)).filter((i) => i >= 0);
+    expect(emptyIdx).toHaveLength(8);
+
+    // Chaque position vide fait face à un joueur réel, et ces 8 bénéficiaires
+    // sont exactement les 8 meilleures têtes de série : ils rejoignent
+    // directement les 1/8 de finale.
+    const beneficiaries = emptyIdx.map((i) => {
+      const sibling = i % 2 === 0 ? i + 1 : i - 1;
+      expect(placed[sibling]).not.toBeNull();
+      return seeds[sibling]!;
+    });
+    expect([...beneficiaries].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    // Les 16 autres qualifiés disputent 8 matches du tour préliminaire.
+    let contested = 0;
+    for (let i = 0; i < 32; i += 2) {
+      if (placed[i] !== null && placed[i + 1] !== null) contested++;
+    }
+    expect(contested).toBe(8);
+  });
+
+  it('les qualifiés d\'une même poule ne se rencontrent pas au premier tour', () => {
+    const placed = ffttPlaceQualifiers(standingsOf(8, 2), 2, []);
+    const poolOf = (id: string | null) => (id === null ? null : id.split('_')[0]);
+    for (let i = 0; i < placed.length; i += 2) {
+      const a = poolOf(placed[i] ?? null);
+      const b = poolOf(placed[i + 1] ?? null);
+      if (a !== null && b !== null) expect(a).not.toBe(b);
+    }
   });
 });
 

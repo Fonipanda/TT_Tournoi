@@ -2,7 +2,11 @@
  * POST /api/brackets/:id/generate-pools
  *
  * Génère les matches de poule pour un bracket.
- * Body optionnel : { poolSize: 2 | 3 | 4 | 5 }
+ * Body optionnel : { poolSize: 2 | 3 | 4 } — taille PRIVILÉGIÉE seulement.
+ *
+ * Sans `poolSize`, la répartition est entièrement automatique. Dans tous les
+ * cas une poule compte 2, 3 ou 4 joueurs, et les poules de 2 sont évitées :
+ * 32 inscrits → 10 poules (8 de 3 + 2 de 4).
  */
 
 import { NextResponse, type NextRequest } from 'next/server';

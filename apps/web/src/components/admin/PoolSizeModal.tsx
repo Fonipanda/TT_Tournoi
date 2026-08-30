@@ -4,25 +4,43 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/components/ui/toast';
 import { apiPost, ApiError } from '@/lib/api-client';
+import { computePoolPlan, countPoolMatches, matchesForPoolSize } from '@/lib/fftt/pool-layout';
 
 interface PoolSizeModalProps {
   bracket: { id: string; name: string; _count: { registrations: number } };
   onClose: () => void;
 }
 
+/** `null` = mode automatique : le moteur choisit lui-même la taille. */
+type PreferredSize = number | null;
+
+const SIZE_CHOICES: { value: PreferredSize; label: string }[] = [
+  { value: null, label: 'Automatique' },
+  { value: 2, label: '2 joueurs' },
+  { value: 3, label: '3 joueurs' },
+  { value: 4, label: '4 joueurs' },
+];
+
 export function PoolSizeModal({ bracket, onClose }: PoolSizeModalProps) {
   const router = useRouter();
-  const [poolSize, setPoolSize] = useState(4);
+  const [poolSize, setPoolSize] = useState<PreferredSize>(null);
   const [loading, setLoading] = useState(false);
   const nbInscrits = bracket._count.registrations;
-  const nbPools = Math.ceil(nbInscrits / poolSize);
+  // Les poules font 2, 3 ou 4 joueurs : on calcule la répartition réelle pour
+  // que l'aperçu corresponde exactement à ce que génère le moteur.
+  const plan = computePoolPlan(nbInscrits, poolSize ?? undefined);
+  const nbPools = plan.numPools;
+  const totalMatches = countPoolMatches(plan.sizes);
+  const minPerPool = nbPools > 0 ? matchesForPoolSize(Math.min(...plan.sizes)) : 0;
+  const maxPerPool = nbPools > 0 ? matchesForPoolSize(Math.max(...plan.sizes)) : 0;
+  const perPoolLabel = minPerPool === maxPerPool ? `${maxPerPool}` : `${minPerPool} – ${maxPerPool}`;
 
   const onGenerate = async () => {
     setLoading(true);
     try {
       const r = await apiPost<{ poolsCreated: number; matchesCreated: number }>(
         `/api/brackets/${bracket.id}/generate-pools`,
-        { poolSize },
+        poolSize === null ? {} : { poolSize },
       );
       toast.success(`${r.poolsCreated} poules · ${r.matchesCreated} matches créés`);
       router.refresh();
@@ -44,23 +62,27 @@ export function PoolSizeModal({ bracket, onClose }: PoolSizeModalProps) {
           {nbInscrits} joueurs présents dans ce tableau.
         </p>
 
-        <label className="block text-sm font-medium mb-2">Taille de poule</label>
-        <div className="flex gap-2 mb-4">
-          {[2, 3, 4].map((size) => (
+        <label className="block text-sm font-medium mb-2">Taille de poule privilégiée</label>
+        <div className="flex gap-2 mb-2">
+          {SIZE_CHOICES.map((choice) => (
             <button
-              key={size}
+              key={choice.label}
               type="button"
-              onClick={() => setPoolSize(size)}
+              onClick={() => setPoolSize(choice.value)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
-                poolSize === size
+                poolSize === choice.value
                   ? 'bg-primary text-white border-primary'
                   : 'bg-bg-alt border-border hover:border-primary'
               }`}
             >
-              {size} joueurs
+              {choice.label}
             </button>
           ))}
         </div>
+        <p className="text-xs text-foreground-muted mb-4">
+          Les poules comptent toujours entre 2 et 4 joueurs. La répartition est calculée
+          automatiquement pour éviter les poules de 2.
+        </p>
 
         <div className="bg-bg-alt rounded-lg p-3 mb-5 text-sm">
           <div className="flex justify-between">
@@ -69,11 +91,11 @@ export function PoolSizeModal({ bracket, onClose }: PoolSizeModalProps) {
           </div>
           <div className="flex justify-between mt-1">
             <span>Matches par poule :</span>
-            <span className="font-medium">{(poolSize * (poolSize - 1)) / 2}</span>
+            <span className="font-medium">{perPoolLabel}</span>
           </div>
           <div className="flex justify-between mt-1">
             <span>Total matches :</span>
-            <span className="font-medium">{nbPools * ((poolSize * (poolSize - 1)) / 2)}</span>
+            <span className="font-medium">{totalMatches}</span>
           </div>
         </div>
 
