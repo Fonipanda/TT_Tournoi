@@ -178,6 +178,12 @@ model PlayerBracketRegistration {
   checkinStatus String        @default("") // 'P' | 'A' | ''
   qrToken       String        @unique // préparation V2 (check-in QR)
   dossardNumber Int?
+  // Classement du joueur figé au moment de l'inscription. Le barème FFTT de
+  // gain et de perte de points se calcule sur les points « en début
+  // d'épreuve » : `Player.points` bouge à chaque match terminé et ne peut
+  // donc pas servir de référence rétroactive. `null` = inscription antérieure
+  // à l'introduction du snapshot, on retombe alors sur `Player.points`.
+  pointsAtRegistration Float?
   // stripeSessionId / stripePaymentIntent : ajoutés en V2
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())

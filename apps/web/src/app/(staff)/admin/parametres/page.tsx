@@ -6,6 +6,7 @@ import { toast } from '@/components/ui/toast';
 import { apiJson, ApiError } from '@/lib/api-client';
 import { QrGenerator } from '@/components/admin/QrGenerator';
 import { MaintenanceToggle } from '@/components/admin/MaintenanceToggle';
+import { PointsCoefficientCard } from '@/components/admin/PointsCoefficientCard';
 import { TvModeCard } from '@/components/admin/TvModeCard';
 
 const MAX_LOGO_SIZE = 500 * 1024; // 500 Ko
@@ -461,6 +462,7 @@ export default function AdminParametresPage() {
         {/* ─── Colonne droite ─── */}
         <div className="space-y-6">
           <TvModeCard />
+          <PointsCoefficientCard />
           <QrGenerator initialLogoUrl={logoUrl} />
           <MaintenanceToggle />
         </div>

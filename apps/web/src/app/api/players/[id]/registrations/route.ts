@@ -118,8 +118,24 @@ export async function POST(req: NextRequest, { params }: Params) {
           playerId: id,
           bracketId,
           qrToken: crypto.randomBytes(32).toString('base64url'),
+          // Classement figé pour le calcul du barème FFTT. Le règlement
+          // retient les points « en début d'épreuve » ; `Player.points`
+          // évoluant à chaque match terminé, seule une copie prise ici reste
+          // exploitable jusqu'à la fin du tournoi.
+          pointsAtRegistration: player.points,
         },
       });
+      // Réinscription d'un joueur retiré, ou inscription antérieure au
+      // snapshot : on complète sans jamais écraser une valeur existante, qui
+      // reste la seule trace du classement au jour de l'engagement.
+      if (reg.pointsAtRegistration === null) {
+        const filled = await prisma.playerBracketRegistration.update({
+          where: { id: reg.id },
+          data: { pointsAtRegistration: player.points },
+        });
+        created.push(filled);
+        continue;
+      }
       created.push(reg);
     }
     return NextResponse.json({ data: created }, { status: 201 });

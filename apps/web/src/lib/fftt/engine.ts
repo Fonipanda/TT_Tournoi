@@ -394,29 +394,6 @@ function placeBlock(
 }
 
 // =============================================================================
-// FFTT Points-Swap (barème simplifié, à affiner avec table officielle)
-// =============================================================================
-
-/**
- * Swap de points FFTT après un match.
- * Calcul approximatif basé sur la différence de points (winnerPoints - loserPoints).
- * Cf. table officielle FFTT pour valeurs précises.
- */
-export function fftPointsSwap(winnerPoints: number, loserPoints: number): number {
-  const diff = winnerPoints - loserPoints;
-  // Vainqueur plus faible : gagne plus
-  if (diff < -300) return 12;
-  if (diff < -150) return 10;
-  if (diff < -50) return 8;
-  if (diff < 0) return 7;
-  // Vainqueur plus fort : gagne moins
-  if (diff < 50) return 6;
-  if (diff < 150) return 4;
-  if (diff < 300) return 2;
-  return 1;
-}
-
-// =============================================================================
 // Entrée publique : génération poules + élimination
 // =============================================================================
 

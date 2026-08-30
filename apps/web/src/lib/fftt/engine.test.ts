@@ -4,7 +4,6 @@ import {
   ffttPoolRanking,
   ffttSeedingPositions,
   ffttPlaceQualifiers,
-  fftPointsSwap,
   FFTT_POOL_ORDERS,
 } from './engine';
 
@@ -214,25 +213,3 @@ describe('FFTT I.305 — ffttPlaceQualifiers', () => {
   });
 });
 
-// =============================================================================
-// FFTT Points-swap
-// =============================================================================
-
-describe('fftPointsSwap', () => {
-  it('vainqueur très inférieur gagne beaucoup', () => {
-    expect(fftPointsSwap(800, 1500)).toBe(12);
-  });
-
-  it('vainqueur supérieur gagne moins', () => {
-    expect(fftPointsSwap(1500, 800)).toBe(1);
-  });
-
-  it('ecart faible donne gain modéré', () => {
-    expect(fftPointsSwap(1000, 1020)).toBe(7); // diff -20 → 7
-    expect(fftPointsSwap(1020, 1000)).toBe(6); // diff +20 → 6
-  });
-
-  it('symétrie autour de 0', () => {
-    expect(fftPointsSwap(1000, 1000)).toBe(6);
-  });
-});

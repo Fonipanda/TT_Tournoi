@@ -22,6 +22,9 @@ export default async function JoueurLayout({ children }: { children: ReactNode }
           <Link href="/mon-espace" className="btn-secondary text-sm">
             Mon espace
           </Link>
+          <Link href="/mes-points" className="btn-secondary text-sm">
+            Mes points
+          </Link>
           <Link href="/notifications" className="btn-secondary text-sm">
             Notifications
           </Link>

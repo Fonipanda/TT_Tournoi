@@ -155,6 +155,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
             paymentStatus: 'pending',
             isActive: true,
             qrToken: `${id}-${bracketId}-${Date.now().toString(36)}`,
+            // Classement figé pour le barème FFTT, pris après la mise à jour
+            // de la fiche : l'admin peut corriger les points et poser les
+            // inscriptions dans la même requête, c'est la valeur corrigée qui
+            // fait foi pour l'épreuve.
+            pointsAtRegistration: updated.points,
           },
         });
       }

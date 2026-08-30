@@ -1,8 +1,8 @@
 /**
  * POST /api/matches/:id/finish
  *
- * Termine un match : winner + scores finaux + FFTT points-swap +
- * libération de la table + publish event 'match_completed'.
+ * Termine un match : winner + scores finaux + barème FFTT de gain et de perte
+ * de points + libération de la table + publish event 'match_completed'.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -10,7 +10,8 @@ import { z } from 'zod';
 import { prisma, Prisma } from '@tt/db';
 import { errorResponse, requireRole } from '@/lib/auth/server';
 import { publishLiveEvent } from '@/lib/live/publisher';
-import { fftPointsSwap } from '@/lib/fftt/engine';
+import { ffttMatchPoints } from '@/lib/fftt/points';
+import { getPointsCoefficient } from '@/lib/fftt/points-setting';
 import { notifySms } from '@/lib/sms/notify';
 
 interface Params { params: Promise<{ id: string }> }
@@ -33,6 +34,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     const user = await requireRole(['admin', 'juge_arbitre']);
     const { id } = await params;
     const body = FinishSchema.parse(await req.json());
+
+    // Coefficient de l'épreuve, lu hors transaction : c'est un réglage global
+    // et sa lecture n'a pas à prolonger le verrou pris sur le match.
+    const coefficient = await getPointsCoefficient();
 
     const result = await prisma.$transaction(async (tx) => {
       const current = await tx.match.findUnique({
@@ -67,15 +72,57 @@ export async function POST(req: NextRequest, { params }: Params) {
         throw e;
       }
 
-      // FFTT points-swap (si pas forfait)
+      // Barème FFTT de gain et de perte de points (si pas forfait).
+      //
+      // Contrairement à l'ancien « swap », le barème fédéral n'est pas à somme
+      // nulle : une performance rapporte au vainqueur bien plus que le contre
+      // ne coûte au battu. Les deux deltas sont donc calculés séparément.
       if (!body.isForfeit && current.player1Id && current.player2Id) {
         const winnerIsP1 = body.winnerId === current.player1Id;
         const winner = winnerIsP1 ? current.player1 : current.player2;
         const loser = winnerIsP1 ? current.player2 : current.player1;
         if (winner && loser) {
-          const swap = fftPointsSwap(winner.points, loser.points);
-          await tx.player.update({ where: { id: winner.id }, data: { points: { increment: swap } } });
-          await tx.player.update({ where: { id: loser.id }, data: { points: { decrement: swap } } });
+          // Le règlement retient les points « en début d'épreuve ». On lit
+          // donc le classement figé à l'inscription sur ce tableau, et non la
+          // fiche joueur, qui a déjà bougé si le joueur a joué avant.
+          const regs = await tx.playerBracketRegistration.findMany({
+            where: {
+              bracketId: current.bracketId,
+              playerId: { in: [winner.id, loser.id] },
+            },
+            select: { playerId: true, pointsAtRegistration: true },
+          });
+          const basePoints = (p: { id: string; points: number }): number =>
+            regs.find((r) => r.playerId === p.id)?.pointsAtRegistration ?? p.points;
+
+          const winnerBase = basePoints(winner);
+          const loserBase = basePoints(loser);
+
+          const winnerDelta = ffttMatchPoints({
+            playerPoints: winnerBase,
+            opponentPoints: loserBase,
+            victory: true,
+            coefficient,
+          }).points;
+          const loserDelta = ffttMatchPoints({
+            playerPoints: loserBase,
+            opponentPoints: winnerBase,
+            victory: false,
+            coefficient,
+          }).points;
+
+          if (winnerDelta !== 0) {
+            await tx.player.update({
+              where: { id: winner.id },
+              data: { points: { increment: winnerDelta } },
+            });
+          }
+          if (loserDelta !== 0) {
+            await tx.player.update({
+              where: { id: loser.id },
+              data: { points: { increment: loserDelta } },
+            });
+          }
         }
       }
 
