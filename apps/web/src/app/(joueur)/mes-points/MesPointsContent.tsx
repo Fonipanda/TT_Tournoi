@@ -97,16 +97,12 @@ export function MesPointsContent({ playerId }: { playerId: string }) {
   return (
     <div data-testid="mes-points">
       <h1 className="font-heading text-3xl uppercase tracking-wide mb-2">Mes points</h1>
-      <p className="text-foreground-muted text-sm mb-6">
-        Gain et perte de points au barème FFTT, partie par partie.
-        {report && (
-          <>
-            {' '}
-            Coefficient d&apos;épreuve appliqué :{' '}
-            <span className="tabular">{formatCoefficient(report.coefficient)}</span>.
-          </>
-        )}
-      </p>
+      {report && (
+        <p className="text-foreground-muted text-sm mb-6">
+          Coefficient d&apos;épreuve appliqué :{' '}
+          <span className="tabular">{formatCoefficient(report.coefficient)}</span>.
+        </p>
+      )}
 
       {loading && <p className="text-foreground-muted">Calcul en cours…</p>}
       {failed && <p className="text-foreground-muted">Calcul momentanément indisponible.</p>}
